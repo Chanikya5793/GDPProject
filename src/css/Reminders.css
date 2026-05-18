@@ -1,0 +1,182 @@
+/* REMINDERS PAGE STYLES */
+
+/* Filter bar */
+.rem-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+/* Grouped list */
+.rem-list { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 24px; 
+}
+
+/* Grid view */
+.rem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.rem-grid .rem-card { 
+  flex-direction: column; 
+  align-items: flex-start; 
+  gap: 10px; 
+  height: 100%; 
+}
+
+.rem-grid .rem-card-left { 
+  flex-direction: row; 
+}
+
+.rem-grid .rem-card-actions { 
+  align-self: flex-end; 
+  margin-top: auto; 
+}
+
+/* Date group */
+.rem-group { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 10px; 
+}
+
+.rem-group-label {
+  font-size: 13px; 
+  font-weight: 700;
+  color: var(--muted); 
+  text-transform: uppercase;
+  letter-spacing: .08em; 
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rem-group-today { 
+  color: var(--green); 
+}
+
+.rem-group-past  { 
+  color: var(--red); 
+}
+
+/* Reminder card */
+.rem-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-left: 4px solid var(--blue);
+  transition: box-shadow .18s;
+}
+
+.rem-card:hover { 
+  box-shadow: 0 4px 16px rgba(0,0,0,.06); 
+}
+
+.rem-overdue { 
+  border-left-color: var(--red); 
+}
+
+.rem-today { 
+  border-left-color: var(--green); 
+}
+
+/* Left section - bell + time */
+.rem-card-left { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  flex-shrink: 0; 
+}
+
+.rem-bell-wrap {
+  width: 38px; 
+  height: 38px; 
+  border-radius: 10px;
+  background: #EFF6FF; 
+  color: var(--blue);
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rem-overdue .rem-bell-wrap { 
+  background: #FEF2F2; 
+  color: var(--red); 
+}
+
+.rem-today .rem-bell-wrap { 
+  background: var(--green-lt); 
+  color: var(--green); 
+}
+
+.rem-time-block { 
+  text-align: center; 
+  min-width: 52px; 
+}
+
+.rem-time { 
+  font-size: 15px; 
+  font-weight: 800; 
+  color: var(--text); 
+  line-height: 1.2; 
+}
+
+.rem-date-short { 
+  font-size: 11px; 
+  color: var(--muted); 
+  margin-top: 2px; 
+}
+
+/* Body */
+.rem-card-body { 
+  flex: 1; 
+  min-width: 0; 
+}
+
+.rem-card-title { 
+  font-size: 15px; 
+  font-weight: 700; 
+  color: var(--text); 
+  margin-bottom: 4px; 
+}
+
+.rem-card-meta { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  flex-wrap: wrap; 
+}
+
+.rem-notes {
+  font-size: 13px; 
+  color: var(--muted); 
+  line-height: 1.5;
+  margin-top: 6px; 
+  padding-top: 6px; 
+  border-top: 1px solid var(--off);
+}
+
+/* Actions */
+.rem-card-actions { 
+  display: flex; 
+  gap: 6px; 
+  flex-shrink: 0; 
+}
+
+.btn-icon-danger { 
+  color: var(--red) !important;
+}
+
+.btn-icon-danger:hover { 
+  border-color: var(--red) !important; 
+  background: #FEF2F2 !important; 
+}

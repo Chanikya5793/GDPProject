@@ -1,0 +1,167 @@
+/* DASHBOARD STYLES */
+
+/* Quick add buttons in page header */
+.dash-quick-btns {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* STAT CARDS */
+/* Responsive grid collapses on small screens */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.dash-stat {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  text-align: center;
+}
+
+.dash-stat-danger {
+  border-color: #FECACA; 
+  background: #FFF5F5; 
+}
+
+.dash-stat-n { 
+  font-size: 32px; 
+  font-weight: 800; 
+  color: var(--text); 
+  line-height: 1; 
+}
+
+.dash-stat-l { 
+  font-size: 12px; 
+  color: var(--muted); 
+  margin-top: 4px; 
+  text-transform: uppercase; 
+  letter-spacing: .06em; 
+}
+
+/* TWO COLUMN LAYOUT */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.dash-col { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 20px; 
+}
+
+/* SECTION CARDS */
+.dash-section { 
+  padding: 18px 20px; 
+}
+
+.dash-section-header {
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.dash-section-title { 
+  font-size: 14px; 
+  font-weight: 700; 
+  color: var(--text); 
+}
+
+.dash-section-link { 
+  font-size: 12px; 
+  font-weight: 600; 
+  color: var(--green); 
+  cursor: pointer; 
+}
+
+.dash-section-link:hover { 
+  text-decoration: underline; 
+}
+
+/* TASK ROW */
+/* Each row: checkbox + title/meta */
+.dash-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--off);
+}
+
+.dash-row:last-child { 
+  border-bottom: none; 
+}
+
+.dash-row-reminder {
+  background: #FAFFF9;
+  border-radius: 8px;
+  padding: 9px 10px;
+  margin: 2px 0;
+  border-bottom: none;
+}
+
+/* CHECKBOX */
+/* Empty circle - clicking it toggles completion */
+.dash-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border); 
+  background: var(--white);
+  flex-shrink: 0; 
+  margin-top: 1px;
+  cursor: pointer;
+}
+
+/* BELL ICON */
+.dash-bell {
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ROW CONTENT */
+.dash-row-body  { 
+  flex: 1; 
+  min-width: 0; 
+}
+
+.dash-row-title { 
+  font-size: 14px; 
+  font-weight: 600; 
+  color: var(--text); 
+  line-height: 1.4; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+}
+
+.dash-row-meta  { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  margin-top: 3px; 
+  font-size: 12px; 
+  color: var(--muted); 
+  flex-wrap: wrap; 
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .dash-stats { 
+    grid-template-columns: repeat(2, 1fr); 
+  }
+
+  .dash-grid { 
+    grid-template-columns: 1fr; 
+  }
+}
