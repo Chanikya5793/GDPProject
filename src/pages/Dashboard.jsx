@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
+import { getCategories } from "../api/categories"
 import { Check, Bell } from "lucide-react"
 import "../css/Dashboard.css"
 
@@ -136,17 +137,27 @@ export default function Dashboard() {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState([true])
   const [quickMode, setQuickMode] = useState([null])
 
+  // QUICK ADD STATE
+  const [qTitle, setQTitle] = useState('')
+  const [qDate, setQDate] = useState(today())
+  const [qTime, setQTime] = useState('09:00')
+  const [qPriority, setQPriority] = useState('medium')
+  const [qCategory, setQCategory] = useState('')
+
   useEffect(() => {
     async function load() {
-      const [t, r] = await Promise.all([
+      const [t, r, c] = await Promise.all([
         getTasks(user.id),
         getReminders(user.id),
+        getCategories(user.id),
       ])
       setTasks(t)
       setReminders(r)
+      setCategories(c)
       setLoading(false)
     }
     load()
@@ -176,6 +187,37 @@ export default function Dashboard() {
     const updated = await toggleTask(id)
     setTasks(prev => prev.map(t => t.id === id ? updated : t))
   }
+  
+  const handleQuickAdd = async (e) => {
+    e.preventDefault()
+    if (!qTitle.trim()) return
+    if (quickMode === 'task') {
+      const newTask = await createTask({
+        userId: user.id,
+        title: qTitle,
+        dueDate: qDate,
+        dueTime: qTime,
+        priority: qPriority,
+        category: qCategory,
+        notes: '',
+      })
+      setTasks(prev => [...prev, newTask])
+    } else {
+      const newReminder = await createReminder({
+        userId: user.id,
+        title: qTitle,
+        date: qDate,
+        time: qTime,
+        notes: '',
+      })
+      setReminders(prev => [...prev, newReminder])
+    }
+    setQTitle('')
+    setQDate(today())
+    setQTime('09:00')
+    setQCategory(categories[0]?.name || '')
+    setQuickMode(null)
+  }
 
   if (loading) return (
     <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
@@ -197,18 +239,74 @@ export default function Dashboard() {
         </div>
         <div className="dash-quick-btns">
           {/* These buttons will open a quick-add form */}
-          <button className="btn-primary">+ Quick Task</button>
-          <button className="btn-secondary">+ Quick Reminder</button>
+          <button className="btn-primary" onClick={() => setQuickMode(quickMode === 'task' ? null : 'task')}>+ Quick Task</button>
+          <button className="btn-secondary" onClick={() => setQuickMode(quickMode === 'reminder' ? null : 'reminder')}>+ Quick Reminder</button>
         </div>
       </div>
 
       <div className="page-body">
 
+        {/* QUICK ADD FORM */}
+        {quickMode && (
+          <div className="quick-add-bar card" style={{ marginBottom: '24px' }}>
+            <form onSubmit={handleQuickAdd}>
+              <div className="quick-add-title">
+                Quick Add - {quickMode === 'task' ? 'Task' : 'Reminder'}
+              </div>
+              <div className="quick-add-row">
+                <input
+                  className="form-input"
+                  placeholder={quickMode === 'task' ? 'Task title...' : 'Reminder title...'}
+                  value={qTitle}
+                  onChange={e => setQTitle(e.target.value)}
+                  autoFocus
+                  required
+                  />
+                  <input
+                    className="form-input"
+                    type="date"
+                    value={qDate}
+                    onChange={e => setQDate(e.target.value)}
+                    required
+                  />
+                  {quickMode === 'task' ? (
+                    <>
+                      <input
+                        className="form-input"
+                        type="time"
+                        value={qTime}
+                        onChange={e => setQTime(e.target.value)}
+                      />
+                      <select className="form-select" value={qPriority} onChange={e => setQPriority(e.target.value)}>
+                        <option value="high">High Priority</option>
+                        <option value="medium">Medium Priority</option>
+                        <option value="low">Low Priority</option>
+                      </select>
+                      <select className="form-select" value={qCategory} onChange={e => setQCategory(e.target.value)}>
+                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    </>
+                  ) : (
+                    <input
+                      className="form-input"
+                      type="time"
+                      value={qTime}
+                      onChange={e => setQTime(e.target.value)}
+                      required
+                    />
+                  )}
+                  <button type="submit" className="btn-primary">Save</button>
+                  <button type="button" className="btn-ghost" onClick={() => setQuickMode(null)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        )}
+
         {/* STAT CARDS */}
         {/* Four numbers - overdue, today, week, completed */}
         <div className="dash-stats">
           <div className={`dash-stat ${overdue.length > 0 ? 'dash-stat-danger' : ''}`}>
-            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green) '}}>
+            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green)' }}>
               {overdue.length}
             </div>
             <div className="dash-stat-l">Overdue</div>
@@ -287,7 +385,6 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-
         </div>
       </div>
     </>
