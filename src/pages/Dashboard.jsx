@@ -1,4 +1,9 @@
-import '../css/Dashboard.css'
+import { useState, useEffect } from "react"
+import { Link } from "react-router-dom"
+import { useAuth } from "../context/AuthContext"
+import { getTasks, toggleTask, createTask } from "../api/tasks"
+import { Check } from "lucide-react"
+import "../css/Dashboard.css"
 
 // HARDCODED DATA - replace with API data
 
@@ -101,17 +106,35 @@ const UPCOMING = [
   },
 ]
 
-// A task row with a checkbox, title, category, and priority badge
-function TaskRow({ task, showDate = false }) {
-  return (
-    <div className="dash-row">
-      {/* Checkbox - onClick will call toggleTask(task.id) */}
-      <div className="dash-check" />
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
 
+function formatTime(timeStr) {
+  if (!timeStr) return ''
+  const [h, m] = timeStr.split(':')
+  const hour = parseInt(h)
+  const ampm = hour >= 12 ? 'PM' : 'AM'
+  const display = hour % 12 || 12
+  return `${display}:${m} ${ampm}`
+}
+
+// A task row with a checkbox, title, category, and priority badge
+function TaskRow({ task, onToggle, showDate = false }) {
+  return (
+    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
+      <button
+        className={`dash-check${task.completed ? ' checked' : ''}`}
+        onClick={() => onToggle(task.id)}
+        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
+      >
+        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
+      </button>
       <div className="dash-row-body">
         <div className="dash-row-title">{task.title}</div>
         <div className="dash-row-meta">
-          {showDate && <span>{task.date}</span>}
+          {showDate && <span>{formatDate(task.dueDate)}</span>}
           {!showDate && task.category && <span>{task.category}</span>}
           <span className={`badge badge-${task.priority}`}>{task.priority}</span>
         </div>
@@ -136,15 +159,73 @@ function ReminderRow({ reminder, showDate = false }) {
   )
 }
 
+function today() {
+  return new Date().toISOString().split('T')[0]
+}
+
+function daysFromNow(n) {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
 // MAIN PAGE
 export default function Dashboard() {
+  const { user } = useAuth()
+  const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState([true])
+  const [quickMode, setQuickMode] = useState([null])
+
+  useEffect(() => {
+    async function load() {
+      const [t] = await Promise.all([
+        getTasks(user.id),
+      ])
+      setTasks(t)
+      setLoading(false)
+    }
+    load()
+  }, [user.id])
+
+  const todayStr = today()
+  const weekStr = daysFromNow(7)
+
+  const overdue = tasks.filter(t => !t.completed && t.dueDate < todayStr)
+  const dueToday = tasks.filter(t => !t.completed && t.dueDate === todayStr)
+  const upcoming = tasks.filter(t => !t.completed && t.dueDate > todayStr && t.dueDate <= weekStr)
+  const completed = tasks.filter(t => t.completed).length
+
+  // MERGE UPCOMING TASKS & REMINDERS
+  const timeline = [
+    ...upcoming.map(t => ({ ...t, _type: 'task' })),
+  ].sort((a, b) => {
+    const aDate = a.dueDate || a.date
+    const bDate = b.dueDate || b.date
+    return aDate < bDate ? -1 : aDate > bDate ? 1 : 0
+  })
+  
+  const handleToggle = async (id) => {
+    const updated = await toggleTask(id)
+    setTasks(prev => prev.map(t => t.id === id ? updated : t))
+  }
+
+  if (loading) return (
+    <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <p style={{ color: 'var(--muted)' }}>Loading your planner...</p>
+    </div>
+  )
+
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = user.name?.split(' ')[0] || ''
+
   return (
     <>
       {/* PAGE HEADER - greeting + quick add buttons */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1>Good morning, Bobby</h1>
-          <p>Wednesday, May 13, 2026</p>
+          <h1>{greeting}, {firstName}</h1>
+          <p>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
         <div className="dash-quick-btns">
           {/* These buttons will open a quick-add form */}
@@ -158,7 +239,26 @@ export default function Dashboard() {
         {/* STAT CARDS */}
         {/* Four numbers - overdue, today, week, completed */}
         <div className="dash-stats">
-          {STATS.map(stat => (
+          <div className={`dash-stat ${overdue.length > 0 ? 'dash-stat-danger' : ''}`}>
+            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green) '}}>
+              {overdue.length}
+            </div>
+            <div className="dash-stat-l">Overdue</div>
+          </div>
+          <div className="dash-stat">
+            <div className="dash-stat-n">{dueToday.length}</div>
+            <div className="dash-stat-l">Due Today</div>
+          </div>
+          <div className="dash-stat">
+            <div className="dash-stat-n">{upcoming.length}</div>
+            <div className="dash-stat-l">This Week</div>
+          </div>
+          <div className="dash-stat">
+            <div className="dash-stat-n" style={{ color: 'var(--green)' }}>{completed}</div>
+            <div className="dash-stat-l">Completed</div>
+          </div>
+        </div>
+          {/*{STATS.map(stat => (
             <div key={stat.label} className={`dash-stat${stat.danger ? ' dash-stat-danger' : ''}`}>
               <div className="dash-stat-n" style={{
                 color: stat.danger ? 'var(--red)' : stat.success ? 'var(--green)' : 'var(--text)'
@@ -168,7 +268,7 @@ export default function Dashboard() {
               <div className="dash-stat-l">{stat.label}</div>
             </div>
           ))}
-        </div>
+        </div>*/}
 
         {/* TWO COLUMN GRID */}
         <div className="dash-grid">
@@ -177,33 +277,34 @@ export default function Dashboard() {
           <div className="dash-col">
 
             {/* OVERDUE SECTION - only shows if there are overdue tasks */}
-            <div className="card dash-section" style={{ borderLeft: '4px solid var(--red)' }}>
-              <div className="dash-section-header">
-                <span className="dash-section-title" style={{ color: 'var(--red)' }}>
-                  ⚠ Overdue
-                </span>
-                {/* This becomes a Link to="/tasks" */}
-                <span className="dash-section-link">View all</span>
+            {overdue.length > 0 && (
+              <div className="card dash-section" style={{ borderLeft: '4px solid var(--red)' }}>
+                <div className="dash-section-header">
+                  <span className="dash-section-title" style={{ color: 'var(--red)' }}>⚠ Overdue</span>
+                  <Link to="/tasks" className="dash-section-link">View all</Link>
+                </div>
+                {overdue.map(task => (
+                  <TaskRow key={task.id} task={task} onToggle={handleToggle} />
+                ))}
               </div>
-              {OVERDUE_TASKS.map(task => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-            </div>
+            )}
 
             {/* DUE TODAY SECTION */}
             <div className="card dash-section">
               <div className="dash-section-header">
                 <span className="dash-section-title">Due Today</span>
-                <span className="dash-section-link">View all tasks</span>
+                <Link to="/tasks" className="dash-section-link">View all tasks</Link>
               </div>
-              {TODAY_TASKS.map(task => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-              {TODAY_REMINDERS.map(rem => (
-                <ReminderRow key={rem.id} reminder={rem} />
-              ))}
+              {dueToday.length === 0 ? (
+                <p className="dash-empty">Nothing due today - enjoy your day!</p>
+              ) : (
+                <>
+                  {dueToday.map(task => (
+                    <TaskRow key={task.id} task={task} onToggle={handleToggle} />
+                  ))}
+                </>
+              )}
             </div>
-
           </div>
 
           {/* RIGHT COLUMN - upcoming 7 days */}
@@ -211,13 +312,24 @@ export default function Dashboard() {
             <div className="card dash-section">
               <div className="dash-section-header">
                 <span className="dash-section-title">Upcoming - Next 7 Days</span>
-                <span className="dash-section-link">Open calendar</span>
+                <Link to="/calendar" className="dash-section-link">Open calendar</Link>
               </div>
-              {UPCOMING.map(item => (
+              {timeline.length === 0 ? (
+                <p className="dash-empty">Nothing scheduled for the next 7 days.</p>
+              ) : (
+                <>
+                  {timeline.map(item => (
+                    item._type === 'task'
+                    ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                    : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
+                  ))}
+                </>
+              )}
+              {/*{UPCOMING.map(item => (
                 item._type === 'task'
                   ? <TaskRow     key={`t-${item.id}`} task={item}     showDate />
                   : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
-              ))}
+              ))}*/}
             </div>
           </div>
 
