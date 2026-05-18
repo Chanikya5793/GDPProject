@@ -2,7 +2,8 @@ import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
-import { Check } from "lucide-react"
+import { getReminders, createReminder } from "../api/reminders"
+import { Check, Bell } from "lucide-react"
 import "../css/Dashboard.css"
 
 // HARDCODED DATA - replace with API data
@@ -120,45 +121,6 @@ function formatTime(timeStr) {
   return `${display}:${m} ${ampm}`
 }
 
-// A task row with a checkbox, title, category, and priority badge
-function TaskRow({ task, onToggle, showDate = false }) {
-  return (
-    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
-      <button
-        className={`dash-check${task.completed ? ' checked' : ''}`}
-        onClick={() => onToggle(task.id)}
-        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
-      >
-        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
-      </button>
-      <div className="dash-row-body">
-        <div className="dash-row-title">{task.title}</div>
-        <div className="dash-row-meta">
-          {showDate && <span>{formatDate(task.dueDate)}</span>}
-          {!showDate && task.category && <span>{task.category}</span>}
-          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// A reminder row with a bell icon, title, and time
-function ReminderRow({ reminder, showDate = false }) {
-  return (
-    <div className="dash-row dash-row-reminder">
-      <div className="dash-bell">🔔</div>
-      <div className="dash-row-body">
-        <div className="dash-row-title">{reminder.title}</div>
-        <div className="dash-row-meta">
-          {showDate && <span>{reminder.date}</span>}
-          {reminder.time && <span>{reminder.time}</span>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function today() {
   return new Date().toISOString().split('T')[0]
 }
@@ -173,15 +135,18 @@ function daysFromNow(n) {
 export default function Dashboard() {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
+  const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState([true])
   const [quickMode, setQuickMode] = useState([null])
 
   useEffect(() => {
     async function load() {
-      const [t] = await Promise.all([
+      const [t, r] = await Promise.all([
         getTasks(user.id),
+        getReminders(user.id),
       ])
       setTasks(t)
+      setReminders(r)
       setLoading(false)
     }
     load()
@@ -193,11 +158,14 @@ export default function Dashboard() {
   const overdue = tasks.filter(t => !t.completed && t.dueDate < todayStr)
   const dueToday = tasks.filter(t => !t.completed && t.dueDate === todayStr)
   const upcoming = tasks.filter(t => !t.completed && t.dueDate > todayStr && t.dueDate <= weekStr)
+  const remToday = reminders.filter(r => r.date === todayStr)
+  const remUpcoming = reminders.filter(r => r.date > todayStr && r.date <= weekStr)
   const completed = tasks.filter(t => t.completed).length
 
   // MERGE UPCOMING TASKS & REMINDERS
   const timeline = [
     ...upcoming.map(t => ({ ...t, _type: 'task' })),
+    ...remUpcoming.map(r => ({ ...r, _type: 'reminder' })),
   ].sort((a, b) => {
     const aDate = a.dueDate || a.date
     const bDate = b.dueDate || b.date
@@ -246,11 +214,11 @@ export default function Dashboard() {
             <div className="dash-stat-l">Overdue</div>
           </div>
           <div className="dash-stat">
-            <div className="dash-stat-n">{dueToday.length}</div>
+            <div className="dash-stat-n">{dueToday.length + remToday.length}</div>
             <div className="dash-stat-l">Due Today</div>
           </div>
           <div className="dash-stat">
-            <div className="dash-stat-n">{upcoming.length}</div>
+            <div className="dash-stat-n">{upcoming.length + remUpcoming.length}</div>
             <div className="dash-stat-l">This Week</div>
           </div>
           <div className="dash-stat">
@@ -258,17 +226,6 @@ export default function Dashboard() {
             <div className="dash-stat-l">Completed</div>
           </div>
         </div>
-          {/*{STATS.map(stat => (
-            <div key={stat.label} className={`dash-stat${stat.danger ? ' dash-stat-danger' : ''}`}>
-              <div className="dash-stat-n" style={{
-                color: stat.danger ? 'var(--red)' : stat.success ? 'var(--green)' : 'var(--text)'
-              }}>
-                {stat.value}
-              </div>
-              <div className="dash-stat-l">{stat.label}</div>
-            </div>
-          ))}
-        </div>*/}
 
         {/* TWO COLUMN GRID */}
         <div className="dash-grid">
@@ -295,12 +252,15 @@ export default function Dashboard() {
                 <span className="dash-section-title">Due Today</span>
                 <Link to="/tasks" className="dash-section-link">View all tasks</Link>
               </div>
-              {dueToday.length === 0 ? (
+              {dueToday.length === 0 && remToday.length === 0 ? (
                 <p className="dash-empty">Nothing due today - enjoy your day!</p>
               ) : (
                 <>
                   {dueToday.map(task => (
                     <TaskRow key={task.id} task={task} onToggle={handleToggle} />
+                  ))}
+                  {remToday.map(rem => (
+                    <ReminderRow key={rem.id} reminder={rem} />
                   ))}
                 </>
               )}
@@ -325,16 +285,50 @@ export default function Dashboard() {
                   ))}
                 </>
               )}
-              {/*{UPCOMING.map(item => (
-                item._type === 'task'
-                  ? <TaskRow     key={`t-${item.id}`} task={item}     showDate />
-                  : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
-              ))}*/}
             </div>
           </div>
 
         </div>
       </div>
     </>
+  )
+}
+
+// A task row with a checkbox, title, category, and priority badge
+function TaskRow({ task, onToggle, showDate = false }) {
+  return (
+    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
+      <button
+        className={`dash-check${task.completed ? ' checked' : ''}`}
+        onClick={() => onToggle(task.id)}
+        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
+      >
+        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
+      </button>
+      <div className="dash-row-body">
+        <div className="dash-row-title">{task.title}</div>
+        <div className="dash-row-meta">
+          {showDate && <span>{formatDate(task.dueDate)}</span>}
+          {!showDate && task.category && <span>{task.category}</span>}
+          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// A reminder row with a bell icon, title, and time
+function ReminderRow({ reminder, showDate = false }) {
+  return (
+    <div className="dash-row dash-row-reminder">
+      <div className="dash-bell"><Bell size={18} /></div>
+      <div className="dash-row-body">
+        <div className="dash-row-title">{reminder.title}</div>
+        <div className="dash-row-meta">
+          {showDate && <span>{formatDate(reminder.date)}</span>}
+          {reminder.time && <span>{formatTime(reminder.time)}</span>}
+        </div>
+      </div>
+    </div>
   )
 }
