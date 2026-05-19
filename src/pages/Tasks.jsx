@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getTasks, createTask, updateTask, deleteTask, toggleTask } from '../api/tasks'
-import { Pencil, Trash2, List, LayoutGrid, Check, X } from 'lucide-react'
+import { createReminder } from '../api/reminders'
+import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell } from 'lucide-react'
 import '../css/Tasks.css'
 
 const CATEGORIES = ['Homework', 'Exam', 'Lab', 'Reading', 'Project', 'Other']
@@ -40,13 +41,40 @@ function TaskModal({ task, onSave, onClose }) {
     category: task?.category || 'Homework',
     notes: task?.notes || '',
   })
+  const [addReminders, setAddReminders] = useState(false)
+  const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+
+  const toggleReminders = (checked) => {
+    setAddReminders(checked)
+    if (checked && reminders.length === 0) {
+      setReminders([{ date: form.dueDate, time: form.dueTime }])
+    }
+  }
+
+  const addReminderEntry = () => {
+    setReminders(prev => [...prev, { date: form.dueDate, time: form.dueTime }])
+  }
+
+  const updateReminderEntry = (i, field, value) => {
+    setReminders(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
+  }
+
+  const removeReminderEntry = (i) => {
+    const next = reminders.filter((_, idx) => idx !== i)
+    if (next.length === 0) {
+      setAddReminders(false)
+      setReminders([{ date: form.dueDate, time: form.dueTime }])
+    } else {
+      setReminders(next)
+    }
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!form.title.trim()) return
-    onSave(form)
+    onSave({ ...form, reminders: addReminders ? reminders : [] })
   }
 
   return (
@@ -92,6 +120,31 @@ function TaskModal({ task, onSave, onClose }) {
               <label className="form-label">Notes</label>
               <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />
             </div>
+            {!task && (
+              <div className="reminder-section">
+                <label className="form-checkbox">
+                  <input type="checkbox" checked={addReminders} onChange={e => toggleReminders(e.target.checked)} />
+                  <Bell size={14} />
+                  <span>Also create reminders</span>
+                </label>
+                {addReminders && (
+                  <div className="reminder-entries">
+                    {reminders.map((rem, i) => (
+                      <div key={i} className="reminder-entry">
+                        <input type="date" className="form-input" value={rem.date} onChange={e => updateReminderEntry(i, 'date', e.target.value)} />
+                        <input type="time" className="form-input" value={rem.time} onChange={e => updateReminderEntry(i, 'time', e.target.value)} />
+                        <button type="button" className="btn-icon btn-icon-danger" onClick={() => removeReminderEntry(i)} title="Remove">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" className="reminder-add-btn" onClick={addReminderEntry}>
+                      + Add another reminder
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -161,12 +214,22 @@ export default function Tasks() {
   }
 
   const handleSave = async (form) => {
+    const { reminders: remindersList = [], ...taskData } = form
     if (modalTask) {
-      const updated = await updateTask(modalTask.id, form)
+      const updated = await updateTask(modalTask.id, taskData)
       setTasks(prev => prev.map(t => t.id === modalTask.id ? updated : t))
     } else {
-      const created = await createTask({ ...form, userId: user.id })
+      const created = await createTask({ ...taskData, userId: user.id })
       setTasks(prev => [...prev, created])
+      for (const rem of remindersList) {
+        await createReminder({
+          userId: user.id,
+          title: taskData.title,
+          date: rem.date,
+          time: rem.time,
+          notes: '',
+        })
+      }
     }
     setShowModal(false)
     setModalTask(null)
