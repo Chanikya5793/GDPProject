@@ -3,109 +3,8 @@ import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
-import { Check, Bell } from "lucide-react"
+import { Check, Bell, X } from "lucide-react"
 import "../css/Dashboard.css"
-
-// HARDCODED DATA - replace with API data
-
-const STATS = [
-  {
-    label: 'Overdue', value: 2,
-    danger: true
-  },
-  { 
-    label: 'Due Today',
-    value: 3,
-    danger: false
-  },
-  {
-    label: 'This Week',
-    value: 8,
-    danger: false
-  },
-  {
-    label: 'Completed',
-    value: 12,
-    danger: false,
-    success: true
-  },
-]
-
-const OVERDUE_TASKS = [
-  {
-    id: 1,
-    title: 'Submit History Essay',
-    category: 'Homework',
-    priority: 'high'
-  },
-  {
-    id: 2,
-    title: 'Complete Biology Lab Report',
-    category: 'Lab',
-    priority: 'high' 
-},
-]
-
-const TODAY_TASKS = [
-  {
-    id: 3,
-    title: 'Read Chapter 5 - Organic Chemistry',
-    category: 'Reading',
-    priority: 'high'
-  },
-  {
-    id: 4,
-    title: 'CS Problem Set 3',
-    category: 'Homework',
-    priority: 'medium'
-  },
-]
-
-const TODAY_REMINDERS = [
-  {
-    id: 1,
-    title: 'Advisor Meeting',
-    time: '10:00 AM'
-  },
-]
-
-const UPCOMING = [
-  {
-    id: 5,
-    _type: 'task',
-    title: 'Study for CS Midterm',
-    date: 'Thu, May 15',
-    priority: 'medium'
-  },
-  {
-    id: 2,
-    _type: 'reminder',
-    title: 'Study Group - Library Rm 204',
-    date: 'Thu, May 15',
-    time: '2:00 PM'
-  },
-  {
-    id: 6,
-    _type: 'task',
-    title: 'Math Homework Chapter 7',
-    date: 'Fri, May 16',
-    priority: 'low'
-  },
-  {
-    id: 3,
-    _type: 'reminder',
-    title: 'Office Hours - Prof. Martinez',
-    date: 'Fri, May 16',
-    time: '9:30 AM'
-  },
-  {
-    id: 7,
-    _type: 'task',
-    title: 'Research Paper Draft', 
-    date: 'Sat, May 17',
-    priority: 'high'
-  },
-]
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -131,13 +30,106 @@ function daysFromNow(n) {
   return d.toISOString().split('T')[0]
 }
 
-// MAIN PAGE
+function QuickTaskModal({ onSave, onClose }) {
+  const [title, setTitle] = useState('')
+  const [dueDate, setDueDate] = useState(today())
+  const [priority, setPriority] = useState('medium')
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    onSave({ title, dueDate, priority, category: 'Homework', dueTime: '', notes: '' })
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">Quick Task</h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Title</label>
+              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs to be done?" autoFocus />
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Due Date</label>
+                <input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Priority</label>
+                <select className="form-select" value={priority} onChange={e => setPriority(e.target.value)}>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Add Task</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function QuickReminderModal({ onSave, onClose }) {
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState(today())
+  const [time, setTime] = useState('')
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    onSave({ title, date, time, notes: '' })
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">Quick Reminder</h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Title</label>
+              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="What do you need to remember?" autoFocus />
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Date</label>
+                <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Time</label>
+                <input className="form-input" type="time" value={time} onChange={e => setTime(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Add Reminder</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
-  const [loading, setLoading] = useState([true])
-  const [quickMode, setQuickMode] = useState([null])
+  const [loading, setLoading] = useState(true)
+  const [quickMode, setQuickMode] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -162,7 +154,6 @@ export default function Dashboard() {
   const remUpcoming = reminders.filter(r => r.date > todayStr && r.date <= weekStr)
   const completed = tasks.filter(t => t.completed).length
 
-  // MERGE UPCOMING TASKS & REMINDERS
   const timeline = [
     ...upcoming.map(t => ({ ...t, _type: 'task' })),
     ...remUpcoming.map(r => ({ ...r, _type: 'reminder' })),
@@ -171,10 +162,22 @@ export default function Dashboard() {
     const bDate = b.dueDate || b.date
     return aDate < bDate ? -1 : aDate > bDate ? 1 : 0
   })
-  
+
   const handleToggle = async (id) => {
     const updated = await toggleTask(id)
     setTasks(prev => prev.map(t => t.id === id ? updated : t))
+  }
+
+  const handleQuickTask = async (form) => {
+    const created = await createTask({ ...form, userId: user.id })
+    setTasks(prev => [...prev, created])
+    setQuickMode(null)
+  }
+
+  const handleQuickReminder = async (form) => {
+    const created = await createReminder({ ...form, userId: user.id })
+    setReminders(prev => [...prev, created])
+    setQuickMode(null)
   }
 
   if (loading) return (
@@ -189,28 +192,21 @@ export default function Dashboard() {
 
   return (
     <>
-      {/* PAGE HEADER - greeting + quick add buttons */}
       <div className="page-header">
         <div className="page-header-left">
           <h1>{greeting}, {firstName}</h1>
           <p>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
         <div className="dash-quick-btns">
-          {/* These buttons will open a quick-add form */}
-          <button className="btn-primary">+ Quick Task</button>
-          <button className="btn-secondary">+ Quick Reminder</button>
+          <button className="btn-primary" onClick={() => setQuickMode('task')}>+ Quick Task</button>
+          <button className="btn-secondary" onClick={() => setQuickMode('reminder')}>+ Quick Reminder</button>
         </div>
       </div>
 
       <div className="page-body">
-
-        {/* STAT CARDS */}
-        {/* Four numbers - overdue, today, week, completed */}
         <div className="dash-stats">
           <div className={`dash-stat ${overdue.length > 0 ? 'dash-stat-danger' : ''}`}>
-            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green) '}}>
-              {overdue.length}
-            </div>
+            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green)' }}>{overdue.length}</div>
             <div className="dash-stat-l">Overdue</div>
           </div>
           <div className="dash-stat">
@@ -227,13 +223,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* TWO COLUMN GRID */}
         <div className="dash-grid">
-
-          {/* LEFT COLUMN - overdue + today */}
           <div className="dash-col">
-
-            {/* OVERDUE SECTION - only shows if there are overdue tasks */}
             {overdue.length > 0 && (
               <div className="card dash-section" style={{ borderLeft: '4px solid var(--red)' }}>
                 <div className="dash-section-header">
@@ -246,7 +237,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* DUE TODAY SECTION */}
             <div className="card dash-section">
               <div className="dash-section-header">
                 <span className="dash-section-title">Due Today</span>
@@ -267,7 +257,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN - upcoming 7 days */}
           <div className="dash-col">
             <div className="card dash-section">
               <div className="dash-section-header">
@@ -280,21 +269,22 @@ export default function Dashboard() {
                 <>
                   {timeline.map(item => (
                     item._type === 'task'
-                    ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
-                    : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
+                      ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                      : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
                   ))}
                 </>
               )}
             </div>
           </div>
-
         </div>
       </div>
+
+      {quickMode === 'task' && <QuickTaskModal onSave={handleQuickTask} onClose={() => setQuickMode(null)} />}
+      {quickMode === 'reminder' && <QuickReminderModal onSave={handleQuickReminder} onClose={() => setQuickMode(null)} />}
     </>
   )
 }
 
-// A task row with a checkbox, title, category, and priority badge
 function TaskRow({ task, onToggle, showDate = false }) {
   return (
     <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
@@ -317,7 +307,6 @@ function TaskRow({ task, onToggle, showDate = false }) {
   )
 }
 
-// A reminder row with a bell icon, title, and time
 function ReminderRow({ reminder, showDate = false }) {
   return (
     <div className="dash-row dash-row-reminder">

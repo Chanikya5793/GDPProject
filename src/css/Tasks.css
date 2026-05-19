@@ -18,6 +18,13 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  padding-right: 16px;
+  border-right: 1.5px solid var(--border);
+}
+
+.task-filter-group:last-child {
+  border-right: none;
+  padding-right: 0;
 }
 
 .task-filter-label {

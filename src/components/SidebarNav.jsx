@@ -1,57 +1,71 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Home, Calendar, CheckSquare, Bell, FileText } from 'lucide-react'
+import { Home, Calendar, CheckSquare, Bell, FileText, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react'
 
 export default function SidebarNav() {
   const { user, logout } = useAuth()
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('nw_sidebar') === 'collapsed')
+
+  const toggle = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    localStorage.setItem('nw_sidebar', next ? 'collapsed' : 'expanded')
+    document.documentElement.setAttribute('data-sidebar', next ? 'collapsed' : 'expanded')
+  }
+
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded')
+  }
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`}>
 
-      {/* LOGO */}
       <div className="sidebar-logo">
         <a href="https://www.nwmissouri.edu/" target="_blank" rel="noreferrer">
           <img src="/N-Monogm-Green.png" alt="Northwest" className="sidebar-logo-img" />
         </a>
-        <div className="sidebar-logo-text">
+        <div className="sidebar-logo-text sidebar-label">
           Northwest
           <span>Student Planner</span>
         </div>
       </div>
 
-      {/* LOGGED-IN USER */}
       {user && (
-        <div className="sidebar-user">
+        <div className="sidebar-user sidebar-collapsible">
           <div className="sidebar-user-name">{user.name}</div>
           <div className="sidebar-user-email">{user.email}</div>
         </div>
       )}
 
-      {/* NAV LINKS */}
       <nav className="sidebar-nav">
-        <div className="sidebar-section-label">Menu</div>
+        <div className="sidebar-section-label sidebar-label">Menu</div>
 
-        <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
-          <Home size={18} />Dashboard
+        <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Dashboard">
+          <Home size={18} /><span className="sidebar-label">Dashboard</span>
         </NavLink>
-        <NavLink to="/calendar" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
-          <Calendar size={18} />Calendar
+        <NavLink to="/calendar" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Calendar">
+          <Calendar size={18} /><span className="sidebar-label">Calendar</span>
         </NavLink>
-        <NavLink to="/tasks" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
-          <CheckSquare size={18} />Tasks
+        <NavLink to="/tasks" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Tasks">
+          <CheckSquare size={18} /><span className="sidebar-label">Tasks</span>
         </NavLink>
-        <NavLink to="/reminders" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
-          <Bell size={18} />Reminders
+        <NavLink to="/reminders" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Reminders">
+          <Bell size={18} /><span className="sidebar-label">Reminders</span>
         </NavLink>
-        <NavLink to="/notes" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
-          <FileText size={18} />Notes
+        <NavLink to="/notes" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Notes">
+          <FileText size={18} /><span className="sidebar-label">Notes</span>
         </NavLink>
       </nav>
 
-      {/* SIGN OUT */}
       <div className="sidebar-footer">
-        <button className="sidebar-logout" onClick={logout}>
-          Sign Out
+        <button className="sidebar-toggle" onClick={toggle} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          <span className="sidebar-label">Collapse</span>
+        </button>
+        <button className="sidebar-logout" onClick={logout} title="Sign Out">
+          <LogOut size={16} className="sidebar-logout-icon" />
+          <span className="sidebar-label">Sign Out</span>
         </button>
       </div>
 
