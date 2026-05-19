@@ -504,6 +504,22 @@
   text-decoration: underline; 
 }
 
+/* Preview body (inline rendered markdown) */
+.note-preview-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.75;
+}
+
+.note-preview-body h1 { font-size: 24px; font-weight: 800; margin: 0 0 12px; }
+.note-preview-body h2 { font-size: 20px; font-weight: 700; margin: 20px 0 10px; }
+.note-preview-body h3 { font-size: 17px; font-weight: 700; margin: 16px 0 8px; }
+.note-preview-body li { margin-bottom: 4px; }
+.note-preview-body blockquote { border-left: 4px solid var(--green-mid); padding: 4px 16px; margin: 0 0 14px; color: var(--muted); }
+
 /* Markdown hint bar - always visible at bottom in write mode */
 .note-markdown-hint {
   padding: 8px 24px;
