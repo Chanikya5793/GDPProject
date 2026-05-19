@@ -34,16 +34,43 @@ function QuickTaskModal({ onSave, onClose }) {
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState(today())
   const [priority, setPriority] = useState('medium')
+  const [addReminders, setAddReminders] = useState(false)
+  const [reminders, setReminders] = useState([{ date: today(), time: '' }])
+
+  const toggleReminders = (checked) => {
+    setAddReminders(checked)
+    if (checked && reminders.length === 0) {
+      setReminders([{ date: dueDate, time: '' }])
+    }
+  }
+
+  const addReminderEntry = () => {
+    setReminders(prev => [...prev, { date: dueDate, time: '' }])
+  }
+
+  const updateReminderEntry = (i, field, value) => {
+    setReminders(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
+  }
+
+  const removeReminderEntry = (i) => {
+    const next = reminders.filter((_, idx) => idx !== i)
+    if (next.length === 0) {
+      setAddReminders(false)
+      setReminders([{ date: dueDate, time: '' }])
+    } else {
+      setReminders(next)
+    }
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!title.trim()) return
-    onSave({ title, dueDate, priority, category: 'Homework', dueTime: '', notes: '' })
+    onSave({ title, dueDate, priority, category: 'Homework', dueTime: '', notes: '', reminders: addReminders ? reminders : [] })
   }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px' }}>
         <div className="modal-header">
           <h2 className="modal-title">Quick Task</h2>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
@@ -67,6 +94,29 @@ function QuickTaskModal({ onSave, onClose }) {
                   <option value="low">Low</option>
                 </select>
               </div>
+            </div>
+            <div className="reminder-section">
+              <label className="form-checkbox">
+                <input type="checkbox" checked={addReminders} onChange={e => toggleReminders(e.target.checked)} />
+                <Bell size={14} />
+                <span>Also create reminders</span>
+              </label>
+              {addReminders && (
+                <div className="reminder-entries">
+                  {reminders.map((rem, i) => (
+                    <div key={i} className="reminder-entry">
+                      <input type="date" className="form-input" value={rem.date} onChange={e => updateReminderEntry(i, 'date', e.target.value)} />
+                      <input type="time" className="form-input" value={rem.time} onChange={e => updateReminderEntry(i, 'time', e.target.value)} />
+                      <button type="button" className="btn-icon btn-icon-danger" onClick={() => removeReminderEntry(i)} title="Remove">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className="reminder-add-btn" onClick={addReminderEntry}>
+                    + Add another reminder
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div className="form-actions">
@@ -169,8 +219,19 @@ export default function Dashboard() {
   }
 
   const handleQuickTask = async (form) => {
-    const created = await createTask({ ...form, userId: user.id })
+    const { reminders: remindersList = [], ...taskData } = form
+    const created = await createTask({ ...taskData, userId: user.id })
     setTasks(prev => [...prev, created])
+    for (const rem of remindersList) {
+      const reminder = await createReminder({
+        userId: user.id,
+        title: taskData.title,
+        date: rem.date,
+        time: rem.time,
+        notes: '',
+      })
+      setReminders(prev => [...prev, reminder])
+    }
     setQuickMode(null)
   }
 
