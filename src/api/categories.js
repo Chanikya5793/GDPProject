@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'nw_categories'
+const STORAGE_KEY = 'nw-categories'
 
 const BUILT_IN = [
     { id: 'homework', name: 'Homework', color: '#3B82F6', builtin: true },
