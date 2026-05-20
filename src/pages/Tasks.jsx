@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { getTasks, createTask, updateTask, deleteTask, toggleTask } from '../api/tasks'
 import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
-import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell } from 'lucide-react'
+import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown } from 'lucide-react'
 import '../css/Tasks.css'
 
 function today() {
@@ -29,6 +29,27 @@ function formatTime(t) {
   const hour = parseInt(h)
   const ampm = hour >= 12 ? 'PM' : 'AM'
   return `${hour % 12 || 12}:${m} ${ampm}`
+}
+
+function FilterDropdown({ value, options, onChange }) {
+  return (
+    <div className="filter-dd">
+      <div className="filter-dd-btn">
+        {options.find(o => o.value === value)?.label || value}
+        <ChevronDown size={12} />
+      </div>
+      <div className="filter-dd-menu">
+        <div className="filter-dd-menu-inner">
+          {options.map(o => (
+            <div key={o.value} className={`filter-dd-opt${o.value === value ? ' active' : ''}`}
+              onClick={() => onChange(o.value)}>
+              {o.label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function TaskModal({ task, categories, onSave, onClose }) {
@@ -155,36 +176,67 @@ function TaskModal({ task, categories, onSave, onClose }) {
   )
 }
 
+const PRIORITY_STYLES = {
+  high:   { bg: '#FFA6A6', border: '#E68E8E' },
+  medium: { bg: '#FFEFB5', border: '#F4DAB2' },
+  low:    { bg: '#E2FFAF', border: '#CEFFB0' },
+}
+const DONE_STYLE = { bg: '#F9FAFB', border: '#E5E7EB', accent: '#9CA3AF' }
+
 function TaskCard({ task, onToggle, onEdit, onDelete }) {
   const isOverdue = !task.completed && task.dueDate < today()
+  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium)
 
   return (
-    <div className={`task-card${task.completed ? ' task-done' : ''}${isOverdue ? ' task-overdue' : ''}`}>
-      <div className="task-card-top">
-        <button className={`task-check${task.completed ? ' checked' : ''}`} onClick={() => onToggle(task.id)}>
-          {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
-        </button>
-        <div className="task-card-body">
+    <div className="task-card-slot">
+      <div
+        className={`task-card${task.completed ? ' task-done' : ''}`}
+        style={{
+          background: colors.bg,
+          borderTopColor: colors.border,
+          borderRightColor: colors.border,
+          borderBottomColor: colors.border,
+          borderLeftColor: isOverdue ? '#DC2626' : colors.border,
+          borderLeftWidth: isOverdue ? 4 : 1,
+        }}
+      >
+        {/* Compact row - always visible */}
+        <div className="task-card-compact">
           <div className="task-card-title">{task.title}</div>
-          <div className="task-card-meta">
-            {task.dueDate && (
-              <span className={`task-date${isOverdue ? ' overdue' : ''}`}>
-                {isOverdue ? '⚠ Overdue · ' : ''}{formatDate(task.dueDate)}
-                {task.dueTime ? ` · ${formatTime(task.dueTime)}` : ''}
-              </span>
-            )}
-            {task.category && <span className="task-cat">{task.category}</span>}
-            <span className={`badge badge-${task.completed ? 'done' : task.priority}`}>{task.completed ? 'done' : task.priority}</span>
-          </div>
-          {task.notes && <div className="task-notes">{task.notes}</div>}
+          <span className={`task-date-compact${isOverdue ? ' overdue' : ''}`}>
+            {isOverdue && '⚠ '}{formatDate(task.dueDate)}
+          </span>
         </div>
-        <div className="task-card-actions">
-          <button className="btn-icon" title="Edit" onClick={() => onEdit(task)}>
-            <Pencil size={14} />
-          </button>
-          <button className="btn-icon btn-icon-danger" title="Delete" onClick={() => onDelete(task.id)}>
-            <Trash2 size={14} />
-          </button>
+
+        {/* Details - expands on hover via grid-template-rows */}
+        <div className="task-card-details">
+          <div className="task-card-details-inner">
+            <div className="task-card-reveal-top">
+              <button className={`task-check${task.completed ? ' checked' : ''}`} onClick={() => onToggle(task.id)}>
+                {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
+              </button>
+              <div className="task-card-reveal-info">
+                <div className="task-card-meta">
+                  {task.dueDate && (
+                    <span className={`task-date${isOverdue ? ' overdue' : ''}`}>
+                      {isOverdue ? '⚠ Overdue · ' : ''}{formatDate(task.dueDate)}
+                      {task.dueTime ? ` · ${formatTime(task.dueTime)}` : ''}
+                    </span>
+                  )}
+                  {task.category && <span className="task-cat">{task.category}</span>}
+                </div>
+              </div>
+              <div className="task-card-actions">
+                <button className="btn-icon" title="Edit" onClick={() => onEdit(task)}>
+                  <Pencil size={14} />
+                </button>
+                <button className="btn-icon btn-icon-danger" title="Delete" onClick={() => onDelete(task.id)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+            {task.notes && <div className="task-notes">{task.notes}</div>}
+          </div>
         </div>
       </div>
     </div>
@@ -197,7 +249,7 @@ export default function Tasks() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('grid')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState('dueDate')
@@ -295,34 +347,27 @@ export default function Tasks() {
         <div className="task-filter-bar">
           <div className="task-filter-group">
             <span className="task-filter-label">Status</span>
-            {['all', 'active', 'completed'].map(s => (
-              <button key={s} className={`filter-pill${statusFilter === s ? ' active' : ''}`} onClick={() => setStatusFilter(s)}>
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
+            <FilterDropdown value={statusFilter} onChange={setStatusFilter} options={[
+              { value: 'all', label: 'All' }, { value: 'active', label: 'Active' }, { value: 'completed', label: 'Completed' },
+            ]} />
           </div>
           <div className="task-filter-group">
             <span className="task-filter-label">Priority</span>
-            {['all', 'high', 'medium', 'low'].map(p => (
-              <button key={p} className={`filter-pill${priorityFilter === p ? ' active' : ''}`} onClick={() => setPriorityFilter(p)}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
+            <FilterDropdown value={priorityFilter} onChange={setPriorityFilter} options={[
+              { value: 'all', label: 'All' }, { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' },
+            ]} />
           </div>
           <div className="task-filter-group">
             <span className="task-filter-label">Category</span>
-            <select className="form-select" style={{ padding: '5px 10px', fontSize: '13px', width: 'auto' }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-              <option value="all">All Categories</option>
-              {usedCategories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <FilterDropdown value={categoryFilter} onChange={setCategoryFilter} options={[
+              { value: 'all', label: 'All Categories' }, ...usedCategories.map(c => ({ value: c, label: c })),
+            ]} />
           </div>
           <div className="task-filter-group" style={{ marginLeft: 'auto' }}>
             <span className="task-filter-label">Sort</span>
-            <select className="form-select" style={{ padding: '5px 10px', fontSize: '13px', width: 'auto' }} value={sortBy} onChange={e => setSortBy(e.target.value)}>
-              <option value="dueDate">Due Date</option>
-              <option value="priority">Priority</option>
-              <option value="title">Title</option>
-            </select>
+            <FilterDropdown value={sortBy} onChange={setSortBy} options={[
+              { value: 'dueDate', label: 'Due Date' }, { value: 'priority', label: 'Priority' }, { value: 'title', label: 'Title' },
+            ]} />
           </div>
         </div>
 
