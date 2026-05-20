@@ -1,5 +1,8 @@
 // Two-panel layout: note list on left, editor on right.
 
+import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { getNotes, createNote, updateNote, deleteNote } from '../api/notes'
 import { Search, Trash2 } from 'lucide-react'
 import '../css/Notes.css'
 
@@ -57,35 +60,119 @@ const SELECTED_NOTE = NOTES[0]
 const SELECTED_TAGS = TAGS.filter(t => SELECTED_NOTE.tagIds.includes(t.id))
 
 // NOTE LIST ITEM
-function NoteListItem({ note, selected }) {
+function NoteListItem({ note, selected, onClick }) {
   // Strip markdown characters from preview text
   const preview = note.body.replace(/[#*_`>\-]/g, '').slice(0, 80)
-  const noteTags = TAGS.filter(t => note.tagIds.includes(t.id))
 
   return (
     // "selected" class highlights the active note in the list
     // onClick will call setSelectedId(note.id)
-    <div className={`note-list-item${selected ? ' selected' : ''}`}>
-      <div className="note-list-title">{note.title}</div>
+    <div className={`note-list-item${selected ? ' selected' : ''}`} onClick={onClick}>
+      <div className="note-list-title">{note.title || 'Untitled'}</div>
       {preview && <div className="note-list-preview">{preview}…</div>}
       <div className="note-list-meta">
         <span className="note-list-date">
           {new Date(note.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
         </span>
-        <div className="note-list-tags">
-          {noteTags.map(t => (
-            <span key={t.id} className="note-list-tag" style={{ background: t.color }}>
-              #{t.name}
-            </span>
-          ))}
-        </div>
+        
       </div>
     </div>
   )
 }
 
+// NOTE EDITOR
+function NoteEditor({ note, onSave, onDelete }) {
+  const [title, setTitle] = useState(note.title)
+  const [body, setBody] = useState(note.body)
+  const [editorMode, setEditorMode] = useState('write')
+
+    useEffect(() => {
+      setTitle(note.title)
+      setBody(note.body)
+    }, [note.id])
+
+    return (
+      <div className="note-editor">
+        {/* HEADER */}
+        <div className="note-editor-header">
+          <input className="note-title-input" value={title}
+            onChange={e => { setTitle(e.target.value) }}
+            placeholder="Note title..."
+          />
+          <div className="note-editor-actions">
+            <div className="editor-mode-toggle">
+              <button
+                className={`editor-mode-btn${editorMode === 'write' ? ' active' : ''}`}
+                onClick={() => setEditorMode('write')}
+              >
+                Write
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* WRITE MODE */}
+        {editorMode === 'write' && (
+          <textarea
+            className="note-body-input"
+            value={body}
+            onChange={e => { setBody(e.target.value) }}
+            placeholder="Start writing your note..."
+          />
+        )}
+      </div>
+    )
+}
+
 // MAIN PAGE
+
 export default function Notes() {
+  const { user } = useAuth()
+  const [notes, setNotes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selectedId, setSelectedId] = useState(null)
+
+  useEffect(() => {
+    async function load() {
+      const [n] = await Promise.all([getNotes(user.id)])
+      setNotes(n)
+      if (n.length > 0) setSelectedId(n[0].id)
+      setLoading(false)
+    }
+    load()
+  }, [user.id])
+
+const selectedNote = notes.find(n => n.id === selectedId) || null
+
+  // HANDLERS
+  const handleNewNote = async() => {
+    const note = await createNote({
+      userId: user.id, title: '', body: '',
+    })
+    setNotes(prev => [note, ...prev])
+    setSelectedId(note.id)
+  }
+
+  const handleSave = async(id, updates) => {
+    const updated = await updateNote(id, updates)
+    setNotes(prev => prev.map(n => n.id === id ? updated : n))
+  }
+
+  const handleDelete = async(id) => {
+    await deleteNote(id)
+    setNotes(prev => {
+      const remaining = prev.filter(n => n.id !== id)
+      setSelectedId(remaining.length > 0 ? remaining[0].id : null)
+      return remaining
+    })
+  }
+  
+  if (loading) return (
+    <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <p style={{ color: 'var(--muted)' }}>Loading notes...</p>
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
 
@@ -93,13 +180,13 @@ export default function Notes() {
       <div className="page-header">
         <div className="page-header-left">
           <h1>Notes</h1>
-          <p>3 notes · 4 tags</p>
+          <p>{notes.length} notes · {TAGS.length} tags</p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           {/* onClick opens tag manager modal */}
           <button className="btn-ghost">Manage Tags</button>
           {/* onClick calls createNote() */}
-          <button className="btn-primary">+ New Note</button>
+          <button className="btn-primary" onClick={handleNewNote}>+ New Note</button>
         </div>
       </div>
 
@@ -130,11 +217,12 @@ export default function Notes() {
           {/* NOTE LIST */}
           {/* onClick on each item sets selectedId */}
           <div className="notes-list">
-            {NOTES.map(note => (
+            {notes.map(note => (
               <NoteListItem
                 key={note.id}
                 note={note}
-                selected={note.id === SELECTED_NOTE.id}
+                selected={note.id === selectedId}
+                onClick={() => setSelectedId(note.id)}
               />
             ))}
           </div>
@@ -143,82 +231,22 @@ export default function Notes() {
 
         {/* RIGHT PANEL - note editor */}
         <div className="notes-editor-panel">
-          <div className="note-editor">
-
-            {/* EDITOR HEADER - title + write/preview toggle + delete */}
-            <div className="note-editor-header">
-              {/* onChange updates title state */}
-              <input
-                className="note-title-input"
-                defaultValue={SELECTED_NOTE.title}
-                placeholder="Note title..."
-              />
-              <div className="note-editor-actions">
-
-                {/* Write / Preview toggle */}
-                {/* onClick sets editorMode state */}
-                <div className="editor-mode-toggle">
-                  <button className="editor-mode-btn active">Write</button>
-                  <button className="editor-mode-btn">Preview</button>
-                </div>
-
-                {/* Save button - only shows up when there are unsaved changes */}
-                {/* Do we want it to autosave? */}
-                <button className="btn-primary">Save</button>
-
-                {/* Delete button */}
-                <button className="btn-danger" title="Delete note">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* TAGS ROW - shows tags on this note + add tag button */}
-            <div className="note-tags-row">
-              {SELECTED_TAGS.map(tag => (
-                <span key={tag.id} className="tag-chip" style={{ background: tag.color }}>
-                  #{tag.name}
-                  {/* onClick removes tag */}
-                  <button className="tag-chip-remove">✕</button>
-                </span>
-              ))}
-              {/* onClick opens tag picker dropdown */}
-              <button className="tag-add-btn">+ Tag</button>
-
-              {/* TAG PICKER DROPDOWN - shown when + Tag is clicked */}
-              {/* Should close when clicking outside the box */}
-              <div className="tag-picker">
-                {TAGS.map(tag => (
-                  <div
-                    key={tag.id}
-                    className={`tag-picker-item${SELECTED_NOTE.tagIds.includes(tag.id) ? ' selected' : ''}`}
-                  >
-                    <span className="tag-picker-dot" style={{ background: tag.color }} />
-                    #{tag.name}
-                    {SELECTED_NOTE.tagIds.includes(tag.id) && (
-                      <span style={{ marginLeft: 'auto', color: 'var(--green)' }}>✓</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* WRITE MODE - plain textarea */}
-            {/* onChange updates body state */}
-            <textarea
-              className="note-body-input"
-              defaultValue={SELECTED_NOTE.body}
-              placeholder="Start writing your note..."
+          {selectedNote ? (
+            <NoteEditor
+              key={selectedNote.id}
+              note={selectedNote}
+              onSave={handleSave}
+              onDelete={handleDelete}
             />
-
-            {/* MARKDOWN HINT - always visible at bottom in write mode */}
-            <div className="note-markdown-hint">
-              <strong>Markdown:</strong>
-              &nbsp;## Heading &nbsp;·&nbsp; **bold** &nbsp;·&nbsp; *italic*
-              &nbsp;·&nbsp; - list &nbsp;·&nbsp; {'>'} quote &nbsp;·&nbsp; `code`
+          ) : (
+            <div className="empty-state" style={{ margin: 'auto' }}>
+              <h3>No note selected</h3>
+              <p>Choose a note from the list or create a new one.</p>
+              <button className="btn-primary" style={{ marginTop: '16px' }} onClick={handleNewNote}>
+                + New Note
+              </button>
             </div>
-
-          </div>
+          )}
         </div>
 
       </div>
