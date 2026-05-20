@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
@@ -28,6 +28,55 @@ function daysFromNow(n) {
   const d = new Date()
   d.setDate(d.getDate() + n)
   return d.toISOString().split('T')[0]
+}
+
+function PieChart({ data, size = 150 }) {
+  const [hovered, setHovered] = useState(null)
+  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const total = data.reduce((s, d) => s + d.value, 0)
+  const c = size / 2, r = c - 2, ir = r * 0.58
+
+  if (total === 0) return (
+    <div className="pie-wrap">
+      <svg viewBox={`0 0 ${size} ${size}`} className="pie-svg">
+        <circle cx={c} cy={c} r={r} fill="var(--off)" stroke="var(--border)" />
+        <circle cx={c} cy={c} r={ir} fill="var(--white)" />
+        <text x={c} y={c} textAnchor="middle" dominantBaseline="middle" fill="var(--muted)" fontSize="12">No data</text>
+      </svg>
+    </div>
+  )
+
+  let a = -90
+  const segs = data.filter(d => d.value > 0).map(d => {
+    const sw = (d.value / total) * 360, sa = a; a += sw
+    if (sw >= 359.99) return { ...d, full: true, pct: 100 }
+    const sr = sa * Math.PI / 180, er = (sa + sw) * Math.PI / 180
+    return {
+      ...d, full: false, pct: Math.round(d.value / total * 100),
+      d: `M${c} ${c}L${c + r * Math.cos(sr)} ${c + r * Math.sin(sr)}A${r} ${r} 0 ${sw > 180 ? 1 : 0} 1 ${c + r * Math.cos(er)} ${c + r * Math.sin(er)}Z`
+    }
+  })
+
+  return (
+    <div className="pie-wrap" onMouseMove={e => { const b = e.currentTarget.getBoundingClientRect(); setPos({ x: e.clientX - b.left, y: e.clientY - b.top }) }}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="pie-svg">
+        {segs.map((s, i) => s.full
+          ? <circle key={i} cx={c} cy={c} r={r} fill={s.color} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="pie-seg" />
+          : <path key={i} d={s.d} fill={s.color} stroke="var(--white)" strokeWidth="2" onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="pie-seg" />
+        )}
+        <circle cx={c} cy={c} r={ir} fill="var(--white)" />
+        <text x={c} y={c - 5} textAnchor="middle" dominantBaseline="middle" fontSize="22" fontWeight="800" fill="var(--text)">{total}</text>
+        <text x={c} y={c + 13} textAnchor="middle" dominantBaseline="middle" fontSize="9" fontWeight="700" fill="var(--muted)" letterSpacing=".08em">TOTAL</text>
+      </svg>
+      {hovered !== null && (
+        <div className="pie-tip" style={{ left: pos.x + 14, top: pos.y - 34 }}>
+          <span className="pie-tip-dot" style={{ background: segs[hovered].color }} />
+          <span className="pie-tip-label">{segs[hovered].label}</span>
+          <span className="pie-tip-val">{segs[hovered].value} ({segs[hovered].pct}%)</span>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function QuickTaskModal({ onSave, onClose }) {
@@ -180,6 +229,30 @@ export default function Dashboard() {
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
   const [quickMode, setQuickMode] = useState(null)
+  const chartsRef = useRef(null)
+
+  const handleDividerDown = useCallback((e) => {
+    e.preventDefault()
+    const charts = chartsRef.current
+    if (!charts) return
+    const startX = e.clientX
+    const startW = charts.offsetWidth
+    const onMove = (ev) => {
+      const newW = Math.max(200, startW + (ev.clientX - startX))
+      charts.style.width = newW + 'px'
+      charts.classList.toggle('dash-charts-compact', newW < 420)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -203,6 +276,18 @@ export default function Dashboard() {
   const remToday = reminders.filter(r => r.date === todayStr)
   const remUpcoming = reminders.filter(r => r.date > todayStr && r.date <= weekStr)
   const completed = tasks.filter(t => t.completed).length
+
+  const priorityData = [
+    { label: 'High', value: tasks.filter(t => !t.completed && t.priority === 'high').length, color: '#D57272' },
+    { label: 'Medium', value: tasks.filter(t => !t.completed && t.priority === 'medium').length, color: '#EDC78F' },
+    { label: 'Low', value: tasks.filter(t => !t.completed && t.priority === 'low').length, color: '#8BD4A0' },
+  ]
+
+  const statusData = [
+    { label: 'Overdue', value: overdue.length, color: '#DC2626' },
+    { label: 'On Track', value: tasks.filter(t => !t.completed && t.dueDate >= todayStr).length, color: '#006A4E' },
+    { label: 'Completed', value: completed, color: '#B8DDD0' },
+  ]
 
   const timeline = [
     ...upcoming.map(t => ({ ...t, _type: 'task' })),
@@ -265,29 +350,66 @@ export default function Dashboard() {
       </div>
 
       <div className="page-body">
-        <div className="dash-stats">
-          <div className={`dash-stat ${overdue.length > 0 ? 'dash-stat-danger' : ''}`}>
-            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green)' }}>{overdue.length}</div>
-            <div className="dash-stat-l">Overdue</div>
+        <div className="dash-analytics">
+          <div className="dash-charts dash-charts-compact" ref={chartsRef}>
+            <div className="dash-chart-card">
+              <div className="dash-chart-title">Tasks by Priority</div>
+              <div className="dash-chart-body">
+                <PieChart data={priorityData} size={140} />
+                <div className="pie-legend">
+                  {priorityData.map((d, i) => (
+                    <div key={i} className="pie-legend-item">
+                      <span className="pie-legend-dot" style={{ background: d.color }} />
+                      <span>{d.label}</span>
+                      <span className="pie-legend-val">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="dash-chart-card">
+              <div className="dash-chart-title">Task Status</div>
+              <div className="dash-chart-body">
+                <PieChart data={statusData} size={140} />
+                <div className="pie-legend">
+                  {statusData.map((d, i) => (
+                    <div key={i} className="pie-legend-item">
+                      <span className="pie-legend-dot" style={{ background: d.color }} />
+                      <span>{d.label}</span>
+                      <span className="pie-legend-val">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="dash-stat">
-            <div className="dash-stat-n">{dueToday.length + remToday.length}</div>
-            <div className="dash-stat-l">Due Today</div>
+          <div className="dash-divider" onMouseDown={handleDividerDown}>
+            <div className="dash-divider-line" />
           </div>
-          <div className="dash-stat">
-            <div className="dash-stat-n">{upcoming.length + remUpcoming.length}</div>
-            <div className="dash-stat-l">This Week</div>
-          </div>
-          <div className="dash-stat">
-            <div className="dash-stat-n" style={{ color: 'var(--green)' }}>{completed}</div>
-            <div className="dash-stat-l">Completed</div>
+          <div className="dash-stats-row">
+            <div className="dash-stat-mini" style={{ background: '#FFA6A6' }}>
+              <div className="dash-stat-n" style={{ color: '#9C4848' }}>{overdue.length}</div>
+              <div className="dash-stat-l">Overdue</div>
+            </div>
+            <div className="dash-stat-mini" style={{ background: '#FFEFB5' }}>
+              <div className="dash-stat-n" style={{ color: '#92400E' }}>{dueToday.length + remToday.length}</div>
+              <div className="dash-stat-l">Due Today</div>
+            </div>
+            <div className="dash-stat-mini" style={{ background: '#E2FFAF' }}>
+              <div className="dash-stat-n" style={{ color: '#2D5016' }}>{upcoming.length + remUpcoming.length}</div>
+              <div className="dash-stat-l">This Week</div>
+            </div>
+            <div className="dash-stat-mini" style={{ background: 'var(--green-lt)' }}>
+              <div className="dash-stat-n" style={{ color: 'var(--green)' }}>{completed}</div>
+              <div className="dash-stat-l">Completed</div>
+            </div>
           </div>
         </div>
 
         <div className="dash-grid">
           <div className="dash-col">
             {overdue.length > 0 && (
-              <div className="card dash-section" style={{ borderLeft: '4px solid var(--red)' }}>
+              <div className="card dash-section dash-section-overdue">
                 <div className="dash-section-header">
                   <span className="dash-section-title" style={{ color: 'var(--red)' }}>⚠ Overdue</span>
                   <Link to="/tasks" className="dash-section-link">View all</Link>
