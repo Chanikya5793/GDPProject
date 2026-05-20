@@ -20,6 +20,7 @@
   gap: 12px;
   flex-shrink: 0;
   flex-grow: 0;
+  min-width: 405px;
 }
 
 .dash-chart-card {
@@ -75,13 +76,12 @@
 /* PIE CHART */
 .pie-wrap {
   position: relative;
-  flex: 1;
-  min-width: 80px;
+  flex-shrink: 0;
 }
 
 .pie-svg {
-  width: 100%;
-  height: auto;
+  width: 120px;
+  height: 120px;
   display: block;
 }
 
