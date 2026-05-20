@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getTasks, createTask, updateTask, deleteTask, toggleTask } from '../api/tasks'
 import { createReminder } from '../api/reminders'
+import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell } from 'lucide-react'
 import '../css/Tasks.css'
-
-const CATEGORIES = ['Homework', 'Exam', 'Lab', 'Reading', 'Project', 'Other']
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -32,7 +31,7 @@ function formatTime(t) {
   return `${hour % 12 || 12}:${m} ${ampm}`
 }
 
-function TaskModal({ task, onSave, onClose }) {
+function TaskModal({ task, categories, onSave, onClose }) {
   const [form, setForm] = useState({
     title: task?.title || '',
     dueDate: task?.dueDate || today(),
@@ -112,7 +111,7 @@ function TaskModal({ task, onSave, onClose }) {
               <div className="form-group">
                 <label className="form-label">Category</label>
                 <select className="form-select" value={form.category} onChange={e => set('category', e.target.value)}>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </select>
               </div>
             </div>
@@ -195,6 +194,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete }) {
 export default function Tasks() {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('grid')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -205,7 +205,11 @@ export default function Tasks() {
   const [showModal, setShowModal] = useState(false)
 
   useEffect(() => {
-    getTasks(user.id).then(t => { setTasks(t); setLoading(false) })
+    Promise.all([getTasks(user.id), getCategories(user.id)]).then(([t, c]) => {
+      setTasks(t)
+      setCategories(c)
+      setLoading(false)
+    })
   }, [user.id])
 
   const handleToggle = async (id) => {
@@ -264,7 +268,7 @@ export default function Tasks() {
   const activeCount = tasks.filter(t => !t.completed).length
   const completedCount = tasks.filter(t => t.completed).length
   const overdueCount = tasks.filter(t => !t.completed && t.dueDate < todayStr).length
-  const categories = [...new Set(tasks.map(t => t.category).filter(Boolean))]
+  const usedCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))]
 
   if (loading) return <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}><p style={{ color: 'var(--muted)' }}>Loading tasks...</p></div>
 
@@ -309,7 +313,7 @@ export default function Tasks() {
             <span className="task-filter-label">Category</span>
             <select className="form-select" style={{ padding: '5px 10px', fontSize: '13px', width: 'auto' }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
               <option value="all">All Categories</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              {usedCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div className="task-filter-group" style={{ marginLeft: 'auto' }}>
@@ -340,6 +344,7 @@ export default function Tasks() {
       {showModal && (
         <TaskModal
           task={modalTask}
+          categories={categories}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setModalTask(null) }}
         />
