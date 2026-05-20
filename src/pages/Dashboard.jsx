@@ -238,8 +238,10 @@ export default function Dashboard() {
     const startX = e.clientX
     const startW = charts.offsetWidth
     const minW = 405
+    const parentW = charts.parentElement.offsetWidth
+    const maxW = parentW - 20 - 300   // 20 divider + 300 min stats
     const onMove = (ev) => {
-      const newW = Math.max(minW, startW + (ev.clientX - startX))
+      const newW = Math.max(minW, Math.min(maxW, startW + (ev.clientX - startX)))
       charts.style.width = newW + 'px'
       charts.classList.toggle('dash-charts-compact', newW < 500)
     }
