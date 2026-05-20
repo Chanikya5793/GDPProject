@@ -237,10 +237,11 @@ export default function Dashboard() {
     if (!charts) return
     const startX = e.clientX
     const startW = charts.offsetWidth
+    const minW = 405
     const onMove = (ev) => {
-      const newW = Math.max(200, startW + (ev.clientX - startX))
+      const newW = Math.max(minW, startW + (ev.clientX - startX))
       charts.style.width = newW + 'px'
-      charts.classList.toggle('dash-charts-compact', newW < 420)
+      charts.classList.toggle('dash-charts-compact', newW < 500)
     }
     const onUp = () => {
       window.removeEventListener('mousemove', onMove)
