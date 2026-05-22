@@ -5,8 +5,12 @@ import { getReminders } from '../api/reminders'
 import { Check } from 'lucide-react'
 import '../css/Calendar.css'
 
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function formatTime(t) {

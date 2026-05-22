@@ -112,9 +112,9 @@ export default function Notes() {
   const selectedNote = notes.find(n => n.id === selectedId)
   const selectedTags = selectedNote ? tags.filter(t => selectedNote.tagIds.includes(t.id)) : []
 
-  const selectNote = (note) => {
+  const selectNote = async (note) => {
     if (dirty && selectedNote) {
-      handleSave()
+      await handleSave()
     }
     setSelectedId(note.id)
     setEditTitle(note.title)
@@ -203,6 +203,8 @@ export default function Notes() {
       .replace(/^- (.+)$/gm, '<li>$1</li>')
       .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
       .replace(/\n/g, '<br/>')
+    // Wrap consecutive <li> runs in <ul>
+    html = html.replace(/((?:<li>.*?<\/li>(?:<br\/?>)*)+)/g, '<ul>$1</ul>')
     return html
   }
 
