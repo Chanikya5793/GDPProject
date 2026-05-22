@@ -25,6 +25,10 @@ function AppLayout({ children }) {
     <div className="app-shell">
       <SidebarNav />
       <div className="main-content">
+        <div className="beta-banner">
+          <span>Beta</span>
+          This is a demo version for testing purposes only — data is stored locally in your browser.
+        </div>
         {children}
       </div>
     </div>
