@@ -6,18 +6,22 @@ import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown } from 'lucide-react'
 import '../css/Tasks.css'
 
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr + 'T00:00:00')
   const now = new Date()
-  const todayStr = now.toISOString().split('T')[0]
+  const todayStr = localDateStr(now)
   const tomorrow = new Date(now)
   tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowStr = tomorrow.toISOString().split('T')[0]
+  const tomorrowStr = localDateStr(tomorrow)
   if (dateStr === todayStr) return 'Today'
   if (dateStr === tomorrowStr) return 'Tomorrow'
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })

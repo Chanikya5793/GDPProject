@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Home, Calendar, CheckSquare, Bell, FileText, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react'
@@ -14,9 +14,9 @@ export default function SidebarNav() {
     document.documentElement.setAttribute('data-sidebar', next ? 'collapsed' : 'expanded')
   }
 
-  if (typeof document !== 'undefined') {
+  useEffect(() => {
     document.documentElement.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded')
-  }
+  }, [collapsed])
 
   return (
     <aside className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`}>

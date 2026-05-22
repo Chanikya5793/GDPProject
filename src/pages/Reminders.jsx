@@ -4,8 +4,12 @@ import { getReminders, createReminder, updateReminder, deleteReminder } from '..
 import { Bell, Pencil, Trash2, List, LayoutGrid, X } from 'lucide-react'
 import '../css/Reminders.css'
 
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function formatTime(t) {

@@ -20,20 +20,26 @@ function formatTime(timeStr) {
   return `${display}:${m} ${ampm}`
 }
 
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function daysFromNow(n) {
   const d = new Date()
   d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
+  return localDateStr(d)
 }
 
-function PieChart({ data, size = 150 }) {
+const PIE_SIZE = 120
+function PieChart({ data }) {
   const [hovered, setHovered] = useState(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const total = data.reduce((s, d) => s + d.value, 0)
+  const size = PIE_SIZE
   const c = size / 2, r = c - 2, ir = r * 0.58
 
   if (total === 0) return (
@@ -405,11 +411,11 @@ export default function Dashboard() {
         <div className="dash-charts">
           <div className="dash-chart-card dash-chart-square">
             <div className="dash-chart-title">Tasks by Priority</div>
-            <PieChart data={priorityData} size={140} />
+            <PieChart data={priorityData} />
           </div>
           <div className="dash-chart-card dash-chart-square">
             <div className="dash-chart-title">Task Status</div>
-            <PieChart data={statusData} size={140} />
+            <PieChart data={statusData} />
           </div>
         </div>
       </div>
