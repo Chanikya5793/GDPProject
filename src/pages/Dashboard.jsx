@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
@@ -229,33 +229,6 @@ export default function Dashboard() {
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
   const [quickMode, setQuickMode] = useState(null)
-  const chartsRef = useRef(null)
-
-  const handleDividerDown = useCallback((e) => {
-    e.preventDefault()
-    const charts = chartsRef.current
-    if (!charts) return
-    const startX = e.clientX
-    const startW = charts.offsetWidth
-    const minW = 405
-    const parentW = charts.parentElement.offsetWidth
-    const maxW = parentW - 20 - 300   // 20 divider + 300 min stats
-    const onMove = (ev) => {
-      const newW = Math.max(minW, Math.min(maxW, startW + (ev.clientX - startX)))
-      charts.style.width = newW + 'px'
-      charts.classList.toggle('dash-charts-compact', newW < 500)
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [])
 
   useEffect(() => {
     async function load() {
@@ -354,41 +327,6 @@ export default function Dashboard() {
 
       <div className="page-body">
         <div className="dash-analytics">
-          <div className="dash-charts dash-charts-compact" ref={chartsRef}>
-            <div className="dash-chart-card">
-              <div className="dash-chart-title">Tasks by Priority</div>
-              <div className="dash-chart-body">
-                <PieChart data={priorityData} size={140} />
-                <div className="pie-legend">
-                  {priorityData.map((d, i) => (
-                    <div key={i} className="pie-legend-item">
-                      <span className="pie-legend-dot" style={{ background: d.color }} />
-                      <span>{d.label}</span>
-                      <span className="pie-legend-val">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="dash-chart-card">
-              <div className="dash-chart-title">Task Status</div>
-              <div className="dash-chart-body">
-                <PieChart data={statusData} size={140} />
-                <div className="pie-legend">
-                  {statusData.map((d, i) => (
-                    <div key={i} className="pie-legend-item">
-                      <span className="pie-legend-dot" style={{ background: d.color }} />
-                      <span>{d.label}</span>
-                      <span className="pie-legend-val">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="dash-divider" onMouseDown={handleDividerDown}>
-            <div className="dash-divider-line" />
-          </div>
           <div className="dash-stats-row">
             <div className="dash-stat-mini" style={{ background: '#FFA6A6' }}>
               <div className="dash-stat-n" style={{ color: '#9C4848' }}>{overdue.length}</div>
@@ -461,6 +399,17 @@ export default function Dashboard() {
                 </>
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="dash-charts">
+          <div className="dash-chart-card dash-chart-square">
+            <div className="dash-chart-title">Tasks by Priority</div>
+            <PieChart data={priorityData} size={140} />
+          </div>
+          <div className="dash-chart-card dash-chart-square">
+            <div className="dash-chart-title">Task Status</div>
+            <PieChart data={statusData} size={140} />
           </div>
         </div>
       </div>
