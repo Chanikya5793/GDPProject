@@ -7,71 +7,40 @@
   flex-wrap: wrap;
 }
 
-/* ANALYTICS ROW — Charts | Divider | Stats */
+/* STAT CARDS ROW */
 .dash-analytics {
   display: flex;
-  align-items: center;
-  gap: 0;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
+/* PIE CHART CARDS — bottom of page */
 .dash-charts {
   display: flex;
-  gap: 12px;
-  flex-shrink: 0;
-  flex-grow: 0;
-  min-width: 405px;
+  gap: 16px;
+  margin-top: 20px;
 }
 
 .dash-chart-card {
-  flex: 1;
-  min-width: 0;
   background: var(--white);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px;
 }
 
+.dash-chart-square {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .dash-chart-title {
   font-size: 12px;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
-.dash-chart-body {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* Hide legends when charts section is narrow */
-.dash-charts-compact .pie-legend {
-  display: none;
-}
-
-/* DRAGGABLE DIVIDER */
-.dash-divider {
-  width: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: col-resize;
-  flex-shrink: 0;
-}
-
-.dash-divider-line {
-  width: 3px;
-  height: 32px;
-  background: var(--border);
-  border-radius: 2px;
-  transition: background .15s, height .15s;
-}
-
-.dash-divider:hover .dash-divider-line {
-  background: var(--green);
-  height: 48px;
-}
 
 /* PIE CHART */
 .pie-wrap {
@@ -126,41 +95,10 @@
   font-size: 11px;
 }
 
-/* PIE LEGEND — vertical list beside chart */
-.pie-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.pie-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.pie-legend-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.pie-legend-val {
-  font-weight: 700;
-  margin-left: 2px;
-}
-
 /* STAT CARDS — single row, evenly distributed */
 .dash-stats-row {
   display: flex;
   gap: 10px;
-  flex: 1;
-  min-width: 300px;
 }
 
 .dash-stat-mini {
@@ -305,27 +243,12 @@
 
 /* RESPONSIVE */
 @media (max-width: 900px) {
-  .dash-analytics {
-    flex-direction: column;
+  .dash-stats-row {
+    flex-wrap: wrap;
   }
 
   .dash-charts {
-    width: 100% !important;
-  }
-
-  .dash-divider {
-    width: 100%;
-    height: 16px;
-    cursor: default;
-  }
-
-  .dash-divider-line {
-    width: 32px;
-    height: 3px;
-  }
-
-  .dash-stats-row {
-    grid-template-columns: repeat(4, 1fr);
+    flex-wrap: wrap;
   }
 
   .dash-grid {
