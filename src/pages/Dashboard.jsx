@@ -3,110 +3,8 @@ import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
-import { getCategories } from "../api/categories"
-import { Check, Bell } from "lucide-react"
+import { Check, Bell, X } from "lucide-react"
 import "../css/Dashboard.css"
-
-// HARDCODED DATA - replace with API data
-
-const STATS = [
-  {
-    label: 'Overdue', value: 2,
-    danger: true
-  },
-  { 
-    label: 'Due Today',
-    value: 3,
-    danger: false
-  },
-  {
-    label: 'This Week',
-    value: 8,
-    danger: false
-  },
-  {
-    label: 'Completed',
-    value: 12,
-    danger: false,
-    success: true
-  },
-]
-
-const OVERDUE_TASKS = [
-  {
-    id: 1,
-    title: 'Submit History Essay',
-    category: 'Homework',
-    priority: 'high'
-  },
-  {
-    id: 2,
-    title: 'Complete Biology Lab Report',
-    category: 'Lab',
-    priority: 'high' 
-},
-]
-
-const TODAY_TASKS = [
-  {
-    id: 3,
-    title: 'Read Chapter 5 - Organic Chemistry',
-    category: 'Reading',
-    priority: 'high'
-  },
-  {
-    id: 4,
-    title: 'CS Problem Set 3',
-    category: 'Homework',
-    priority: 'medium'
-  },
-]
-
-const TODAY_REMINDERS = [
-  {
-    id: 1,
-    title: 'Advisor Meeting',
-    time: '10:00 AM'
-  },
-]
-
-const UPCOMING = [
-  {
-    id: 5,
-    _type: 'task',
-    title: 'Study for CS Midterm',
-    date: 'Thu, May 15',
-    priority: 'medium'
-  },
-  {
-    id: 2,
-    _type: 'reminder',
-    title: 'Study Group - Library Rm 204',
-    date: 'Thu, May 15',
-    time: '2:00 PM'
-  },
-  {
-    id: 6,
-    _type: 'task',
-    title: 'Math Homework Chapter 7',
-    date: 'Fri, May 16',
-    priority: 'low'
-  },
-  {
-    id: 3,
-    _type: 'reminder',
-    title: 'Office Hours - Prof. Martinez',
-    date: 'Fri, May 16',
-    time: '9:30 AM'
-  },
-  {
-    id: 7,
-    _type: 'task',
-    title: 'Research Paper Draft', 
-    date: 'Sat, May 17',
-    priority: 'high'
-  },
-]
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -122,42 +20,230 @@ function formatTime(timeStr) {
   return `${display}:${m} ${ampm}`
 }
 
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function daysFromNow(n) {
   const d = new Date()
   d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
+  return localDateStr(d)
 }
 
-// MAIN PAGE
+const PIE_SIZE = 120
+function PieChart({ data }) {
+  const [hovered, setHovered] = useState(null)
+  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const total = data.reduce((s, d) => s + d.value, 0)
+  const size = PIE_SIZE
+  const c = size / 2, r = c - 2, ir = r * 0.58
+
+  if (total === 0) return (
+    <div className="pie-wrap">
+      <svg viewBox={`0 0 ${size} ${size}`} className="pie-svg">
+        <circle cx={c} cy={c} r={r} fill="var(--off)" stroke="var(--border)" />
+        <circle cx={c} cy={c} r={ir} fill="var(--white)" />
+        <text x={c} y={c} textAnchor="middle" dominantBaseline="middle" fill="var(--muted)" fontSize="12">No data</text>
+      </svg>
+    </div>
+  )
+
+  let a = -90
+  const segs = data.filter(d => d.value > 0).map(d => {
+    const sw = (d.value / total) * 360, sa = a; a += sw
+    if (sw >= 359.99) return { ...d, full: true, pct: 100 }
+    const sr = sa * Math.PI / 180, er = (sa + sw) * Math.PI / 180
+    return {
+      ...d, full: false, pct: Math.round(d.value / total * 100),
+      d: `M${c} ${c}L${c + r * Math.cos(sr)} ${c + r * Math.sin(sr)}A${r} ${r} 0 ${sw > 180 ? 1 : 0} 1 ${c + r * Math.cos(er)} ${c + r * Math.sin(er)}Z`
+    }
+  })
+
+  return (
+    <div className="pie-wrap" onMouseMove={e => { const b = e.currentTarget.getBoundingClientRect(); setPos({ x: e.clientX - b.left, y: e.clientY - b.top }) }}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="pie-svg">
+        {segs.map((s, i) => s.full
+          ? <circle key={i} cx={c} cy={c} r={r} fill={s.color} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="pie-seg" />
+          : <path key={i} d={s.d} fill={s.color} stroke="var(--white)" strokeWidth="2" onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="pie-seg" />
+        )}
+        <circle cx={c} cy={c} r={ir} fill="var(--white)" />
+        <text x={c} y={c - 5} textAnchor="middle" dominantBaseline="middle" fontSize="22" fontWeight="800" fill="var(--text)">{total}</text>
+        <text x={c} y={c + 13} textAnchor="middle" dominantBaseline="middle" fontSize="9" fontWeight="700" fill="var(--muted)" letterSpacing=".08em">TOTAL</text>
+      </svg>
+      {hovered !== null && (
+        <div className="pie-tip" style={{ left: pos.x + 14, top: pos.y - 34 }}>
+          <span className="pie-tip-dot" style={{ background: segs[hovered].color }} />
+          <span className="pie-tip-label">{segs[hovered].label}</span>
+          <span className="pie-tip-val">{segs[hovered].value} ({segs[hovered].pct}%)</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QuickTaskModal({ onSave, onClose }) {
+  const [title, setTitle] = useState('')
+  const [dueDate, setDueDate] = useState(today())
+  const [priority, setPriority] = useState('medium')
+  const [addReminders, setAddReminders] = useState(false)
+  const [reminders, setReminders] = useState([{ date: today(), time: '' }])
+
+  const toggleReminders = (checked) => {
+    setAddReminders(checked)
+    if (checked && reminders.length === 0) {
+      setReminders([{ date: dueDate, time: '' }])
+    }
+  }
+
+  const addReminderEntry = () => {
+    setReminders(prev => [...prev, { date: dueDate, time: '' }])
+  }
+
+  const updateReminderEntry = (i, field, value) => {
+    setReminders(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
+  }
+
+  const removeReminderEntry = (i) => {
+    const next = reminders.filter((_, idx) => idx !== i)
+    if (next.length === 0) {
+      setAddReminders(false)
+      setReminders([{ date: dueDate, time: '' }])
+    } else {
+      setReminders(next)
+    }
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    onSave({ title, dueDate, priority, category: 'Homework', dueTime: '', notes: '', reminders: addReminders ? reminders : [] })
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">Quick Task</h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Title</label>
+              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs to be done?" autoFocus />
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Due Date</label>
+                <input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Priority</label>
+                <select className="form-select" value={priority} onChange={e => setPriority(e.target.value)}>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+            <div className="reminder-section">
+              <label className="form-checkbox">
+                <input type="checkbox" checked={addReminders} onChange={e => toggleReminders(e.target.checked)} />
+                <Bell size={14} />
+                <span>Also create reminders</span>
+              </label>
+              {addReminders && (
+                <div className="reminder-entries">
+                  {reminders.map((rem, i) => (
+                    <div key={i} className="reminder-entry">
+                      <input type="date" className="form-input" value={rem.date} onChange={e => updateReminderEntry(i, 'date', e.target.value)} />
+                      <input type="time" className="form-input" value={rem.time} onChange={e => updateReminderEntry(i, 'time', e.target.value)} />
+                      <button type="button" className="btn-icon btn-icon-danger" onClick={() => removeReminderEntry(i)} title="Remove">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className="reminder-add-btn" onClick={addReminderEntry}>
+                    + Add another reminder
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Add Task</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function QuickReminderModal({ onSave, onClose }) {
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState(today())
+  const [time, setTime] = useState('')
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    onSave({ title, date, time, notes: '' })
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">Quick Reminder</h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Title</label>
+              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="What do you need to remember?" autoFocus />
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Date</label>
+                <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Time</label>
+                <input className="form-input" type="time" value={time} onChange={e => setTime(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">Add Reminder</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
-  const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState([true])
-  const [quickMode, setQuickMode] = useState([null])
-
-  // QUICK ADD STATE
-  const [qTitle, setQTitle] = useState('')
-  const [qDate, setQDate] = useState(today())
-  const [qTime, setQTime] = useState('09:00')
-  const [qPriority, setQPriority] = useState('medium')
-  const [qCategory, setQCategory] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [quickMode, setQuickMode] = useState(null)
 
   useEffect(() => {
     async function load() {
-      const [t, r, c] = await Promise.all([
+      const [t, r] = await Promise.all([
         getTasks(user.id),
         getReminders(user.id),
-        getCategories(user.id),
       ])
       setTasks(t)
       setReminders(r)
-      setCategories(c)
       setLoading(false)
     }
     load()
@@ -173,7 +259,18 @@ export default function Dashboard() {
   const remUpcoming = reminders.filter(r => r.date > todayStr && r.date <= weekStr)
   const completed = tasks.filter(t => t.completed).length
 
-  // MERGE UPCOMING TASKS & REMINDERS
+  const priorityData = [
+    { label: 'High', value: tasks.filter(t => !t.completed && t.priority === 'high').length, color: '#D57272' },
+    { label: 'Medium', value: tasks.filter(t => !t.completed && t.priority === 'medium').length, color: '#EDC78F' },
+    { label: 'Low', value: tasks.filter(t => !t.completed && t.priority === 'low').length, color: '#8BD4A0' },
+  ]
+
+  const statusData = [
+    { label: 'Overdue', value: overdue.length, color: '#DC2626' },
+    { label: 'On Track', value: tasks.filter(t => !t.completed && t.dueDate >= todayStr).length, color: '#006A4E' },
+    { label: 'Completed', value: completed, color: '#B8DDD0' },
+  ]
+
   const timeline = [
     ...upcoming.map(t => ({ ...t, _type: 'task' })),
     ...remUpcoming.map(r => ({ ...r, _type: 'reminder' })),
@@ -182,40 +279,32 @@ export default function Dashboard() {
     const bDate = b.dueDate || b.date
     return aDate < bDate ? -1 : aDate > bDate ? 1 : 0
   })
-  
+
   const handleToggle = async (id) => {
     const updated = await toggleTask(id)
     setTasks(prev => prev.map(t => t.id === id ? updated : t))
   }
-  
-  const handleQuickAdd = async (e) => {
-    e.preventDefault()
-    if (!qTitle.trim()) return
-    if (quickMode === 'task') {
-      const newTask = await createTask({
+
+  const handleQuickTask = async (form) => {
+    const { reminders: remindersList = [], ...taskData } = form
+    const created = await createTask({ ...taskData, userId: user.id })
+    setTasks(prev => [...prev, created])
+    for (const rem of remindersList) {
+      const reminder = await createReminder({
         userId: user.id,
-        title: qTitle,
-        dueDate: qDate,
-        dueTime: qTime,
-        priority: qPriority,
-        category: qCategory,
+        title: taskData.title,
+        date: rem.date,
+        time: rem.time,
         notes: '',
       })
-      setTasks(prev => [...prev, newTask])
-    } else {
-      const newReminder = await createReminder({
-        userId: user.id,
-        title: qTitle,
-        date: qDate,
-        time: qTime,
-        notes: '',
-      })
-      setReminders(prev => [...prev, newReminder])
+      setReminders(prev => [...prev, reminder])
     }
-    setQTitle('')
-    setQDate(today())
-    setQTime('09:00')
-    setQCategory(categories[0]?.name || '')
+    setQuickMode(null)
+  }
+
+  const handleQuickReminder = async (form) => {
+    const created = await createReminder({ ...form, userId: user.id })
+    setReminders(prev => [...prev, created])
     setQuickMode(null)
   }
 
@@ -231,109 +320,43 @@ export default function Dashboard() {
 
   return (
     <>
-      {/* PAGE HEADER - greeting + quick add buttons */}
       <div className="page-header">
         <div className="page-header-left">
           <h1>{greeting}, {firstName}</h1>
           <p>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
         <div className="dash-quick-btns">
-          {/* These buttons will open a quick-add form */}
-          <button className="btn-primary" onClick={() => setQuickMode(quickMode === 'task' ? null : 'task')}>+ Quick Task</button>
-          <button className="btn-secondary" onClick={() => setQuickMode(quickMode === 'reminder' ? null : 'reminder')}>+ Quick Reminder</button>
+          <button className="btn-primary" onClick={() => setQuickMode('task')}>+ Quick Task</button>
+          <button className="btn-secondary" onClick={() => setQuickMode('reminder')}>+ Quick Reminder</button>
         </div>
       </div>
 
       <div className="page-body">
-
-        {/* QUICK ADD FORM */}
-        {quickMode && (
-          <div className="quick-add-bar card" style={{ marginBottom: '24px' }}>
-            <form onSubmit={handleQuickAdd}>
-              <div className="quick-add-title">
-                Quick Add - {quickMode === 'task' ? 'Task' : 'Reminder'}
-              </div>
-              <div className="quick-add-row">
-                <input
-                  className="form-input"
-                  placeholder={quickMode === 'task' ? 'Task title...' : 'Reminder title...'}
-                  value={qTitle}
-                  onChange={e => setQTitle(e.target.value)}
-                  autoFocus
-                  required
-                  />
-                  <input
-                    className="form-input"
-                    type="date"
-                    value={qDate}
-                    onChange={e => setQDate(e.target.value)}
-                    required
-                  />
-                  {quickMode === 'task' ? (
-                    <>
-                      <input
-                        className="form-input"
-                        type="time"
-                        value={qTime}
-                        onChange={e => setQTime(e.target.value)}
-                      />
-                      <select className="form-select" value={qPriority} onChange={e => setQPriority(e.target.value)}>
-                        <option value="high">High Priority</option>
-                        <option value="medium">Medium Priority</option>
-                        <option value="low">Low Priority</option>
-                      </select>
-                      <select className="form-select" value={qCategory} onChange={e => setQCategory(e.target.value)}>
-                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                      </select>
-                    </>
-                  ) : (
-                    <input
-                      className="form-input"
-                      type="time"
-                      value={qTime}
-                      onChange={e => setQTime(e.target.value)}
-                      required
-                    />
-                  )}
-                  <button type="submit" className="btn-primary">Save</button>
-                  <button type="button" className="btn-ghost" onClick={() => setQuickMode(null)}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* STAT CARDS */}
-        {/* Four numbers - overdue, today, week, completed */}
-        <div className="dash-stats">
-          <div className={`dash-stat ${overdue.length > 0 ? 'dash-stat-danger' : ''}`}>
-            <div className="dash-stat-n" style={{ color: overdue.length > 0 ? 'var(--red)' : 'var(--green)' }}>
-              {overdue.length}
+        <div className="dash-analytics">
+          <div className="dash-stats-row">
+            <div className="dash-stat-mini" style={{ background: '#FFA6A6' }}>
+              <div className="dash-stat-n" style={{ color: '#9C4848' }}>{overdue.length}</div>
+              <div className="dash-stat-l">Overdue</div>
             </div>
-            <div className="dash-stat-l">Overdue</div>
-          </div>
-          <div className="dash-stat">
-            <div className="dash-stat-n">{dueToday.length + remToday.length}</div>
-            <div className="dash-stat-l">Due Today</div>
-          </div>
-          <div className="dash-stat">
-            <div className="dash-stat-n">{upcoming.length + remUpcoming.length}</div>
-            <div className="dash-stat-l">This Week</div>
-          </div>
-          <div className="dash-stat">
-            <div className="dash-stat-n" style={{ color: 'var(--green)' }}>{completed}</div>
-            <div className="dash-stat-l">Completed</div>
+            <div className="dash-stat-mini" style={{ background: '#FFEFB5' }}>
+              <div className="dash-stat-n" style={{ color: '#92400E' }}>{dueToday.length + remToday.length}</div>
+              <div className="dash-stat-l">Due Today</div>
+            </div>
+            <div className="dash-stat-mini" style={{ background: '#E2FFAF' }}>
+              <div className="dash-stat-n" style={{ color: '#2D5016' }}>{upcoming.length + remUpcoming.length}</div>
+              <div className="dash-stat-l">This Week</div>
+            </div>
+            <div className="dash-stat-mini" style={{ background: 'var(--green-lt)' }}>
+              <div className="dash-stat-n" style={{ color: 'var(--green)' }}>{completed}</div>
+              <div className="dash-stat-l">Completed</div>
+            </div>
           </div>
         </div>
 
-        {/* TWO COLUMN GRID */}
         <div className="dash-grid">
-
-          {/* LEFT COLUMN - overdue + today */}
           <div className="dash-col">
-
-            {/* OVERDUE SECTION - only shows if there are overdue tasks */}
             {overdue.length > 0 && (
-              <div className="card dash-section" style={{ borderLeft: '4px solid var(--red)' }}>
+              <div className="card dash-section dash-section-overdue">
                 <div className="dash-section-header">
                   <span className="dash-section-title" style={{ color: 'var(--red)' }}>⚠ Overdue</span>
                   <Link to="/tasks" className="dash-section-link">View all</Link>
@@ -344,7 +367,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* DUE TODAY SECTION */}
             <div className="card dash-section">
               <div className="dash-section-header">
                 <span className="dash-section-title">Due Today</span>
@@ -365,7 +387,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN - upcoming 7 days */}
           <div className="dash-col">
             <div className="card dash-section">
               <div className="dash-section-header">
@@ -378,20 +399,33 @@ export default function Dashboard() {
                 <>
                   {timeline.map(item => (
                     item._type === 'task'
-                    ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
-                    : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
+                      ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                      : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
                   ))}
                 </>
               )}
             </div>
           </div>
         </div>
+
+        <div className="dash-charts">
+          <div className="dash-chart-card dash-chart-square">
+            <div className="dash-chart-title">Tasks by Priority</div>
+            <PieChart data={priorityData} />
+          </div>
+          <div className="dash-chart-card dash-chart-square">
+            <div className="dash-chart-title">Task Status</div>
+            <PieChart data={statusData} />
+          </div>
+        </div>
       </div>
+
+      {quickMode === 'task' && <QuickTaskModal onSave={handleQuickTask} onClose={() => setQuickMode(null)} />}
+      {quickMode === 'reminder' && <QuickReminderModal onSave={handleQuickReminder} onClose={() => setQuickMode(null)} />}
     </>
   )
 }
 
-// A task row with a checkbox, title, category, and priority badge
 function TaskRow({ task, onToggle, showDate = false }) {
   return (
     <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
@@ -414,7 +448,6 @@ function TaskRow({ task, onToggle, showDate = false }) {
   )
 }
 
-// A reminder row with a bell icon, title, and time
 function ReminderRow({ reminder, showDate = false }) {
   return (
     <div className="dash-row dash-row-reminder">
