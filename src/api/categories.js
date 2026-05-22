@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'nw-categories'
+const STORAGE_KEY = 'nw_categories'
 
 const BUILT_IN = [
     { id: 'homework', name: 'Homework', color: '#3B82F6', builtin: true },
@@ -6,6 +6,7 @@ const BUILT_IN = [
     { id: 'project', name: 'Project', color: '#7C3AED', builtin: true },
     { id: 'reading', name: 'Reading', color: '#D97706', builtin: true },
     { id: 'lab', name: 'Lab', color: '#16A34A', builtin: true },
+    { id: 'other', name: 'Other', color: '#6B7280', builtin: true },
 ]
 
 function loadCustom() {
@@ -30,6 +31,6 @@ export async function createCategory(category) {
 }
 
 export async function deleteCategory(id) {
-    saveCustom(loadcustom().filter(c => c.id !== id))
+    saveCustom(loadCustom().filter(c => c.id !== id))
     return { success: true }
 }
