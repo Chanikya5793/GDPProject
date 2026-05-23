@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { useAi } from "../context/AiContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
-import { Check, Bell, X, GripVertical, RotateCcw } from "lucide-react"
+import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen } from "lucide-react"
 import "../css/Dashboard.css"
 
 /* ─── Helpers ─── */
@@ -284,6 +285,83 @@ const WIDGET_META = {
   'due-today': { title: 'Due Today', link: { to: '/tasks', text: 'View all tasks' } },
   upcoming:    { title: 'Upcoming — Next 7 Days', link: { to: '/calendar', text: 'Open calendar' } },
   charts:      { title: 'Analytics' },
+  'ai-chat':   { title: 'AI Assistant' },
+}
+
+/* ─── AI Chat Panel (popped-out widget) ─── */
+
+const CHAT_SUGGESTIONS = [
+  'What tasks are due today?',
+  'Show my overdue items',
+]
+
+function AiChatPanel() {
+  const { messages, typing, sendMessage, clearChat } = useAi()
+  const [input, setInput] = useState('')
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, typing])
+
+  const handleSend = () => {
+    if (!input.trim()) return
+    sendMessage(input)
+    setInput('')
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  return (
+    <>
+      <div className="ai-messages">
+        {messages.map(msg => (
+          <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
+            {msg.role === 'bot' && (
+              <div className="ai-msg-avatar"><Bot size={14} /></div>
+            )}
+            <div className="ai-msg-bubble">{msg.text}</div>
+          </div>
+        ))}
+        {typing && (
+          <div className="ai-msg ai-msg-bot">
+            <div className="ai-msg-avatar"><Bot size={14} /></div>
+            <div className="ai-msg-bubble ai-typing"><span /><span /><span /></div>
+          </div>
+        )}
+        {messages.length <= 2 && !typing && (
+          <div className="ai-suggestions">
+            {CHAT_SUGGESTIONS.map((s, i) => (
+              <button key={i} className="ai-suggestion" onClick={() => sendMessage(s)}>{s}</button>
+            ))}
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div className="ai-input-bar">
+        <textarea
+          className="ai-input"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask anything..."
+          rows={1}
+        />
+        <button
+          className={`ai-send${input.trim() ? ' ai-send-active' : ''}`}
+          onClick={handleSend}
+          disabled={!input.trim()}
+        >
+          <Send size={16} />
+        </button>
+      </div>
+    </>
+  )
 }
 
 const DEFAULT_LAYOUT = [
@@ -315,6 +393,7 @@ function persistLayout(layout) {
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { poppedOut, togglePopOut, clearChat } = useAi()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -335,6 +414,24 @@ export default function Dashboard() {
     }
     load()
   }, [user.id])
+
+  /* Sync ai-chat widget with pop-out state */
+  useEffect(() => {
+    setLayout(prev => {
+      const hasChat = prev.some(w => w.id === 'ai-chat')
+      if (poppedOut && !hasChat) {
+        const next = [...prev, { id: 'ai-chat', size: 'half' }]
+        persistLayout(next)
+        return next
+      }
+      if (!poppedOut && hasChat) {
+        const next = prev.filter(w => w.id !== 'ai-chat')
+        persistLayout(next)
+        return next
+      }
+      return prev
+    })
+  }, [poppedOut])
 
   const todayStr = today()
   const weekStr = daysFromNow(7)
@@ -498,6 +595,9 @@ export default function Dashboard() {
           </div>
         )
 
+      case 'ai-chat':
+        return <AiChatPanel />
+
       default:
         return null
     }
@@ -541,6 +641,7 @@ export default function Dashboard() {
                 className={
                   'dash-widget'
                   + ` dash-widget-${widget.size}`
+                  + (widget.id === 'ai-chat' ? ' dash-widget-chat' : '')
                   + (widget.id === 'overdue' && overdue.length > 0 ? ' dash-widget-alert' : '')
                   + (dragIdx === idx ? ' dash-widget-dragging' : '')
                   + (overIdx === idx ? ' dash-widget-dragover' : '')
@@ -554,9 +655,17 @@ export default function Dashboard() {
               >
                 <div className="dash-widget-handle">
                   <div className="dash-widget-grip"><GripVertical size={14} /></div>
+                  {widget.id === 'ai-chat' && <Bot size={14} className="dash-widget-icon" />}
                   <span className="dash-widget-title">{meta.title}</span>
+                  {widget.id === 'ai-chat' && <span className="ai-badge">Beta</span>}
                   {meta.link && (
                     <Link to={meta.link.to} className="dash-widget-link">{meta.link.text}</Link>
+                  )}
+                  {widget.id === 'ai-chat' && (
+                    <div className="dash-widget-chat-actions">
+                      <button className="ai-header-btn" onClick={clearChat} title="Clear chat"><Trash2 size={12} /></button>
+                      <button className="ai-header-btn" onClick={togglePopOut} title="Dock to sidebar"><PanelRightOpen size={14} /></button>
+                    </div>
                   )}
                 </div>
                 <div className="dash-widget-body">
