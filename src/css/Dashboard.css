@@ -110,6 +110,35 @@
   color: var(--red);
 }
 
+/* AI Chat Widget (popped out to grid) */
+.dash-widget-chat .dash-widget-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  height: 420px;
+}
+
+.dash-widget-chat .ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.dash-widget-chat .ai-input-bar {
+  flex-shrink: 0;
+}
+
+.dash-widget-icon {
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.dash-widget-chat-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
 /* ═══════════════════════════════
    STAT CARDS — single row, even
    ═══════════════════════════════ */
