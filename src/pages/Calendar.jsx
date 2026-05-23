@@ -45,6 +45,8 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
   const cells = []
   for (let i = 0; i < firstDay; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  // Pad to complete the last row
+  while (cells.length % 7 !== 0) cells.push(null)
 
   return (
     <div className="cal-month">
@@ -101,7 +103,7 @@ function DayPanel({ date, items, onToggle, onClose }) {
       </div>
 
       {tasks.length === 0 && reminders.length === 0 && (
-        <p style={{ color: 'var(--muted)', fontSize: '14px', padding: '16px 0' }}>Nothing scheduled for this day.</p>
+        <p className="cal-panel-empty">Nothing scheduled for this day.</p>
       )}
 
       {tasks.length > 0 && (
