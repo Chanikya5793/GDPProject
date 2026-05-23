@@ -1,3 +1,5 @@
+import { addToTrash } from './trash'
+
 const STORAGE_KEY = 'nw_tasks'
 
 function load() {
@@ -88,8 +90,16 @@ export async function updateTask(id, updates) {
 
 export async function deleteTask(id) {
     const tasks = load()
+    const task = tasks.find(t => t.id === id)
+    if (task) await addToTrash(task, 'task')
     save(tasks.filter(t => t.id !== id))
     return { success: true }
+}
+
+export function restoreTaskDirect(task) {
+    const tasks = load()
+    tasks.push(task)
+    save(tasks)
 }
 
 export async function toggleTask(id) {

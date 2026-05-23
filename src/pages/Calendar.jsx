@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
 import { getTasks, toggleTask } from '../api/tasks'
 import { getReminders } from '../api/reminders'
 import { Check } from 'lucide-react'
@@ -30,9 +31,16 @@ function ItemPill({ item }) {
   )
 }
 
-function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectDay }) {
-  const firstDay = new Date(year, month, 1).getDay()
+function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectDay, weekStartsOn }) {
+  const startOffset = weekStartsOn === 'monday' ? 1 : 0
+  const rawFirst = new Date(year, month, 1).getDay()
+  const firstDay = (rawFirst - startOffset + 7) % 7
   const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const allDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const dayHeaders = startOffset === 1
+    ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    : allDays
 
   const cells = []
   for (let i = 0; i < firstDay; i++) cells.push(null)
@@ -41,7 +49,7 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
   return (
     <div className="cal-month">
       <div className="cal-month-header">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+        {dayHeaders.map(d => (
           <div key={d} className="cal-month-dow">{d}</div>
         ))}
       </div>
@@ -141,6 +149,7 @@ function DayPanel({ date, items, onToggle, onClose }) {
 
 export default function Calendar() {
   const { user } = useAuth()
+  const { settings } = useSettings()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -238,6 +247,7 @@ export default function Calendar() {
               selectedDate={selectedDate}
               todayStr={todayStr}
               onSelectDay={onSelectDay}
+              weekStartsOn={settings.weekStartsOn}
             />
           </div>
 
