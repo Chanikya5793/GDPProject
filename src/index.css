@@ -293,15 +293,21 @@ button { font-family: inherit; cursor: pointer; }
 /* MAIN CONTENT */
 .main-content {
   margin-left: 220px;
+  margin-right: 360px;
   flex: 1;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  transition: margin-left .3s cubic-bezier(.4,0,.2,1);
+  transition: margin-left .3s cubic-bezier(.4,0,.2,1),
+              margin-right .3s cubic-bezier(.4,0,.2,1);
 }
 
 [data-sidebar="collapsed"] .main-content {
   margin-left: 64px;
+}
+
+[data-ai-sidebar="collapsed"] .main-content {
+  margin-right: 52px;
 }
 
 /* PAGE HEADER */

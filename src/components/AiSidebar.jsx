@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, X, Send, Sparkles, Trash2 } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import '../css/AiSidebar.css'
 
 const SUGGESTIONS = [
@@ -21,7 +21,9 @@ function TypingIndicator() {
 }
 
 export default function AiSidebar() {
-  const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() =>
+    localStorage.getItem('nw_ai_sidebar') === 'collapsed'
+  )
   const [messages, setMessages] = useState([
     {
       id: 1,
@@ -34,30 +36,41 @@ export default function AiSidebar() {
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
+  // Sync sidebar state to DOM for CSS
+  useEffect(() => {
+    document.documentElement.setAttribute(
+      'data-ai-sidebar',
+      collapsed ? 'collapsed' : 'expanded'
+    )
+  }, [collapsed])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typing])
 
   useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
+    if (!collapsed) inputRef.current?.focus()
+  }, [collapsed])
+
+  const toggle = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    localStorage.setItem('nw_ai_sidebar', next ? 'collapsed' : 'expanded')
+  }
 
   const sendMessage = (text) => {
     if (!text.trim()) return
-
     const userMsg = { id: Date.now(), role: 'user', text }
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setTyping(true)
 
-    // Simulate bot response
     setTimeout(() => {
-      const botMsg = {
+      setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'bot',
         text: getSkeletonResponse(text),
-      }
-      setMessages(prev => [...prev, botMsg])
+      }])
       setTyping(false)
     }, 1200 + Math.random() * 800)
   }
@@ -71,95 +84,87 @@ export default function AiSidebar() {
     }
   }
 
-  const handleSuggestion = (text) => sendMessage(text)
-
   const clearChat = () => {
-    setMessages([
-      {
-        id: Date.now(),
-        role: 'bot',
-        text: "Chat cleared! How can I help you?",
-      },
-    ])
+    setMessages([{
+      id: Date.now(),
+      role: 'bot',
+      text: "Chat cleared! How can I help you?",
+    }])
   }
 
   return (
-    <>
-      {/* Floating toggle button */}
-      {!open && (
-        <button className="ai-fab" onClick={() => setOpen(true)} title="Open AI Assistant">
-          <Sparkles size={20} />
-        </button>
-      )}
-
-      {/* Sidebar panel */}
-      <div className={`ai-sidebar${open ? ' ai-sidebar-open' : ''}`}>
-        {/* Header */}
-        <div className="ai-sidebar-header">
-          <div className="ai-sidebar-title">
-            <Bot size={18} />
-            <span>AI Assistant</span>
-            <span className="ai-badge">Beta</span>
-          </div>
-          <div className="ai-header-actions">
-            <button className="ai-header-btn" onClick={clearChat} title="Clear chat">
-              <Trash2 size={14} />
-            </button>
-            <button className="ai-header-btn" onClick={() => setOpen(false)} title="Close">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="ai-messages">
-          {messages.map(msg => (
-            <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
-              {msg.role === 'bot' && (
-                <div className="ai-msg-avatar"><Bot size={14} /></div>
-              )}
-              <div className="ai-msg-bubble">
-                {msg.text}
-              </div>
-            </div>
-          ))}
-          {typing && <TypingIndicator />}
-
-          {/* Suggestions — only show when few messages */}
-          {messages.length <= 2 && !typing && (
-            <div className="ai-suggestions">
-              {SUGGESTIONS.map((s, i) => (
-                <button key={i} className="ai-suggestion" onClick={() => handleSuggestion(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Input */}
-        <div className="ai-input-bar">
-          <textarea
-            ref={inputRef}
-            className="ai-input"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
-            rows={1}
-          />
-          <button
-            className={`ai-send${input.trim() ? ' ai-send-active' : ''}`}
-            onClick={handleSend}
-            disabled={!input.trim()}
-          >
-            <Send size={16} />
+    <aside className={`ai-sidebar${collapsed ? ' ai-collapsed' : ''}`}>
+      {collapsed ? (
+        /* ─── Collapsed strip ─── */
+        <div className="ai-collapsed-bar">
+          <button className="ai-collapsed-btn" onClick={toggle} title="Open AI Assistant">
+            <Bot size={20} />
           </button>
+          <span className="ai-collapsed-label">AI</span>
         </div>
-      </div>
-    </>
+      ) : (
+        /* ─── Full sidebar ─── */
+        <>
+          <div className="ai-sidebar-header">
+            <div className="ai-sidebar-title">
+              <Bot size={18} />
+              <span>AI Assistant</span>
+              <span className="ai-badge">Beta</span>
+            </div>
+            <div className="ai-header-actions">
+              <button className="ai-header-btn" onClick={clearChat} title="Clear chat">
+                <Trash2 size={14} />
+              </button>
+              <button className="ai-header-btn" onClick={toggle} title="Collapse">
+                <PanelRightClose size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div className="ai-messages">
+            {messages.map(msg => (
+              <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
+                {msg.role === 'bot' && (
+                  <div className="ai-msg-avatar"><Bot size={14} /></div>
+                )}
+                <div className="ai-msg-bubble">{msg.text}</div>
+              </div>
+            ))}
+            {typing && <TypingIndicator />}
+
+            {messages.length <= 2 && !typing && (
+              <div className="ai-suggestions">
+                {SUGGESTIONS.map((s, i) => (
+                  <button key={i} className="ai-suggestion" onClick={() => sendMessage(s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          <div className="ai-input-bar">
+            <textarea
+              ref={inputRef}
+              className="ai-input"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything..."
+              rows={1}
+            />
+            <button
+              className={`ai-send${input.trim() ? ' ai-send-active' : ''}`}
+              onClick={handleSend}
+              disabled={!input.trim()}
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </>
+      )}
+    </aside>
   )
 }
 

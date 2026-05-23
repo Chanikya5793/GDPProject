@@ -1,65 +1,70 @@
-/* AI SIDEBAR */
+/* AI SIDEBAR — Persistent right panel */
 
-/* Floating action button */
-.ai-fab {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--green);
-  color: var(--white);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(0,106,78,.35);
-  z-index: 200;
-  transition: transform .2s ease, box-shadow .2s ease;
-}
-
-.ai-fab:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 24px rgba(0,106,78,.45);
-}
-
-/* Sidebar panel */
 .ai-sidebar {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 380px;
+  width: 360px;
   background: var(--white);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  z-index: 200;
-  transform: translateX(100%);
-  transition: transform .3s cubic-bezier(.4,0,.2,1);
-  box-shadow: -4px 0 24px rgba(0,0,0,0);
+  z-index: 100;
+  transition: width .3s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
 }
 
-.ai-sidebar-open {
-  transform: translateX(0);
-  box-shadow: -4px 0 24px rgba(0,0,0,.08);
+.ai-collapsed {
+  width: 52px;
 }
 
-/* Push main content when open */
-.ai-sidebar-open ~ .main-content,
-[data-ai-open="true"] .main-content {
-  margin-right: 380px;
-  transition: margin-right .3s cubic-bezier(.4,0,.2,1);
+/* ─── Collapsed strip ─── */
+.ai-collapsed-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 16px;
+  gap: 8px;
+  height: 100%;
 }
 
-/* Header */
+.ai-collapsed-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--green-lt);
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+
+.ai-collapsed-btn:hover {
+  background: var(--green);
+  color: var(--white);
+  border-color: var(--green);
+}
+
+.ai-collapsed-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+}
+
+/* ─── Header ─── */
 .ai-sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -94,10 +99,12 @@
 }
 
 .ai-header-btn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--border);
   background: var(--white);
   color: var(--muted);
   display: flex;
@@ -112,14 +119,14 @@
   color: var(--text);
 }
 
-/* Messages area */
+/* ─── Messages area ─── */
 .ai-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 16px;
+  padding: 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 /* Single message row */
@@ -131,7 +138,7 @@
 }
 
 @keyframes aiMsgIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -145,8 +152,8 @@
 }
 
 .ai-msg-avatar {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--green-lt);
   color: var(--green);
@@ -160,8 +167,8 @@
 .ai-msg-bubble {
   padding: 10px 14px;
   border-radius: 14px;
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -178,7 +185,7 @@
   border-bottom-right-radius: 4px;
 }
 
-/* Typing indicator */
+/* ─── Typing indicator ─── */
 .ai-typing {
   display: flex;
   align-items: center;
@@ -187,8 +194,8 @@
 }
 
 .ai-typing span {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--muted);
   opacity: .4;
@@ -203,7 +210,7 @@
   30% { opacity: 1; transform: scale(1.2); }
 }
 
-/* Suggestions */
+/* ─── Suggestions ─── */
 .ai-suggestions {
   display: flex;
   flex-wrap: wrap;
@@ -214,11 +221,13 @@
 .ai-suggestion {
   padding: 7px 12px;
   border-radius: 20px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--green);
   background: var(--green-lt);
-  border: 1px solid var(--green-mid);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--green-mid);
   cursor: pointer;
   transition: all .15s ease;
   font-family: inherit;
@@ -230,7 +239,7 @@
   border-color: var(--green);
 }
 
-/* Input bar */
+/* ─── Input bar ─── */
 .ai-input-bar {
   padding: 12px 14px;
   border-top: 1px solid var(--border);
@@ -244,16 +253,18 @@
 .ai-input {
   flex: 1;
   resize: none;
-  border: 1.5px solid var(--border);
+  border-width: 1.5px;
+  border-style: solid;
+  border-color: var(--border);
   border-radius: 12px;
   padding: 10px 14px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-family: inherit;
   color: var(--text);
   background: var(--off);
   outline: none;
-  min-height: 42px;
-  max-height: 120px;
+  min-height: 40px;
+  max-height: 100px;
   line-height: 1.45;
   transition: border-color .15s ease;
 }
@@ -268,8 +279,8 @@
 }
 
 .ai-send {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
   border: none;
   background: var(--off);
@@ -291,9 +302,12 @@
   background: var(--green-dk);
 }
 
-/* Responsive */
+/* ─── Responsive ─── */
 @media (max-width: 900px) {
   .ai-sidebar {
     width: 100%;
+  }
+  .ai-collapsed {
+    width: 44px;
   }
 }
