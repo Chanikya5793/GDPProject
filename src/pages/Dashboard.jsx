@@ -3,8 +3,10 @@ import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
-import { Check, Bell, X } from "lucide-react"
+import { Check, Bell, X, GripVertical, RotateCcw } from "lucide-react"
 import "../css/Dashboard.css"
+
+/* ─── Helpers ─── */
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -33,6 +35,8 @@ function daysFromNow(n) {
   d.setDate(d.getDate() + n)
   return localDateStr(d)
 }
+
+/* ─── Pie Chart ─── */
 
 const PIE_SIZE = 120
 function PieChart({ data }) {
@@ -84,6 +88,8 @@ function PieChart({ data }) {
     </div>
   )
 }
+
+/* ─── Quick Task Modal ─── */
 
 function QuickTaskModal({ onSave, onClose }) {
   const [title, setTitle] = useState('')
@@ -184,6 +190,8 @@ function QuickTaskModal({ onSave, onClose }) {
   )
 }
 
+/* ─── Quick Reminder Modal ─── */
+
 function QuickReminderModal({ onSave, onClose }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(today())
@@ -229,12 +237,91 @@ function QuickReminderModal({ onSave, onClose }) {
   )
 }
 
+/* ─── Row Components ─── */
+
+function TaskRow({ task, onToggle, showDate = false }) {
+  return (
+    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
+      <button
+        className={`dash-check${task.completed ? ' checked' : ''}`}
+        onClick={() => onToggle(task.id)}
+        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
+      >
+        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
+      </button>
+      <div className="dash-row-body">
+        <div className="dash-row-title">{task.title}</div>
+        <div className="dash-row-meta">
+          {showDate && <span>{formatDate(task.dueDate)}</span>}
+          {!showDate && task.category && <span>{task.category}</span>}
+          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReminderRow({ reminder, showDate = false }) {
+  return (
+    <div className="dash-row dash-row-reminder">
+      <div className="dash-bell"><Bell size={18} /></div>
+      <div className="dash-row-body">
+        <div className="dash-row-title">{reminder.title}</div>
+        <div className="dash-row-meta">
+          {showDate && <span>{formatDate(reminder.date)}</span>}
+          {reminder.time && <span>{formatTime(reminder.time)}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ─── Widget System ─── */
+
+const WIDGET_META = {
+  stats:       { title: 'Overview' },
+  overdue:     { title: 'Overdue', link: { to: '/tasks', text: 'View all' } },
+  'due-today': { title: 'Due Today', link: { to: '/tasks', text: 'View all tasks' } },
+  upcoming:    { title: 'Upcoming — Next 7 Days', link: { to: '/calendar', text: 'Open calendar' } },
+  charts:      { title: 'Analytics' },
+}
+
+const DEFAULT_LAYOUT = [
+  { id: 'stats', size: 'full' },
+  { id: 'overdue', size: 'half' },
+  { id: 'due-today', size: 'half' },
+  { id: 'upcoming', size: 'half' },
+  { id: 'charts', size: 'half' },
+]
+
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem('nw_dash_layout')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(w => w.id && WIDGET_META[w.id])) {
+        return parsed
+      }
+    }
+  } catch { /* use default */ }
+  return DEFAULT_LAYOUT
+}
+
+function persistLayout(layout) {
+  localStorage.setItem('nw_dash_layout', JSON.stringify(layout))
+}
+
+/* ─── Dashboard ─── */
+
 export default function Dashboard() {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
   const [quickMode, setQuickMode] = useState(null)
+  const [layout, setLayout] = useState(loadLayout)
+  const [dragIdx, setDragIdx] = useState(null)
+  const [overIdx, setOverIdx] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -308,31 +395,53 @@ export default function Dashboard() {
     setQuickMode(null)
   }
 
-  if (loading) return (
-    <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-      <p style={{ color: 'var(--muted)' }}>Loading your planner...</p>
-    </div>
-  )
+  /* ── Drag-and-drop handlers ── */
 
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-  const firstName = user.name?.split(' ')[0] || ''
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx)
+    e.dataTransfer.effectAllowed = 'move'
+  }
 
-  return (
-    <>
-      <div className="page-header">
-        <div className="page-header-left">
-          <h1>{greeting}, {firstName}</h1>
-          <p>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
-        </div>
-        <div className="dash-quick-btns">
-          <button className="btn-primary" onClick={() => setQuickMode('task')}>+ Quick Task</button>
-          <button className="btn-secondary" onClick={() => setQuickMode('reminder')}>+ Quick Reminder</button>
-        </div>
-      </div>
+  const handleDragOver = (e, idx) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (idx !== dragIdx) setOverIdx(idx)
+  }
 
-      <div className="page-body">
-        <div className="dash-analytics">
+  const handleDragLeave = () => setOverIdx(null)
+
+  const handleDrop = (e, idx) => {
+    e.preventDefault()
+    if (dragIdx === null || dragIdx === idx) {
+      setDragIdx(null)
+      setOverIdx(null)
+      return
+    }
+    const next = [...layout]
+    const [moved] = next.splice(dragIdx, 1)
+    next.splice(idx, 0, moved)
+    setLayout(next)
+    persistLayout(next)
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  const resetLayout = () => {
+    setLayout([...DEFAULT_LAYOUT])
+    persistLayout(DEFAULT_LAYOUT)
+  }
+
+  /* ── Widget content renderer ── */
+
+  const widgetContent = (id) => {
+    switch (id) {
+      case 'stats':
+        return (
           <div className="dash-stats-row">
             <div className="dash-stat-mini" style={{ background: '#FFA6A6' }}>
               <div className="dash-stat-n" style={{ color: '#9C4848' }}>{overdue.length}</div>
@@ -351,114 +460,116 @@ export default function Dashboard() {
               <div className="dash-stat-l">Completed</div>
             </div>
           </div>
-        </div>
+        )
 
-        <div className="dash-grid">
-          <div className="dash-col">
-            {overdue.length > 0 && (
-              <div className="card dash-section dash-section-overdue">
-                <div className="dash-section-header">
-                  <span className="dash-section-title" style={{ color: 'var(--red)' }}>⚠ Overdue</span>
-                  <Link to="/tasks" className="dash-section-link">View all</Link>
+      case 'overdue':
+        return overdue.length === 0
+          ? <p className="dash-empty">No overdue items — you're on track!</p>
+          : overdue.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)
+
+      case 'due-today':
+        return dueToday.length === 0 && remToday.length === 0
+          ? <p className="dash-empty">Nothing due today — enjoy your day!</p>
+          : <>
+              {dueToday.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)}
+              {remToday.map(rem => <ReminderRow key={rem.id} reminder={rem} />)}
+            </>
+
+      case 'upcoming':
+        return timeline.length === 0
+          ? <p className="dash-empty">Nothing scheduled for the next 7 days.</p>
+          : timeline.map(item =>
+              item._type === 'task'
+                ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
+            )
+
+      case 'charts':
+        return (
+          <div className="dash-charts-inner">
+            <div className="dash-chart-card dash-chart-square">
+              <div className="dash-chart-title">Tasks by Priority</div>
+              <PieChart data={priorityData} />
+            </div>
+            <div className="dash-chart-card dash-chart-square">
+              <div className="dash-chart-title">Task Status</div>
+              <PieChart data={statusData} />
+            </div>
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  /* ── Render ── */
+
+  if (loading) return (
+    <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <p style={{ color: 'var(--muted)' }}>Loading your planner...</p>
+    </div>
+  )
+
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = user.name?.split(' ')[0] || ''
+
+  return (
+    <>
+      <div className="page-header">
+        <div className="page-header-left">
+          <h1>{greeting}, {firstName}</h1>
+          <p>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+        </div>
+        <div className="dash-quick-btns">
+          <button className="btn-ghost" onClick={resetLayout} title="Reset dashboard layout">
+            <RotateCcw size={14} /> Reset
+          </button>
+          <button className="btn-primary" onClick={() => setQuickMode('task')}>+ Quick Task</button>
+          <button className="btn-secondary" onClick={() => setQuickMode('reminder')}>+ Quick Reminder</button>
+        </div>
+      </div>
+
+      <div className="page-body">
+        <div className="dash-widget-grid">
+          {layout.map((widget, idx) => {
+            const meta = WIDGET_META[widget.id]
+            return (
+              <div
+                key={widget.id}
+                className={
+                  'dash-widget'
+                  + ` dash-widget-${widget.size}`
+                  + (widget.id === 'overdue' && overdue.length > 0 ? ' dash-widget-alert' : '')
+                  + (dragIdx === idx ? ' dash-widget-dragging' : '')
+                  + (overIdx === idx ? ' dash-widget-dragover' : '')
+                }
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="dash-widget-handle">
+                  <div className="dash-widget-grip"><GripVertical size={14} /></div>
+                  <span className="dash-widget-title">{meta.title}</span>
+                  {meta.link && (
+                    <Link to={meta.link.to} className="dash-widget-link">{meta.link.text}</Link>
+                  )}
                 </div>
-                {overdue.map(task => (
-                  <TaskRow key={task.id} task={task} onToggle={handleToggle} />
-                ))}
+                <div className="dash-widget-body">
+                  {widgetContent(widget.id)}
+                </div>
               </div>
-            )}
-
-            <div className="card dash-section">
-              <div className="dash-section-header">
-                <span className="dash-section-title">Due Today</span>
-                <Link to="/tasks" className="dash-section-link">View all tasks</Link>
-              </div>
-              {dueToday.length === 0 && remToday.length === 0 ? (
-                <p className="dash-empty">Nothing due today - enjoy your day!</p>
-              ) : (
-                <>
-                  {dueToday.map(task => (
-                    <TaskRow key={task.id} task={task} onToggle={handleToggle} />
-                  ))}
-                  {remToday.map(rem => (
-                    <ReminderRow key={rem.id} reminder={rem} />
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="dash-col">
-            <div className="card dash-section">
-              <div className="dash-section-header">
-                <span className="dash-section-title">Upcoming - Next 7 Days</span>
-                <Link to="/calendar" className="dash-section-link">Open calendar</Link>
-              </div>
-              {timeline.length === 0 ? (
-                <p className="dash-empty">Nothing scheduled for the next 7 days.</p>
-              ) : (
-                <>
-                  {timeline.map(item => (
-                    item._type === 'task'
-                      ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
-                      : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="dash-charts">
-          <div className="dash-chart-card dash-chart-square">
-            <div className="dash-chart-title">Tasks by Priority</div>
-            <PieChart data={priorityData} />
-          </div>
-          <div className="dash-chart-card dash-chart-square">
-            <div className="dash-chart-title">Task Status</div>
-            <PieChart data={statusData} />
-          </div>
+            )
+          })}
         </div>
       </div>
 
       {quickMode === 'task' && <QuickTaskModal onSave={handleQuickTask} onClose={() => setQuickMode(null)} />}
       {quickMode === 'reminder' && <QuickReminderModal onSave={handleQuickReminder} onClose={() => setQuickMode(null)} />}
     </>
-  )
-}
-
-function TaskRow({ task, onToggle, showDate = false }) {
-  return (
-    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
-      <button
-        className={`dash-check${task.completed ? ' checked' : ''}`}
-        onClick={() => onToggle(task.id)}
-        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
-      >
-        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
-      </button>
-      <div className="dash-row-body">
-        <div className="dash-row-title">{task.title}</div>
-        <div className="dash-row-meta">
-          {showDate && <span>{formatDate(task.dueDate)}</span>}
-          {!showDate && task.category && <span>{task.category}</span>}
-          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ReminderRow({ reminder, showDate = false }) {
-  return (
-    <div className="dash-row dash-row-reminder">
-      <div className="dash-bell"><Bell size={18} /></div>
-      <div className="dash-row-body">
-        <div className="dash-row-title">{reminder.title}</div>
-        <div className="dash-row-meta">
-          {showDate && <span>{formatDate(reminder.date)}</span>}
-          {reminder.time && <span>{formatTime(reminder.time)}</span>}
-        </div>
-      </div>
-    </div>
   )
 }
