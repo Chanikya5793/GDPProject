@@ -298,10 +298,12 @@ const CHAT_SUGGESTIONS = [
 function AiChatPanel() {
   const { messages, typing, sendMessage, clearChat } = useAi()
   const [input, setInput] = useState('')
-  const bottomRef = useRef(null)
+  const msgsRef = useRef(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (msgsRef.current) {
+      msgsRef.current.scrollTop = msgsRef.current.scrollHeight
+    }
   }, [messages, typing])
 
   const handleSend = () => {
@@ -319,7 +321,7 @@ function AiChatPanel() {
 
   return (
     <>
-      <div className="ai-messages">
+      <div className="ai-messages" ref={msgsRef}>
         {messages.map(msg => (
           <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
             {msg.role === 'bot' && (
@@ -341,7 +343,6 @@ function AiChatPanel() {
             ))}
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
       <div className="ai-input-bar">
         <textarea
