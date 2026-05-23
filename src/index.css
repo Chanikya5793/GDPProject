@@ -310,6 +310,10 @@ button { font-family: inherit; cursor: pointer; }
   margin-right: 52px;
 }
 
+[data-ai-sidebar="popped"] .main-content {
+  margin-right: 0;
+}
+
 /* PAGE HEADER */
 .page-header {
   background: var(--white);
