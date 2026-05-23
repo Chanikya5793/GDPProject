@@ -1,3 +1,5 @@
+import { addToTrash } from './trash'
+
 const STORAGE_KEY = 'nw_reminders'
 
 function load() {
@@ -66,6 +68,14 @@ export async function updateReminder(id, updates) {
 
 export async function deleteReminder(id) {
     const reminders = load()
+    const reminder = reminders.find(r => r.id === id)
+    if (reminder) await addToTrash(reminder, 'reminder')
     save(reminders.filter(r => r.id !== id))
     return { success: true }
+}
+
+export function restoreReminderDirect(reminder) {
+    const reminders = load()
+    reminders.push(reminder)
+    save(reminders)
 }
