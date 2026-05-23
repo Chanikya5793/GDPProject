@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Trash2, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, ExternalLink } from 'lucide-react'
+import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
 
 const SUGGESTIONS = [
@@ -21,36 +22,32 @@ function TypingIndicator() {
 }
 
 export default function AiSidebar() {
+  const { poppedOut, togglePopOut, messages, typing, sendMessage, clearChat } = useAi()
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('nw_ai_sidebar') === 'collapsed'
   )
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      role: 'bot',
-      text: "Hi! I'm your Northwest Planner assistant. I can help you manage tasks, reminders, notes, and more. What can I help you with?",
-    },
-  ])
   const [input, setInput] = useState('')
-  const [typing, setTyping] = useState(false)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
-  // Sync sidebar state to DOM for CSS
+  /* Sync sidebar state to DOM for CSS margin coordination */
   useEffect(() => {
     document.documentElement.setAttribute(
       'data-ai-sidebar',
-      collapsed ? 'collapsed' : 'expanded'
+      poppedOut ? 'popped' : collapsed ? 'collapsed' : 'expanded'
     )
-  }, [collapsed])
+  }, [collapsed, poppedOut])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typing])
 
   useEffect(() => {
-    if (!collapsed) inputRef.current?.focus()
-  }, [collapsed])
+    if (!collapsed && !poppedOut) inputRef.current?.focus()
+  }, [collapsed, poppedOut])
+
+  /* When popped out, render nothing — chat lives in the dashboard grid */
+  if (poppedOut) return null
 
   const toggle = () => {
     const next = !collapsed
@@ -58,24 +55,10 @@ export default function AiSidebar() {
     localStorage.setItem('nw_ai_sidebar', next ? 'collapsed' : 'expanded')
   }
 
-  const sendMessage = (text) => {
-    if (!text.trim()) return
-    const userMsg = { id: Date.now(), role: 'user', text }
-    setMessages(prev => [...prev, userMsg])
+  const handleSend = () => {
+    sendMessage(input)
     setInput('')
-    setTyping(true)
-
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        role: 'bot',
-        text: getSkeletonResponse(text),
-      }])
-      setTyping(false)
-    }, 1200 + Math.random() * 800)
   }
-
-  const handleSend = () => sendMessage(input)
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -84,18 +67,9 @@ export default function AiSidebar() {
     }
   }
 
-  const clearChat = () => {
-    setMessages([{
-      id: Date.now(),
-      role: 'bot',
-      text: "Chat cleared! How can I help you?",
-    }])
-  }
-
   return (
     <aside className={`ai-sidebar${collapsed ? ' ai-collapsed' : ''}`}>
       {collapsed ? (
-        /* ─── Collapsed strip ─── */
         <div className="ai-collapsed-bar">
           <button className="ai-collapsed-btn" onClick={toggle} title="Open AI Assistant">
             <Bot size={20} />
@@ -103,7 +77,6 @@ export default function AiSidebar() {
           <span className="ai-collapsed-label">AI</span>
         </div>
       ) : (
-        /* ─── Full sidebar ─── */
         <>
           <div className="ai-sidebar-header">
             <div className="ai-sidebar-title">
@@ -112,6 +85,9 @@ export default function AiSidebar() {
               <span className="ai-badge">Beta</span>
             </div>
             <div className="ai-header-actions">
+              <button className="ai-header-btn" onClick={togglePopOut} title="Pop out to dashboard">
+                <ExternalLink size={14} />
+              </button>
               <button className="ai-header-btn" onClick={clearChat} title="Clear chat">
                 <Trash2 size={14} />
               </button>
@@ -166,19 +142,4 @@ export default function AiSidebar() {
       )}
     </aside>
   )
-}
-
-function getSkeletonResponse(input) {
-  const lower = input.toLowerCase()
-  if (lower.includes('due today') || lower.includes('today'))
-    return "You have tasks and reminders due today. I'd pull them from your dashboard, but I'm still in skeleton mode! This feature is coming soon."
-  if (lower.includes('create') || lower.includes('add') || lower.includes('new'))
-    return "I can help create tasks, reminders, and notes. Once connected, I'll handle that for you right from this chat!"
-  if (lower.includes('overdue'))
-    return "I can see you have some overdue items. Once fully wired up, I'll list them here with options to reschedule or complete them."
-  if (lower.includes('summarize') || lower.includes('summary') || lower.includes('week'))
-    return "Here's what your week looks like: I'll soon be able to give you a full breakdown of upcoming tasks, reminders, and deadlines!"
-  if (lower.includes('help'))
-    return "I can help you with:\n- Managing tasks (create, edit, complete)\n- Setting reminders\n- Taking notes\n- Viewing your calendar\n- Summarizing your schedule\n\nJust ask!"
-  return "That's a great question! I'm currently in demo mode, but once fully connected I'll be able to help with all your planner needs."
 }
