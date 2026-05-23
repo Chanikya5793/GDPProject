@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import SidebarNav from './components/SidebarNav'
+import AiSidebar from './components/AiSidebar'
 
 // Pages
 import Login     from './pages/Login'
@@ -31,6 +32,7 @@ function AppLayout({ children }) {
         </div>
         {children}
       </div>
+      <AiSidebar />
     </div>
   )
 }
