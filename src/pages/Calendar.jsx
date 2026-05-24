@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
 import { getTasks, toggleTask, updateTask } from '../api/tasks'
 import { getReminders, updateReminder } from '../api/reminders'
-import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save } from 'lucide-react'
+import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save, CircleCheckBig, Bell } from 'lucide-react'
 import '../css/Calendar.css'
 
 /* ── helpers ── */
@@ -354,9 +354,16 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
                   <input className="cal-panel-input cal-panel-input-sm" type="time" value={editing.dueTime}
                     onChange={e => setEditing(p => ({ ...p, dueTime: e.target.value }))}
                     onKeyDown={handleKey} />
-                  <input className="cal-panel-input cal-panel-input-sm" value={editing.category} placeholder="Category"
-                    onChange={e => setEditing(p => ({ ...p, category: e.target.value }))}
-                    onKeyDown={handleKey} />
+                  <select className="cal-panel-select cal-panel-input-sm" value={editing.category}
+                    onChange={e => setEditing(p => ({ ...p, category: e.target.value }))}>
+                    <option value="">Category</option>
+                    <option value="Reading">Reading</option>
+                    <option value="Lab">Lab</option>
+                    <option value="Exam">Exam</option>
+                    <option value="Homework">Homework</option>
+                    <option value="Project">Project</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </div>
                 <select className="cal-panel-select" value={editing.priority}
                   onChange={e => setEditing(p => ({ ...p, priority: e.target.value }))}>
@@ -465,6 +472,7 @@ export default function Calendar() {
   const [showTasks, setShowTasks] = useState(true)
   const [showReminders, setShowReminders] = useState(true)
   const dropdownRef = useRef(null)
+  const hoverTimeoutRef = useRef(null)
 
   // sync year/month from selectedDate when in non-month views
   useEffect(() => {
@@ -564,7 +572,9 @@ export default function Calendar() {
           <h1>Calendar</h1>
           <p>{taskCount} task{taskCount !== 1 ? 's' : ''} · {remCount} reminder{remCount !== 1 ? 's' : ''}</p>
         </div>
-        <div className="cal-view-dropdown" ref={dropdownRef}>
+        <div className="cal-view-dropdown" ref={dropdownRef}
+          onMouseEnter={() => { clearTimeout(hoverTimeoutRef.current); setViewDropdownOpen(true) }}
+          onMouseLeave={() => { hoverTimeoutRef.current = setTimeout(() => setViewDropdownOpen(false), 250) }}>
           <button className="cal-view-dropdown-btn" onClick={() => setViewDropdownOpen(v => !v)}>
             {currentViewLabel}
             <ChevronDown size={14} className={`cal-view-chevron${viewDropdownOpen ? ' open' : ''}`} />
@@ -605,12 +615,12 @@ export default function Calendar() {
                   className={`cal-legend-item cal-legend-task${!showTasks ? ' cal-legend-off' : ''}`}
                   onClick={() => setShowTasks(v => !v)}
                   title={showTasks ? 'Hide tasks' : 'Show tasks'}
-                >Tasks</button>
+                ><CircleCheckBig size={14} className="cal-legend-icon" />Tasks</button>
                 <button
                   className={`cal-legend-item cal-legend-reminder${!showReminders ? ' cal-legend-off' : ''}`}
                   onClick={() => setShowReminders(v => !v)}
                   title={showReminders ? 'Hide reminders' : 'Show reminders'}
-                >Reminders</button>
+                ><Bell size={14} className="cal-legend-icon" />Reminders</button>
               </div>
             </div>
 
