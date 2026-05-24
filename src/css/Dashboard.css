@@ -25,7 +25,13 @@
   border-color: var(--border);
   border-radius: 14px;
   overflow: hidden;
-  transition: box-shadow .2s ease, opacity .2s ease, transform .15s ease;
+  transition: box-shadow .25s ease, opacity .2s ease, transform .25s ease, border-color .25s ease;
+}
+
+.dash-widget:hover {
+  transform: translateY(-3px);
+  border-color: var(--green-mid);
+  box-shadow: 0 8px 28px rgba(0,106,78,.10), 0 2px 8px rgba(0,0,0,.06);
 }
 
 .dash-widget-full {
@@ -79,11 +85,14 @@
   font-weight: 600;
   color: var(--green);
   cursor: pointer;
-  transition: text-decoration .15s;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: background .15s, color .15s;
 }
 
 .dash-widget-link:hover {
-  text-decoration: underline;
+  background: var(--green);
+  color: #fff;
 }
 
 .dash-widget-body {
@@ -157,6 +166,14 @@
   border-style: solid;
   border-color: rgba(0,0,0,.04);
   min-width: 0;
+  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+  cursor: default;
+}
+
+.dash-stat-mini:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 4px 14px rgba(0,0,0,.1);
+  filter: brightness(1.05);
 }
 
 .dash-stat-n {
@@ -192,6 +209,14 @@
   border-color: var(--border);
   border-radius: 12px;
   padding: 14px;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+  cursor: default;
+}
+
+.dash-chart-card:hover {
+  transform: translateY(-3px) scale(1.02);
+  border-color: var(--green-mid);
+  box-shadow: 0 8px 24px rgba(0,106,78,.12), 0 2px 6px rgba(0,0,0,.06);
 }
 
 .dash-chart-square {
@@ -220,11 +245,13 @@
 
 .pie-seg {
   cursor: pointer;
-  transition: filter .15s ease;
+  transition: filter .2s ease, transform .2s ease;
+  transform-origin: center;
 }
 
 .pie-seg:hover {
-  filter: brightness(1.08) drop-shadow(0 2px 6px rgba(0,0,0,.15));
+  filter: brightness(1.15) drop-shadow(0 3px 8px rgba(0,0,0,.25));
+  transform: scale(1.05);
 }
 
 .pie-tip {
@@ -267,8 +294,16 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 9px 0;
+  padding: 9px 6px;
   border-bottom: 1px solid var(--off);
+  border-radius: 8px;
+  margin: 0 -6px;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+
+.dash-row:hover {
+  background: var(--green-lt);
+  box-shadow: 0 1px 4px rgba(0,106,78,.06);
 }
 
 .dash-row:last-child {
