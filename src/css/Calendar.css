@@ -6,6 +6,8 @@
 
 .cal-view-dropdown {
   position: relative;
+  z-index: 20;
+  flex-shrink: 0;
 }
 
 .cal-view-dropdown-btn {
@@ -22,6 +24,7 @@
   cursor: pointer;
   transition: all .15s;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .cal-view-dropdown-btn:hover {
@@ -158,55 +161,72 @@
 .cal-legend {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .cal-legend-item {
   -webkit-appearance: none;
   appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 6px;
-  border: 1px solid transparent;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1.5px solid transparent;
   cursor: pointer;
   transition: all .2s ease;
   font-family: inherit;
   user-select: none;
 }
 
+.cal-legend-icon {
+  flex-shrink: 0;
+  transition: transform .2s;
+}
+
 .cal-legend-task {
   background: var(--green-lt);
   color: var(--green);
+  border-color: var(--green-mid);
 }
 
 .cal-legend-task:hover {
-  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,106,78,.15);
+  box-shadow: 0 3px 8px rgba(0,106,78,.2);
 }
 
 .cal-legend-reminder {
-  background: #EFF6FF;
-  color: var(--blue);
+  background: #FFF7ED;
+  color: #B45309;
+  border-color: #FDE68A;
 }
 
 .cal-legend-reminder:hover {
-  border-color: var(--blue);
+  background: #D97706;
+  color: #fff;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(59,130,246,.15);
+  box-shadow: 0 3px 8px rgba(217,119,6,.2);
 }
 
 .cal-legend-off {
-  opacity: .35;
-  text-decoration: line-through;
+  opacity: .45;
+  background: var(--off) !important;
+  color: var(--muted) !important;
+  border-color: transparent !important;
   transform: none !important;
   box-shadow: none !important;
 }
+.cal-legend-off .cal-legend-icon {
+  opacity: .5;
+}
 
 .cal-legend-off:hover {
-  opacity: .55;
+  opacity: .7;
 }
 
 /* ═══════════════════════════════════
@@ -829,6 +849,8 @@
    ═══════════════════════════════════ */
 
 @media (max-width: 900px) {
+  .cal-view-dropdown-btn { padding: 6px 12px; font-size: 12px; }
+  .cal-view-dropdown-menu { min-width: 140px; }
   .cal-wrap { flex-direction: column; }
   .cal-panel { width: 100%; position: static; }
   .cal-cell { aspect-ratio: 1 / .7; padding: 4px; }
@@ -857,6 +879,7 @@
 }
 
 @media (max-width: 500px) {
+  .cal-view-dropdown-btn { padding: 5px 10px; font-size: 11px; gap: 4px; border-radius: 7px; }
   .cal-cell { aspect-ratio: auto; min-height: 48px; padding: 3px; }
   .cal-cell-items { display: none; }
   .cal-cell-num { font-size: 12px; text-align: center; }
