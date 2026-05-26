@@ -845,6 +845,116 @@
 }
 
 /* ═══════════════════════════════════
+   HOVER TOOLTIP
+   ═══════════════════════════════════ */
+
+.cal-hover-tip {
+  background: var(--text);
+  color: var(--white);
+  padding: 10px 14px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  pointer-events: none;
+  max-width: 260px;
+  animation: calTipIn .12s ease;
+}
+
+@keyframes calTipIn {
+  from { opacity: 0; transform: translate(-50%, calc(-100% + 4px)); }
+  to   { opacity: 1; transform: translate(-50%, -100%); }
+}
+
+.cal-hover-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--text);
+}
+
+.cal-hover-tip-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.cal-hover-tip-icon.task { color: #6EE7B7; }
+.cal-hover-tip-icon.reminder { color: #FCD34D; }
+
+.cal-hover-tip-type {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  opacity: .6;
+}
+
+.cal-hover-tip-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.cal-hover-tip-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: .7;
+}
+
+.cal-hover-tip-hint {
+  margin-top: 6px;
+  font-size: 10px;
+  opacity: .4;
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════
+   DRAG AND DROP
+   ═══════════════════════════════════ */
+
+/* Draggable items — grab cursor */
+.cal-pill[draggable="true"],
+.cal-tg-event[draggable="true"],
+.cal-tg-chip[draggable="true"],
+.cal-panel-item[draggable="true"] {
+  cursor: grab;
+}
+
+.cal-pill[draggable="true"]:active,
+.cal-tg-event[draggable="true"]:active,
+.cal-tg-chip[draggable="true"]:active,
+.cal-panel-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Drop target highlights — month cells */
+.cal-cell-dragover {
+  background: var(--green-lt) !important;
+  outline: 2px dashed var(--green) !important;
+  outline-offset: -2px;
+  transition: background .1s, outline .1s;
+}
+
+/* Drop target highlights — time grid cells */
+.cal-tg-cell-dragover {
+  background: var(--green-lt) !important;
+  box-shadow: inset 0 0 0 2px var(--green-mid);
+}
+
+/* Drop target highlights — all-day cells */
+.cal-tg-allday-dragover {
+  background: var(--green-lt) !important;
+  box-shadow: inset 0 0 0 2px var(--green-mid);
+}
+
+/* ═══════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════ */
 

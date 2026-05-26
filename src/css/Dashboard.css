@@ -120,11 +120,17 @@
 }
 
 /* AI Chat Widget (popped out to grid) */
+.dash-widget-chat {
+  display: flex;
+  flex-direction: column;
+}
+
 .dash-widget-chat .dash-widget-body {
   display: flex;
   flex-direction: column;
   padding: 0;
-  height: 420px;
+  flex: 1;
+  min-height: 420px;
 }
 
 .dash-widget-chat .ai-messages {
@@ -474,7 +480,64 @@
    ═══════════════════════════ */
 
 .dash-widget-pinned {
-  align-self: start;
+  contain: size;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+/* When user expands a note, let it grow naturally */
+.dash-widget-pinned:has(.expanded) {
+  contain: none;
+}
+
+.dash-widget-pinned .dash-widget-handle {
+  flex-shrink: 0;
+}
+
+.dash-widget-pinned .dash-widget-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dash-widget-pinned .dash-note-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dash-widget-pinned .dash-note-head {
+  flex-shrink: 0;
+}
+
+.dash-widget-pinned .dash-note-preview {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.dash-widget-pinned .dash-note-preview::-webkit-scrollbar {
+  display: none;
+}
+
+.dash-widget-pinned .dash-note-edit-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dash-widget-pinned .dash-note-textarea {
+  flex: 1;
+  min-height: 80px;
+  max-height: none;
 }
 
 .dash-unpin-btn {
