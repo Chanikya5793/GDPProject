@@ -473,6 +473,10 @@
    PINNED NOTE WIDGET
    ═══════════════════════════ */
 
+.dash-widget-pinned {
+  align-self: start;
+}
+
 .dash-unpin-btn {
   display: inline-flex;
   align-items: center;
@@ -638,6 +642,36 @@
   flex-shrink: 0;
 }
 
+.dash-note-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--off);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.dash-note-expand-btn:hover {
+  color: var(--green);
+  border-color: var(--green-mid);
+  background: var(--green-lt);
+}
+
+.dash-note-expand-btn.expanded {
+  color: var(--green);
+  background: var(--green-lt);
+  border-color: var(--green);
+}
+
 .dash-note-preview {
   font-size: 13px;
   line-height: 1.6;
@@ -645,6 +679,16 @@
   max-height: 200px;
   overflow-y: auto;
   padding-right: 4px;
+  transition: max-height .3s ease;
+  scrollbar-width: none;
+}
+
+.dash-note-preview::-webkit-scrollbar {
+  display: none;
+}
+
+.dash-note-preview.expanded {
+  max-height: none;
 }
 .dash-note-preview h1 { font-size: 16px; margin: 6px 0 4px; }
 .dash-note-preview h2 { font-size: 14px; margin: 5px 0 3px; }
@@ -663,6 +707,8 @@
   width: 100%;
   min-height: 140px;
   max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: none;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -675,8 +721,17 @@
   transition: border-color .15s;
   box-sizing: border-box;
 }
+.dash-note-textarea::-webkit-scrollbar {
+  display: none;
+}
+
 .dash-note-textarea:focus {
   border-color: var(--green);
+}
+
+.dash-note-textarea.expanded {
+  max-height: none;
+  min-height: 300px;
 }
 
 .dash-note-save {
