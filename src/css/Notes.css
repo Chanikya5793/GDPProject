@@ -138,14 +138,23 @@
   border-left: 3px solid var(--green); 
 }
 
-.note-list-title { 
-  font-size: 14px; 
-  font-weight: 700; 
-  color: var(--text); 
-  margin-bottom: 4px; 
-  white-space: nowrap; 
-  overflow: hidden; 
-  text-overflow: ellipsis; 
+.note-list-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.note-list-pin-icon {
+  color: var(--green);
+  flex-shrink: 0;
+  transform: rotate(-30deg);
 }
 
 .note-list-preview { 
@@ -230,11 +239,47 @@
   color: var(--border); 
 }
 
-.note-editor-actions { 
-  display: flex; 
-  align-items: center; 
-  gap: 8px; 
-  flex-shrink: 0; 
+.note-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.note-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--muted);
+  background: var(--off);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: all .18s;
+  white-space: nowrap;
+}
+
+.note-pin-btn:hover {
+  color: var(--green);
+  border-color: var(--green-mid);
+  background: var(--green-lt);
+}
+
+.note-pin-btn.pinned {
+  color: var(--green);
+  background: var(--green-lt);
+  border-color: var(--green);
+  font-weight: 700;
+}
+
+.note-pin-btn.pinned:hover {
+  background: #FEE2E2;
+  color: #DC2626;
+  border-color: #FECACA;
 }
 
 .note-saved-badge { 
