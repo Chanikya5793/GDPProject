@@ -599,7 +599,7 @@ function loadLayout() {
     const raw = localStorage.getItem('nw_dash_layout')
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(w => w.id && WIDGET_META[w.id])) {
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(w => w.id && (WIDGET_META[w.id] || w.id.startsWith('note-')))) {
         return parsed
       }
     }
@@ -689,6 +689,28 @@ export default function Dashboard() {
       return prev
     })
   }, [poppedOut])
+
+  /* Sync pinned notes into the layout */
+  useEffect(() => {
+    setLayout(prev => {
+      let next = [...prev]
+      // Remove note widgets no longer pinned
+      next = next.filter(w => !w.id.startsWith('note-') || pinnedNoteIds.includes(Number(w.id.split('-')[1])))
+      // Add newly pinned notes not yet in layout
+      for (const noteId of pinnedNoteIds) {
+        const wid = `note-${noteId}`
+        if (!next.some(w => w.id === wid)) {
+          next.push({ id: wid, size: 'half' })
+        }
+      }
+      // Only persist if changed
+      if (JSON.stringify(next) !== JSON.stringify(prev)) {
+        persistLayout(next)
+        return next
+      }
+      return prev
+    })
+  }, [pinnedNoteIds])
 
   const todayStr = today()
   const weekStr = daysFromNow(7)
@@ -787,8 +809,10 @@ export default function Dashboard() {
   }
 
   const resetLayout = () => {
-    setLayout([...DEFAULT_LAYOUT])
-    persistLayout(DEFAULT_LAYOUT)
+    const noteWidgets = pinnedNoteIds.map(id => ({ id: `note-${id}`, size: 'half' }))
+    const reset = [...DEFAULT_LAYOUT, ...noteWidgets]
+    setLayout(reset)
+    persistLayout(reset)
   }
 
   /* ── Widget content renderer ── */
@@ -894,6 +918,12 @@ export default function Dashboard() {
         return <AiChatPanel />
 
       default:
+        if (id.startsWith('note-')) {
+          const noteId = Number(id.split('-')[1])
+          const note = allNotes.find(n => n.id === noteId)
+          if (!note) return <p className="dash-empty">Note not found.</p>
+          return <PinnedNoteCard note={note} tags={allTags} onUpdate={handleUpdateNote} />
+        }
         return null
     }
   }
@@ -929,7 +959,10 @@ export default function Dashboard() {
       <div className="page-body">
         <div className="dash-widget-grid">
           {layout.map((widget, idx) => {
-            const meta = WIDGET_META[widget.id]
+            const isNote = widget.id.startsWith('note-')
+            const noteId = isNote ? Number(widget.id.split('-')[1]) : null
+            const noteObj = isNote ? allNotes.find(n => n.id === noteId) : null
+            const meta = WIDGET_META[widget.id] || (isNote ? { title: noteObj?.title || 'Note' } : { title: '?' })
             return (
               <div
                 key={widget.id}
@@ -938,6 +971,7 @@ export default function Dashboard() {
                   + ` dash-widget-${widget.size}`
                   + (widget.id === 'ai-chat' ? ' dash-widget-chat' : '')
                   + (widget.id === 'pinned-note' ? ' dash-widget-note' : '')
+                  + (isNote ? ' dash-widget-pinned' : '')
                   + (widget.id === 'overdue' && overdue.length > 0 ? ' dash-widget-alert' : '')
                   + (dragIdx === idx ? ' dash-widget-dragging' : '')
                   + (overIdx === idx ? ' dash-widget-dragover' : '')
@@ -952,11 +986,18 @@ export default function Dashboard() {
                 <div className="dash-widget-handle">
                   <div className="dash-widget-grip"><GripVertical size={14} /></div>
                   {widget.id === 'ai-chat' && <Bot size={14} className="dash-widget-icon" />}
+                  {isNote && <StickyNote size={14} className="dash-widget-icon" />}
                   <span className="dash-widget-title">{meta.title}</span>
                   {widget.id === 'ai-chat' && <span className="ai-badge">Beta</span>}
+                  {isNote && (
+                    <button className="dash-unpin-btn" onClick={() => handleUnpinNote(noteId)} title="Unpin from Dashboard">
+                      <PinIcon size={11} /> Unpin
+                    </button>
+                  )}
                   {meta.link && (
                     <Link to={meta.link.to} className="dash-widget-link">{meta.link.text}</Link>
                   )}
+                  {isNote && <Link to="/notes" className="dash-widget-link">Open</Link>}
                   {widget.id === 'ai-chat' && (
                     <div className="dash-widget-chat-actions">
                       <button className="ai-header-btn" onClick={clearChat} title="Clear chat"><Trash2 size={12} /></button>
@@ -971,27 +1012,6 @@ export default function Dashboard() {
             )
           })}
 
-          {/* Individually pinned notes */}
-          {pinnedNoteIds.map(noteId => {
-            const note = allNotes.find(n => n.id === noteId)
-            if (!note) return null
-            return (
-              <div key={`pinned-${noteId}`} className="dash-widget dash-widget-half dash-widget-pinned">
-                <div className="dash-widget-handle">
-                  <div className="dash-widget-grip"><GripVertical size={14} /></div>
-                  <StickyNote size={14} className="dash-widget-icon" />
-                  <span className="dash-widget-title">{note.title || 'Untitled'}</span>
-                  <button className="dash-unpin-btn" onClick={() => handleUnpinNote(noteId)} title="Unpin from Dashboard">
-                    <PinIcon size={11} /> Unpin
-                  </button>
-                  <Link to="/notes" className="dash-widget-link">Open</Link>
-                </div>
-                <div className="dash-widget-body">
-                  <PinnedNoteCard note={note} tags={allTags} onUpdate={handleUpdateNote} />
-                </div>
-              </div>
-            )
-          })}
         </div>
       </div>
 
