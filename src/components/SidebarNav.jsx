@@ -23,7 +23,7 @@ export default function SidebarNav() {
 
       <div className="sidebar-logo">
         <a href="https://www.nwmissouri.edu/" target="_blank" rel="noreferrer">
-          <img src="/N-Monogm-Green.png" alt="Northwest" className="sidebar-logo-img" />
+          <img src={`${import.meta.env.BASE_URL}N-Monogm-Green.png`} alt="Northwest" className="sidebar-logo-img" />
         </a>
         <div className="sidebar-logo-text sidebar-label">
           Northwest
