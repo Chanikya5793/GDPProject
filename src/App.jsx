@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { AiProvider } from './context/AiContext'
 import { SettingsProvider } from './context/SettingsContext'
@@ -101,9 +101,9 @@ export default function App() {
     <SettingsProvider>
       <AiProvider>
         <AuthProvider>
-          <BrowserRouter>
+          <HashRouter>
             <AppRoutes />
-          </BrowserRouter>
+          </HashRouter>
         </AuthProvider>
       </AiProvider>
     </SettingsProvider>
