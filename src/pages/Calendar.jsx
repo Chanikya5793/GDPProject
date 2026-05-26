@@ -86,12 +86,28 @@ function getNavTitle(view, selectedDate, year, month, weekStartsOn) {
 
 /* ── shared pill ── */
 
+function itemTipData(item) {
+  return JSON.stringify({
+    type: item._type,
+    title: item.title,
+    time: item.dueTime || item.time || '',
+    priority: item.priority || '',
+    category: item.category || '',
+  })
+}
+
 function ItemPill({ item }) {
   const isTask = item._type === 'task'
   return (
     <div
       className={`cal-pill ${isTask ? 'cal-pill-task' : 'cal-pill-reminder'}${item.completed ? ' cal-pill-done' : ''}`}
-      title={item.title}
+      data-cal-item={itemTipData(item)}
+      draggable
+      onDragStart={(e) => {
+        e.stopPropagation()
+        e.dataTransfer.setData('application/json', JSON.stringify({ type: item._type, id: item.id }))
+        e.dataTransfer.effectAllowed = 'move'
+      }}
     >
       {!isTask && '🔔 '}{item.title}
     </div>
@@ -106,12 +122,13 @@ function ItemPill({ item }) {
 const HOUR_HEIGHT = 56
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
-function TimeGridView({ dates, itemsByDate, todayStr }) {
+function TimeGridView({ dates, itemsByDate, todayStr, onItemDrop }) {
   const scrollRef = useRef(null)
   const [nowMinutes, setNowMinutes] = useState(() => {
     const n = new Date()
     return n.getHours() * 60 + n.getMinutes()
   })
+  const [dragOverCell, setDragOverCell] = useState(null)
 
   // scroll to current time area on mount / view change
   useEffect(() => {
@@ -154,10 +171,17 @@ function TimeGridView({ dates, itemsByDate, todayStr }) {
         <div className="cal-tg-corner cal-tg-allday-lbl">All Day</div>
         {dates.map(ds => {
           const items = (itemsByDate[ds] || []).filter(i => !(i.dueTime || i.time))
+          const isOver = dragOverCell?.date === ds && dragOverCell?.allDay
           return (
-            <div key={ds} className="cal-tg-allday-cell">
+            <div key={ds} className={`cal-tg-allday-cell${isOver ? ' cal-tg-allday-dragover' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverCell({ date: ds, allDay: true }) }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverCell(null) }}
+              onDrop={(e) => { e.preventDefault(); setDragOverCell(null); try { const d = JSON.parse(e.dataTransfer.getData('application/json')); if (d.type && d.id) onItemDrop(d.type, d.id, ds, '') } catch {} }}>
               {items.map(item => (
-                <div key={`${item._type[0]}-${item.id}`} className={`cal-tg-chip ${item._type}`} title={item.title}>
+                <div key={`${item._type[0]}-${item.id}`} className={`cal-tg-chip ${item._type}`}
+                  data-cal-item={itemTipData(item)}
+                  draggable
+                  onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('application/json', JSON.stringify({ type: item._type, id: item.id })); e.dataTransfer.effectAllowed = 'move' }}>
                   {item.title}
                 </div>
               ))}
@@ -174,17 +198,23 @@ function TimeGridView({ dates, itemsByDate, todayStr }) {
               <div className="cal-tg-time">{h > 0 ? formatHour(h) : ''}</div>
               {dates.map(ds => {
                 const isToday = ds === todayStr
+                const isOver = dragOverCell?.date === ds && dragOverCell?.hour === h
                 const hourItems = (itemsByDate[ds] || []).filter(i => {
                   const t = i.dueTime || i.time
                   return t && parseInt(t.split(':')[0]) === h
                 })
                 return (
-                  <div key={ds} className={`cal-tg-cell${isToday ? ' today' : ''}`}>
+                  <div key={ds} className={`cal-tg-cell${isToday ? ' today' : ''}${isOver ? ' cal-tg-cell-dragover' : ''}`}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverCell({ date: ds, hour: h }) }}
+                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverCell(null) }}
+                    onDrop={(e) => { e.preventDefault(); setDragOverCell(null); try { const d = JSON.parse(e.dataTransfer.getData('application/json')); if (d.type && d.id) onItemDrop(d.type, d.id, ds, `${String(h).padStart(2, '0')}:00`) } catch {} }}>
                     {hourItems.map(item => (
                       <div
                         key={`${item._type[0]}-${item.id}`}
                         className={`cal-tg-event ${item._type}${item.completed ? ' done' : ''}`}
-                        title={item.title}
+                        data-cal-item={itemTipData(item)}
+                        draggable
+                        onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('application/json', JSON.stringify({ type: item._type, id: item.id })); e.dataTransfer.effectAllowed = 'move' }}
                       >
                         <span className="cal-tg-event-time">{formatTime(item.dueTime || item.time)}</span>
                         <span className="cal-tg-event-title">{item.title}</span>
@@ -212,7 +242,8 @@ function TimeGridView({ dates, itemsByDate, todayStr }) {
    MONTH VIEW
    ══════════════════════════════════════ */
 
-function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectDay, weekStartsOn }) {
+function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectDay, weekStartsOn, onItemDrop }) {
+  const [dragOverDate, setDragOverDate] = useState(null)
   const startOffset = weekStartsOn === 'monday' ? 1 : 0
   const rawFirst = new Date(year, month, 1).getDay()
   const firstDay = (rawFirst - startOffset + 7) % 7
@@ -225,6 +256,15 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
   while (cells.length % 7 !== 0) cells.push(null)
 
+  const handleCellDrop = (e, dateStr) => {
+    e.preventDefault()
+    setDragOverDate(null)
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'))
+      if (data.type && data.id) onItemDrop(data.type, data.id, dateStr)
+    } catch {}
+  }
+
   return (
     <div className="cal-month">
       <div className="cal-month-header">
@@ -232,17 +272,23 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
       </div>
       <div className="cal-month-grid">
         {cells.map((day, i) => {
-          if (!day) return <div key={`empty-${i}`} className="cal-cell cal-cell-empty" />
+          if (!day) return <div key={`empty-${i}`} className="cal-cell cal-cell-empty"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => e.preventDefault()} />
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const isToday = dateStr === todayStr
           const isSelected = dateStr === selectedDate
+          const isDragOver = dragOverDate === dateStr
           const items = itemsByDate[dateStr] || []
           const taskItems = items.filter(x => x._type === 'task')
           const remItems = items.filter(x => x._type === 'reminder')
           return (
             <div key={dateStr}
-              className={`cal-cell${isToday ? ' cal-cell-today' : ''}${isSelected ? ' cal-cell-selected' : ''}`}
+              className={`cal-cell${isToday ? ' cal-cell-today' : ''}${isSelected ? ' cal-cell-selected' : ''}${isDragOver ? ' cal-cell-dragover' : ''}`}
               onClick={() => onSelectDay(dateStr)}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverDate(dateStr) }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverDate(null) }}
+              onDrop={(e) => handleCellDrop(e, dateStr)}
             >
               <div className="cal-cell-num">{day}</div>
               <div className="cal-cell-items">
@@ -376,7 +422,9 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
                   onKeyDown={handleKey} />
               </div>
             ) : (
-              <div key={task.id} className={`cal-panel-item${task.completed ? ' done' : ''}`}>
+              <div key={task.id} className={`cal-panel-item${task.completed ? ' done' : ''}`}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'task', id: task.id })); e.dataTransfer.effectAllowed = 'move' }}>
                 <button className={`task-check${task.completed ? ' checked' : ''}`}
                   style={{ width: '18px', height: '18px', flexShrink: 0 }}
                   onClick={() => onToggle(task.id)}>
@@ -423,7 +471,9 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
                   onKeyDown={handleKey} />
               </div>
             ) : (
-              <div key={rem.id} className="cal-panel-item cal-panel-item-reminder">
+              <div key={rem.id} className="cal-panel-item cal-panel-item-reminder"
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'reminder', id: rem.id })); e.dataTransfer.effectAllowed = 'move' }}>
                 <div style={{ width: '18px', height: '18px', flexShrink: 0 }}>🔔</div>
                 <div className="cal-panel-item-body">
                   <div className="cal-panel-item-title">{rem.title}</div>
@@ -473,6 +523,8 @@ export default function Calendar() {
   const [showReminders, setShowReminders] = useState(true)
   const dropdownRef = useRef(null)
   const hoverTimeoutRef = useRef(null)
+  const calRef = useRef(null)
+  const [hoverTip, setHoverTip] = useState(null)
 
   // sync year/month from selectedDate when in non-month views
   useEffect(() => {
@@ -492,6 +544,35 @@ export default function Calendar() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // Hover tooltip via event delegation
+  useEffect(() => {
+    const el = calRef.current
+    if (!el) return
+    const handleOver = (e) => {
+      const target = e.target.closest('[data-cal-item]')
+      if (target) {
+        try {
+          const data = JSON.parse(target.dataset.calItem)
+          const rect = target.getBoundingClientRect()
+          setHoverTip({ ...data, x: rect.left + rect.width / 2, y: rect.top })
+        } catch {}
+      }
+    }
+    const handleOut = (e) => {
+      const target = e.target.closest('[data-cal-item]')
+      if (target && !target.contains(e.relatedTarget)) setHoverTip(null)
+    }
+    const handleDragStart = () => setHoverTip(null)
+    el.addEventListener('mouseover', handleOver)
+    el.addEventListener('mouseout', handleOut)
+    el.addEventListener('dragstart', handleDragStart, true)
+    return () => {
+      el.removeEventListener('mouseover', handleOver)
+      el.removeEventListener('mouseout', handleOut)
+      el.removeEventListener('dragstart', handleDragStart, true)
+    }
+  }, [loading])
+
   useEffect(() => {
     Promise.all([getTasks(user.id), getReminders(user.id)]).then(([t, r]) => {
       setTasks(t); setReminders(r); setLoading(false)
@@ -501,6 +582,20 @@ export default function Calendar() {
   const handleToggle = async (id) => {
     const updated = await toggleTask(id)
     setTasks(prev => prev.map(t => t.id === id ? updated : t))
+  }
+
+  const handleItemDrop = async (itemType, itemId, newDate, newTime) => {
+    if (itemType === 'task') {
+      const updates = { dueDate: newDate }
+      if (newTime !== undefined) updates.dueTime = newTime
+      const updated = await updateTask(itemId, updates)
+      setTasks(prev => prev.map(t => t.id === itemId ? updated : t))
+    } else if (itemType === 'reminder') {
+      const updates = { date: newDate }
+      if (newTime !== undefined) updates.time = newTime
+      const updated = await updateReminder(itemId, updates)
+      setReminders(prev => prev.map(r => r.id === itemId ? updated : r))
+    }
   }
 
   /* ── view-aware navigation ── */
@@ -597,7 +692,7 @@ export default function Calendar() {
         </div>
       </div>
 
-      <div className="page-body">
+      <div className="page-body" ref={calRef}>
         <div className={`cal-wrap${panelOpen && view === 'month' ? ' cal-wrap-split' : ''}`}>
           <div className="cal-main">
             {/* nav bar */}
@@ -628,10 +723,11 @@ export default function Calendar() {
             {view === 'month' && (
               <MonthView year={year} month={month} itemsByDate={itemsByDate}
                 selectedDate={selectedDate} todayStr={todayStr}
-                onSelectDay={onSelectDay} weekStartsOn={settings.weekStartsOn} />
+                onSelectDay={onSelectDay} weekStartsOn={settings.weekStartsOn}
+                onItemDrop={handleItemDrop} />
             )}
             {isTimeGrid && (
-              <TimeGridView dates={viewDates} itemsByDate={itemsByDate} todayStr={todayStr} />
+              <TimeGridView dates={viewDates} itemsByDate={itemsByDate} todayStr={todayStr} onItemDrop={handleItemDrop} />
             )}
           </div>
 
@@ -645,6 +741,26 @@ export default function Calendar() {
           )}
         </div>
       </div>
+
+      {hoverTip && (
+        <div className="cal-hover-tip" style={{ position: 'fixed', left: `${hoverTip.x}px`, top: `${hoverTip.y - 8}px`, transform: 'translate(-50%, -100%)', zIndex: 1000 }}>
+          <div className="cal-hover-tip-header">
+            {hoverTip.type === 'task'
+              ? <CircleCheckBig size={13} className="cal-hover-tip-icon task" />
+              : <Bell size={13} className="cal-hover-tip-icon reminder" />}
+            <span className="cal-hover-tip-type">{hoverTip.type === 'task' ? 'Task' : 'Reminder'}</span>
+            {hoverTip.priority && <span className={`badge badge-${hoverTip.priority}`} style={{ fontSize: '9px', padding: '1px 5px' }}>{hoverTip.priority}</span>}
+          </div>
+          <div className="cal-hover-tip-title">{hoverTip.title}</div>
+          {(hoverTip.time || hoverTip.category) && (
+            <div className="cal-hover-tip-meta">
+              {hoverTip.time && <span>{formatTime(hoverTip.time)}</span>}
+              {hoverTip.category && <span>{hoverTip.category}</span>}
+            </div>
+          )}
+          <div className="cal-hover-tip-hint">Drag to reschedule</div>
+        </div>
+      )}
     </>
   )
 }
