@@ -89,6 +89,8 @@ function getNavTitle(view, selectedDate, year, month, weekStartsOn) {
 function itemTipData(item) {
   return JSON.stringify({
     type: item._type,
+    id: item.id,
+    date: item.dueDate || item.date || '',
     title: item.title,
     time: item.dueTime || item.time || '',
     priority: item.priority || '',
@@ -308,7 +310,7 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
    DAY PANEL (sidebar for month view)
    ══════════════════════════════════════ */
 
-function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
+function DayPanel({ date, items, onToggle, onClose, onItemUpdated, autoEditItem, onAutoEditHandled }) {
   const d = new Date(date + 'T00:00:00')
   const dayName = d.toLocaleDateString('en-US', { weekday: 'long' })
   const fullDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -367,6 +369,17 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit() }
   }
 
+  // Auto-open edit mode when triggered by double-click from calendar grid
+  useEffect(() => {
+    if (!autoEditItem) return
+    const item = items.find(i => i._type === autoEditItem.type && i.id === autoEditItem.id)
+    if (item) {
+      if (autoEditItem.type === 'task') startEditTask(item)
+      else startEditReminder(item)
+      onAutoEditHandled()
+    }
+  }, [autoEditItem])
+
   return (
     <div className="cal-panel">
       <div className="cal-panel-header">
@@ -424,7 +437,8 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
             ) : (
               <div key={task.id} className={`cal-panel-item${task.completed ? ' done' : ''}`}
                 draggable
-                onDragStart={(e) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'task', id: task.id })); e.dataTransfer.effectAllowed = 'move' }}>
+                onDragStart={(e) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'task', id: task.id })); e.dataTransfer.effectAllowed = 'move' }}
+                onDoubleClick={() => startEditTask(task)}>
                 <button className={`task-check${task.completed ? ' checked' : ''}`}
                   style={{ width: '18px', height: '18px', flexShrink: 0 }}
                   onClick={() => onToggle(task.id)}>
@@ -473,7 +487,8 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated }) {
             ) : (
               <div key={rem.id} className="cal-panel-item cal-panel-item-reminder"
                 draggable
-                onDragStart={(e) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'reminder', id: rem.id })); e.dataTransfer.effectAllowed = 'move' }}>
+                onDragStart={(e) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'reminder', id: rem.id })); e.dataTransfer.effectAllowed = 'move' }}
+                onDoubleClick={() => startEditReminder(rem)}>
                 <div style={{ width: '18px', height: '18px', flexShrink: 0 }}>🔔</div>
                 <div className="cal-panel-item-body">
                   <div className="cal-panel-item-title">{rem.title}</div>
@@ -525,6 +540,7 @@ export default function Calendar() {
   const hoverTimeoutRef = useRef(null)
   const calRef = useRef(null)
   const [hoverTip, setHoverTip] = useState(null)
+  const [autoEditItem, setAutoEditItem] = useState(null)
 
   // sync year/month from selectedDate when in non-month views
   useEffect(() => {
@@ -563,13 +579,33 @@ export default function Calendar() {
       if (target && !target.contains(e.relatedTarget)) setHoverTip(null)
     }
     const handleDragStart = () => setHoverTip(null)
+    const handleDblClick = (e) => {
+      const target = e.target.closest('[data-cal-item]')
+      if (!target) return
+      try {
+        const data = JSON.parse(target.dataset.calItem)
+        setHoverTip(null)
+        const itemDate = data.date
+        if (itemDate) {
+          const d = new Date(itemDate + 'T00:00:00')
+          setYear(d.getFullYear())
+          setMonth(d.getMonth())
+          setSelectedDate(itemDate)
+          setView('month')
+          setPanelOpen(true)
+          setAutoEditItem({ type: data.type, id: data.id })
+        }
+      } catch {}
+    }
     el.addEventListener('mouseover', handleOver)
     el.addEventListener('mouseout', handleOut)
     el.addEventListener('dragstart', handleDragStart, true)
+    el.addEventListener('dblclick', handleDblClick)
     return () => {
       el.removeEventListener('mouseover', handleOver)
       el.removeEventListener('mouseout', handleOut)
       el.removeEventListener('dragstart', handleDragStart, true)
+      el.removeEventListener('dblclick', handleDblClick)
     }
   }, [loading])
 
@@ -737,7 +773,9 @@ export default function Calendar() {
               onItemUpdated={(type, updated) => {
                 if (type === 'task') setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
                 else setReminders(prev => prev.map(r => r.id === updated.id ? updated : r))
-              }} />
+              }}
+              autoEditItem={autoEditItem}
+              onAutoEditHandled={() => setAutoEditItem(null)} />
           )}
         </div>
       </div>
@@ -758,7 +796,7 @@ export default function Calendar() {
               {hoverTip.category && <span>{hoverTip.category}</span>}
             </div>
           )}
-          <div className="cal-hover-tip-hint">Drag to reschedule</div>
+          <div className="cal-hover-tip-hint">Drag to reschedule · Double-click to edit</div>
         </div>
       )}
     </>
