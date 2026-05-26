@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
 import { getTasks, toggleTask, updateTask } from '../api/tasks'
 import { getReminders, updateReminder } from '../api/reminders'
+import { getCategories } from '../api/categories'
 import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save, CircleCheckBig, Bell } from 'lucide-react'
 import '../css/Calendar.css'
 
@@ -136,8 +137,8 @@ function TimeGridView({ dates, itemsByDate, todayStr, onItemDrop }) {
   useEffect(() => {
     const n = new Date()
     const target = Math.max(0, (n.getHours() - 1) * HOUR_HEIGHT)
-    scrollRef.current?.scrollTo({ top: target, behavior: 'instant' })
-  }, [dates.length])
+    scrollRef.current?.scrollTo({ top: target, behavior: 'auto' })
+  }, [dates[0], dates.length])
 
   // tick every minute
   useEffect(() => {
@@ -310,7 +311,7 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
    DAY PANEL (sidebar for month view)
    ══════════════════════════════════════ */
 
-function DayPanel({ date, items, onToggle, onClose, onItemUpdated, autoEditItem, onAutoEditHandled }) {
+function DayPanel({ date, items, onToggle, onClose, onItemUpdated, autoEditItem, onAutoEditHandled, categories }) {
   const d = new Date(date + 'T00:00:00')
   const dayName = d.toLocaleDateString('en-US', { weekday: 'long' })
   const fullDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -416,12 +417,7 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated, autoEditItem,
                   <select className="cal-panel-select cal-panel-input-sm" value={editing.category}
                     onChange={e => setEditing(p => ({ ...p, category: e.target.value }))}>
                     <option value="">Category</option>
-                    <option value="Reading">Reading</option>
-                    <option value="Lab">Lab</option>
-                    <option value="Exam">Exam</option>
-                    <option value="Homework">Homework</option>
-                    <option value="Project">Project</option>
-                    <option value="Other">Other</option>
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
                 <select className="cal-panel-select" value={editing.priority}
@@ -525,6 +521,7 @@ export default function Calendar() {
   const { settings } = useSettings()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const todayStr = today()
   const now = new Date()
@@ -610,8 +607,8 @@ export default function Calendar() {
   }, [loading])
 
   useEffect(() => {
-    Promise.all([getTasks(user.id), getReminders(user.id)]).then(([t, r]) => {
-      setTasks(t); setReminders(r); setLoading(false)
+    Promise.all([getTasks(user.id), getReminders(user.id), getCategories(user.id)]).then(([t, r, c]) => {
+      setTasks(t); setReminders(r); setCategories(c); setLoading(false)
     })
   }, [user.id])
 
@@ -775,7 +772,8 @@ export default function Calendar() {
                 else setReminders(prev => prev.map(r => r.id === updated.id ? updated : r))
               }}
               autoEditItem={autoEditItem}
-              onAutoEditHandled={() => setAutoEditItem(null)} />
+              onAutoEditHandled={() => setAutoEditItem(null)}
+              categories={categories} />
           )}
         </div>
       </div>

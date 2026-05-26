@@ -8,7 +8,7 @@ import { restoreNoteDirect } from '../api/notes'
 import {
   User, Palette, CalendarDays, Database, Recycle,
   Sun, Moon, Monitor, RotateCcw, Download,
-  Trash2, AlertTriangle, CheckSquare, Bell, FileText, X,
+  Trash2, AlertTriangle, CheckSquare, Bell, FileText,
 } from 'lucide-react'
 import '../css/Settings.css'
 
@@ -19,22 +19,22 @@ const ACCENT_COLORS = [
   { id: 'amber',  label: 'Amber',  color: '#D97706' },
 ]
 
-const CATEGORIES = ['Homework', 'Project', 'Exam', 'Lab', 'Personal', 'Other']
+const CATEGORIES = ['Homework', 'Exam', 'Project', 'Reading', 'Lab', 'Other']
 
 /* ─── Toggle Switch ─── */
 
-function Toggle({ checked, onChange }) {
+function Toggle({ checked, onChange, label }) {
   return (
-    <div
+    <button
+      type="button"
       className={`settings-toggle-track${checked ? ' on' : ''}`}
       onClick={() => onChange(!checked)}
       role="switch"
       aria-checked={checked}
-      tabIndex={0}
-      onKeyDown={e => e.key === 'Enter' && onChange(!checked)}
+      aria-label={label}
     >
       <div className="settings-toggle-thumb" />
-    </div>
+    </button>
   )
 }
 
@@ -59,20 +59,20 @@ export default function Settings() {
     getTrash(user.id).then(setTrash)
   }, [user.id])
 
-  const handleRestore = async (id) => {
-    const result = await restoreFromTrash(id)
+  const handleRestore = async (trashId) => {
+    const result = await restoreFromTrash(trashId)
     if (result) {
       const { item, type } = result
       if (type === 'task') restoreTaskDirect(item)
       else if (type === 'reminder') restoreReminderDirect(item)
       else if (type === 'note') restoreNoteDirect(item)
-      setTrash(prev => prev.filter(t => t.id !== id))
+      setTrash(prev => prev.filter(t => t._trashId !== trashId))
     }
   }
 
-  const handlePermanentDelete = async (id) => {
-    await permanentDelete(id)
-    setTrash(prev => prev.filter(t => t.id !== id))
+  const handlePermanentDelete = async (trashId) => {
+    await permanentDelete(trashId)
+    setTrash(prev => prev.filter(t => t._trashId !== trashId))
   }
 
   const handleEmptyTrash = async () => {
@@ -417,7 +417,7 @@ export default function Settings() {
                   const meta = TRASH_TYPE_META[item._trashType] || TRASH_TYPE_META.task
                   const Icon = meta.icon
                   return (
-                    <div key={item.id} className="trash-item">
+                    <div key={item._trashId} className="trash-item">
                       <div className="trash-item-type" style={{ color: meta.color }}>
                         <Icon size={16} />
                       </div>
@@ -431,10 +431,10 @@ export default function Settings() {
                         </span>
                       </div>
                       <div className="trash-item-actions">
-                        <button className="btn-ghost" onClick={() => handleRestore(item.id)} title="Restore">
+                        <button className="btn-ghost" onClick={() => handleRestore(item._trashId)} title="Restore">
                           <RotateCcw size={13} /> Restore
                         </button>
-                        <button className="btn-icon btn-icon-danger" onClick={() => handlePermanentDelete(item.id)} title="Delete permanently">
+                        <button className="btn-icon btn-icon-danger" onClick={() => handlePermanentDelete(item._trashId)} title="Delete permanently">
                           <Trash2 size={14} />
                         </button>
                       </div>
