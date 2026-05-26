@@ -30,7 +30,7 @@ export default function Login() {
 
         {/* LOGO */}
         <div className="login-logo">
-          <img src="/N-Monogm-Green.png" alt="Northwest" className="login-logo-img" />
+          <img src={`${import.meta.env.BASE_URL}N-Monogm-Green.png`} alt="Northwest" className="login-logo-img" />
           <div className="login-logo-text">
             Northwest <span>Student Planner</span>
           </div>
