@@ -667,6 +667,15 @@ export default function Dashboard() {
       setReminders(r)
       setAllNotes(n)
       setAllTags(tg)
+      // Prune pinned note IDs that reference deleted notes
+      const noteIds = new Set(n.map(note => note.id))
+      setPinnedNoteIds(prev => {
+        const pruned = prev.filter(id => noteIds.has(id))
+        if (pruned.length !== prev.length) {
+          localStorage.setItem('nw_pinned_notes', JSON.stringify(pruned))
+        }
+        return pruned
+      })
       setLoading(false)
     }
     load()
