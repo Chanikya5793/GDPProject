@@ -1,10 +1,14 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { useAi } from "../context/AiContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
-import { Check, Bell, X } from "lucide-react"
+import { getNotes, updateNote, getTags } from "../api/notes"
+import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon, ChevronsUpDown, ChevronsDownUp } from "lucide-react"
 import "../css/Dashboard.css"
+
+/* ─── Helpers ─── */
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -33,6 +37,8 @@ function daysFromNow(n) {
   d.setDate(d.getDate() + n)
   return localDateStr(d)
 }
+
+/* ─── Pie Chart ─── */
 
 const PIE_SIZE = 120
 function PieChart({ data }) {
@@ -84,6 +90,8 @@ function PieChart({ data }) {
     </div>
   )
 }
+
+/* ─── Quick Task Modal ─── */
 
 function QuickTaskModal({ onSave, onClose }) {
   const [title, setTitle] = useState('')
@@ -184,6 +192,8 @@ function QuickTaskModal({ onSave, onClose }) {
   )
 }
 
+/* ─── Quick Reminder Modal ─── */
+
 function QuickReminderModal({ onSave, onClose }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(today())
@@ -229,25 +239,487 @@ function QuickReminderModal({ onSave, onClose }) {
   )
 }
 
+/* ─── Row Components ─── */
+
+function TaskRow({ task, onToggle, showDate = false }) {
+  return (
+    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
+      <button
+        className={`dash-check${task.completed ? ' checked' : ''}`}
+        onClick={() => onToggle(task.id)}
+        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
+      >
+        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
+      </button>
+      <div className="dash-row-body">
+        <div className="dash-row-title">{task.title}</div>
+        <div className="dash-row-meta">
+          {showDate && <span>{formatDate(task.dueDate)}</span>}
+          {!showDate && task.category && <span>{task.category}</span>}
+          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReminderRow({ reminder, showDate = false }) {
+  return (
+    <div className="dash-row dash-row-reminder">
+      <div className="dash-bell"><Bell size={18} /></div>
+      <div className="dash-row-body">
+        <div className="dash-row-title">{reminder.title}</div>
+        <div className="dash-row-meta">
+          {showDate && <span>{formatDate(reminder.date)}</span>}
+          {reminder.time && <span>{formatTime(reminder.time)}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ─── Markdown renderer (shared with Notes) ─── */
+
+function renderMarkdown(text) {
+  if (!text) return '<p style="color: var(--muted)">Empty note.</p>'
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code style="background:#f3f4f6;padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/^&gt; (.+)$/gm, '<blockquote style="border-left:3px solid var(--green-mid);padding-left:12px;color:var(--muted)">$1</blockquote>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+    .replace(/\n/g, '<br/>')
+  html = html.replace(/((?:<li>.*?<\/li>(?:<br\/?>)*)+)/g, '<ul>$1</ul>')
+  return html
+}
+
+/* ─── Dashboard Note Widget ─── */
+
+function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) {
+  const [mode, setMode] = useState('preview') // 'preview' | 'write'
+  const [editTitle, setEditTitle] = useState('')
+  const [editBody, setEditBody] = useState('')
+  const [dirty, setDirty] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerRef = useRef(null)
+
+  const note = notes.find(n => n.id === pinnedNoteId)
+
+  useEffect(() => {
+    if (note) {
+      setEditTitle(note.title)
+      setEditBody(note.body)
+      setDirty(false)
+      setMode('preview')
+    }
+  }, [pinnedNoteId])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleSave = async () => {
+    if (!note) return
+    await onUpdateNote(note.id, { title: editTitle, body: editBody })
+    setDirty(false)
+    setMode('preview')
+  }
+
+  const noteTags = note ? tags.filter(t => note.tagIds?.includes(t.id)) : []
+
+  // No note pinned — show picker
+  if (!note) {
+    return (
+      <div className="dash-note-empty">
+        <StickyNote size={28} style={{ color: 'var(--muted)', marginBottom: '8px' }} />
+        <p>Pin a note to your dashboard for quick access.</p>
+        <div className="dash-note-picker-wrap" ref={pickerRef}>
+          <button className="btn-primary" onClick={() => setPickerOpen(!pickerOpen)}>Choose Note</button>
+          {pickerOpen && (
+            <div className="dash-note-picker">
+              {notes.length === 0
+                ? <div className="dash-note-picker-empty">No notes yet. Create one in Notes.</div>
+                : notes.map(n => (
+                  <button key={n.id} className="dash-note-picker-item" onClick={() => { onPinNote(n.id); setPickerOpen(false) }}>
+                    <span className="dash-note-picker-title">{n.title || 'Untitled'}</span>
+                    <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 50)}</span>
+                  </button>
+                ))
+              }
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="dash-note-content">
+      <div className="dash-note-head">
+        <div className="dash-note-head-left">
+          {mode === 'write' ? (
+            <input className="dash-note-title-input" value={editTitle}
+              onChange={e => { setEditTitle(e.target.value); setDirty(true) }}
+              placeholder="Title..." />
+          ) : (
+            <div className="dash-note-title">{note.title || 'Untitled'}</div>
+          )}
+          {noteTags.length > 0 && (
+            <div className="dash-note-tags">
+              {noteTags.map(t => (
+                <span key={t.id} className="dash-note-tag" style={{ background: t.color }}>#{t.name}</span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="dash-note-actions">
+          <div className="editor-mode-toggle" style={{ fontSize: '11px' }}>
+            <button className={`editor-mode-btn${mode === 'preview' ? ' active' : ''}`}
+              onClick={() => { if (dirty) handleSave(); setMode('preview') }}>Preview</button>
+            <button className={`editor-mode-btn${mode === 'write' ? ' active' : ''}`}
+              onClick={() => setMode('write')}>Edit</button>
+          </div>
+          <div className="dash-note-picker-wrap" ref={pickerRef}>
+            <button className="btn-ghost" style={{ fontSize: '11px', padding: '3px 8px' }}
+              onClick={() => setPickerOpen(!pickerOpen)}>
+              Switch <ChevronDown size={10} />
+            </button>
+            {pickerOpen && (
+              <div className="dash-note-picker">
+                {notes.map(n => (
+                  <button key={n.id}
+                    className={`dash-note-picker-item${n.id === pinnedNoteId ? ' active' : ''}`}
+                    onClick={() => { onPinNote(n.id); setPickerOpen(false) }}>
+                    <span className="dash-note-picker-title">{n.title || 'Untitled'}</span>
+                    <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 50)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {mode === 'write' ? (
+        <div className="dash-note-edit-area">
+          <textarea className="dash-note-textarea" value={editBody}
+            onChange={e => { setEditBody(e.target.value); setDirty(true) }}
+            placeholder="Start writing..." />
+          {dirty && <button className="btn-primary dash-note-save" onClick={handleSave}>Save</button>}
+        </div>
+      ) : (
+        <div className="dash-note-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(note.body) }} />
+      )}
+    </div>
+  )
+}
+
+/* ─── Individual Pinned Note Card ─── */
+
+function PinnedNoteCard({ note, tags, onUpdate }) {
+  const [mode, setMode] = useState('preview')
+  const [expanded, setExpanded] = useState(false)
+  const [editTitle, setEditTitle] = useState(note.title)
+  const [editBody, setEditBody] = useState(note.body)
+  const [dirty, setDirty] = useState(false)
+
+  useEffect(() => {
+    setEditTitle(note.title)
+    setEditBody(note.body)
+    setDirty(false)
+    setMode('preview')
+  }, [note.id, note.title, note.body])
+
+  const noteTags = tags.filter(t => note.tagIds?.includes(t.id))
+
+  const handleSave = async () => {
+    await onUpdate(note.id, { title: editTitle, body: editBody })
+    setDirty(false)
+    setMode('preview')
+  }
+
+  return (
+    <div className="dash-note-content">
+      <div className="dash-note-head">
+        <div className="dash-note-head-left">
+          {mode === 'write' ? (
+            <input className="dash-note-title-input" value={editTitle}
+              onChange={e => { setEditTitle(e.target.value); setDirty(true) }}
+              placeholder="Title..." />
+          ) : (
+            <div className="dash-note-title">{note.title || 'Untitled'}</div>
+          )}
+          {noteTags.length > 0 && (
+            <div className="dash-note-tags">
+              {noteTags.map(t => (
+                <span key={t.id} className="dash-note-tag" style={{ background: t.color }}>#{t.name}</span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="dash-note-actions">
+          <button
+            className={`dash-note-expand-btn${expanded ? ' expanded' : ''}`}
+            onClick={() => setExpanded(!expanded)}
+            title={expanded ? 'Collapse note' : 'Expand note'}
+          >
+            {expanded ? <ChevronsDownUp size={12} /> : <ChevronsUpDown size={12} />}
+            {expanded ? 'Less' : 'More'}
+          </button>
+          <div className="editor-mode-toggle" style={{ fontSize: '11px' }}>
+            <button className={`editor-mode-btn${mode === 'preview' ? ' active' : ''}`}
+              onClick={() => { if (dirty) handleSave(); setMode('preview') }}>Preview</button>
+            <button className={`editor-mode-btn${mode === 'write' ? ' active' : ''}`}
+              onClick={() => setMode('write')}>Edit</button>
+          </div>
+        </div>
+      </div>
+      {mode === 'write' ? (
+        <div className="dash-note-edit-area">
+          <textarea className={`dash-note-textarea${expanded ? ' expanded' : ''}`} value={editBody}
+            onChange={e => { setEditBody(e.target.value); setDirty(true) }}
+            placeholder="Start writing..." />
+          {dirty && <button className="btn-primary dash-note-save" onClick={handleSave}>Save</button>}
+        </div>
+      ) : (
+        <div className={`dash-note-preview${expanded ? ' expanded' : ''}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(note.body) }} />
+      )}
+    </div>
+  )
+}
+
+/* ─── Widget System ─── */
+
+const WIDGET_META = {
+  stats:       { title: 'Overview' },
+  overdue:     { title: 'Overdue', link: { to: '/tasks', text: 'View all' } },
+  'due-today': { title: 'Due Today', link: { to: '/tasks', text: 'View all tasks' } },
+  upcoming:    { title: 'Upcoming — Next 7 Days', link: { to: '/calendar', text: 'Open calendar' } },
+  charts:      { title: 'Analytics' },
+  'pinned-note': { title: 'Quick Note', link: { to: '/notes', text: 'All Notes' } },
+  'ai-chat':   { title: 'AI Assistant' },
+}
+
+/* ─── AI Chat Panel (popped-out widget) ─── */
+
+const CHAT_SUGGESTIONS = [
+  'What tasks are due today?',
+  'Show my overdue items',
+]
+
+function AiChatPanel() {
+  const { messages, typing, sendMessage, clearChat } = useAi()
+  const [input, setInput] = useState('')
+  const msgsRef = useRef(null)
+
+  useEffect(() => {
+    if (msgsRef.current) {
+      msgsRef.current.scrollTop = msgsRef.current.scrollHeight
+    }
+  }, [messages, typing])
+
+  const handleSend = () => {
+    if (!input.trim()) return
+    sendMessage(input)
+    setInput('')
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  return (
+    <>
+      <div className="ai-messages" ref={msgsRef}>
+        {messages.map(msg => (
+          <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
+            {msg.role === 'bot' && (
+              <div className="ai-msg-avatar"><Bot size={14} /></div>
+            )}
+            <div className="ai-msg-bubble">{msg.text}</div>
+          </div>
+        ))}
+        {typing && (
+          <div className="ai-msg ai-msg-bot">
+            <div className="ai-msg-avatar"><Bot size={14} /></div>
+            <div className="ai-msg-bubble ai-typing"><span /><span /><span /></div>
+          </div>
+        )}
+        {messages.length <= 2 && !typing && (
+          <div className="ai-suggestions">
+            {CHAT_SUGGESTIONS.map((s, i) => (
+              <button key={i} className="ai-suggestion" onClick={() => sendMessage(s)}>{s}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="ai-input-bar">
+        <textarea
+          className="ai-input"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask anything..."
+          rows={1}
+        />
+        <button
+          className={`ai-send${input.trim() ? ' ai-send-active' : ''}`}
+          onClick={handleSend}
+          disabled={!input.trim()}
+        >
+          <Send size={16} />
+        </button>
+      </div>
+    </>
+  )
+}
+
+const DEFAULT_LAYOUT = [
+  { id: 'stats', size: 'full' },
+  { id: 'due-today', size: 'half' },
+  { id: 'pinned-note', size: 'half' },
+  { id: 'overdue', size: 'half' },
+  { id: 'upcoming', size: 'half' },
+  { id: 'charts', size: 'half' },
+]
+
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem('nw_dash_layout')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(w => w.id && (WIDGET_META[w.id] || w.id.startsWith('note-')))) {
+        return parsed
+      }
+    }
+  } catch { /* use default */ }
+  return DEFAULT_LAYOUT
+}
+
+function persistLayout(layout) {
+  localStorage.setItem('nw_dash_layout', JSON.stringify(layout))
+}
+
+/* ─── Dashboard ─── */
+
 export default function Dashboard() {
   const { user } = useAuth()
+  const { poppedOut, togglePopOut, clearChat } = useAi()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
+  const [allNotes, setAllNotes] = useState([])
+  const [allTags, setAllTags] = useState([])
+  const [pinnedNoteId, setPinnedNoteId] = useState(() => {
+    const saved = localStorage.getItem('nw_pinned_note')
+    return saved ? Number(saved) : null
+  })
+  const [pinnedNoteIds, setPinnedNoteIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nw_pinned_notes')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  })
   const [loading, setLoading] = useState(true)
   const [quickMode, setQuickMode] = useState(null)
+  const [layout, setLayout] = useState(loadLayout)
+  const [dragIdx, setDragIdx] = useState(null)
+  const [overIdx, setOverIdx] = useState(null)
+  const [activeStat, setActiveStat] = useState(null) // 'overdue'|'today'|'week'|'completed'|null
+
+  const handlePinNote = (id) => {
+    setPinnedNoteId(id)
+    localStorage.setItem('nw_pinned_note', String(id))
+  }
+
+  const handleUpdateNote = async (id, updates) => {
+    const updated = await updateNote(id, updates)
+    setAllNotes(prev => prev.map(n => n.id === id ? updated : n))
+  }
+
+  const handleUnpinNote = (id) => {
+    setPinnedNoteIds(prev => {
+      const next = prev.filter(nid => nid !== id)
+      localStorage.setItem('nw_pinned_notes', JSON.stringify(next))
+      return next
+    })
+  }
 
   useEffect(() => {
     async function load() {
-      const [t, r] = await Promise.all([
+      const [t, r, n, tg] = await Promise.all([
         getTasks(user.id),
         getReminders(user.id),
+        getNotes(user.id),
+        getTags(),
       ])
       setTasks(t)
       setReminders(r)
+      setAllNotes(n)
+      setAllTags(tg)
+      // Prune pinned note IDs that reference deleted notes
+      const noteIds = new Set(n.map(note => note.id))
+      setPinnedNoteIds(prev => {
+        const pruned = prev.filter(id => noteIds.has(id))
+        if (pruned.length !== prev.length) {
+          localStorage.setItem('nw_pinned_notes', JSON.stringify(pruned))
+        }
+        return pruned
+      })
       setLoading(false)
     }
     load()
   }, [user.id])
+
+  /* Sync ai-chat widget with pop-out state */
+  useEffect(() => {
+    setLayout(prev => {
+      const hasChat = prev.some(w => w.id === 'ai-chat')
+      if (poppedOut && !hasChat) {
+        const next = [...prev, { id: 'ai-chat', size: 'half' }]
+        persistLayout(next)
+        return next
+      }
+      if (!poppedOut && hasChat) {
+        const next = prev.filter(w => w.id !== 'ai-chat')
+        persistLayout(next)
+        return next
+      }
+      return prev
+    })
+  }, [poppedOut])
+
+  /* Sync pinned notes into the layout */
+  useEffect(() => {
+    setLayout(prev => {
+      let next = [...prev]
+      // Remove note widgets no longer pinned
+      next = next.filter(w => !w.id.startsWith('note-') || pinnedNoteIds.includes(Number(w.id.split('-')[1])))
+      // Add newly pinned notes not yet in layout
+      for (const noteId of pinnedNoteIds) {
+        const wid = `note-${noteId}`
+        if (!next.some(w => w.id === wid)) {
+          next.push({ id: wid, size: 'half' })
+        }
+      }
+      // Only persist if changed
+      if (JSON.stringify(next) !== JSON.stringify(prev)) {
+        persistLayout(next)
+        return next
+      }
+      return prev
+    })
+  }, [pinnedNoteIds])
 
   const todayStr = today()
   const weekStr = daysFromNow(7)
@@ -257,7 +729,8 @@ export default function Dashboard() {
   const upcoming = tasks.filter(t => !t.completed && t.dueDate > todayStr && t.dueDate <= weekStr)
   const remToday = reminders.filter(r => r.date === todayStr)
   const remUpcoming = reminders.filter(r => r.date > todayStr && r.date <= weekStr)
-  const completed = tasks.filter(t => t.completed).length
+  const completedTasks = tasks.filter(t => t.completed)
+  const completed = completedTasks.length
 
   const priorityData = [
     { label: 'High', value: tasks.filter(t => !t.completed && t.priority === 'high').length, color: '#D57272' },
@@ -308,6 +781,164 @@ export default function Dashboard() {
     setQuickMode(null)
   }
 
+  /* ── Drag-and-drop handlers ── */
+
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e, idx) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (idx !== dragIdx) setOverIdx(idx)
+  }
+
+  const handleDragLeave = () => setOverIdx(null)
+
+  const handleDrop = (e, idx) => {
+    e.preventDefault()
+    if (dragIdx === null || dragIdx === idx) {
+      setDragIdx(null)
+      setOverIdx(null)
+      return
+    }
+    const next = [...layout]
+    const [moved] = next.splice(dragIdx, 1)
+    next.splice(idx, 0, moved)
+    setLayout(next)
+    persistLayout(next)
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  const resetLayout = () => {
+    const noteWidgets = pinnedNoteIds.map(id => ({ id: `note-${id}`, size: 'half' }))
+    const reset = [...DEFAULT_LAYOUT, ...noteWidgets]
+    setLayout(reset)
+    persistLayout(reset)
+  }
+
+  /* ── Widget content renderer ── */
+
+  const widgetContent = (id) => {
+    switch (id) {
+      case 'stats': {
+        const statItems = [
+          { key: 'overdue', label: 'Overdue', count: overdue.length, bg: '#FFA6A6', color: '#9C4848' },
+          { key: 'today', label: 'Due Today', count: dueToday.length + remToday.length, bg: '#FFEFB5', color: '#92400E' },
+          { key: 'week', label: 'This Week', count: upcoming.length + remUpcoming.length, bg: '#E2FFAF', color: '#2D5016' },
+          { key: 'completed', label: 'Completed', count: completed, bg: 'var(--green-lt)', color: 'var(--green)' },
+        ]
+        const drawerItems = activeStat === 'overdue' ? overdue
+          : activeStat === 'today' ? [...dueToday, ...remToday.map(r => ({ ...r, _type: 'reminder' }))]
+          : activeStat === 'week' ? [...upcoming, ...remUpcoming.map(r => ({ ...r, _type: 'reminder' }))]
+          : activeStat === 'completed' ? completedTasks
+          : []
+        const drawerLabel = statItems.find(s => s.key === activeStat)?.label || ''
+        return (
+          <>
+            <div className="dash-stats-row">
+              {statItems.map(s => (
+                <div key={s.key}
+                  className={`dash-stat-mini dash-stat-click${activeStat === s.key ? ' dash-stat-active' : ''}`}
+                  style={{ background: s.bg, '--stat-color': s.color }}
+                  onClick={() => setActiveStat(prev => prev === s.key ? null : s.key)}>
+                  <div className="dash-stat-n" style={{ color: s.color }}>{s.count}</div>
+                  <div className="dash-stat-l">{s.label}</div>
+                </div>
+              ))}
+            </div>
+            {activeStat && (
+              <div className="dash-stat-drawer">
+                <div className="dash-stat-drawer-head">
+                  <span className="dash-stat-drawer-title">{drawerLabel}</span>
+                  <span className="dash-stat-drawer-count">{drawerItems.length} item{drawerItems.length !== 1 ? 's' : ''}</span>
+                </div>
+                {drawerItems.length === 0 ? (
+                  <p className="dash-empty">
+                    {activeStat === 'overdue' ? 'No overdue items — you\'re on track!'
+                      : activeStat === 'today' ? 'Nothing due today — enjoy your day!'
+                      : activeStat === 'week' ? 'Nothing scheduled this week.'
+                      : 'No completed tasks yet.'}
+                  </p>
+                ) : (
+                  <div className="dash-stat-drawer-list">
+                    {drawerItems.map(item =>
+                      item._type === 'reminder'
+                        ? <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
+                        : <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )
+      }
+
+      case 'overdue':
+        return overdue.length === 0
+          ? <p className="dash-empty">No overdue items — you're on track!</p>
+          : overdue.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)
+
+      case 'due-today':
+        return dueToday.length === 0 && remToday.length === 0
+          ? <p className="dash-empty">Nothing due today — enjoy your day!</p>
+          : <>
+              {dueToday.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)}
+              {remToday.map(rem => <ReminderRow key={rem.id} reminder={rem} />)}
+            </>
+
+      case 'upcoming':
+        return timeline.length === 0
+          ? <p className="dash-empty">Nothing scheduled for the next 7 days.</p>
+          : timeline.map(item =>
+              item._type === 'task'
+                ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
+            )
+
+      case 'charts':
+        return (
+          <div className="dash-charts-inner">
+            <div className="dash-chart-card dash-chart-square">
+              <div className="dash-chart-title">Tasks by Priority</div>
+              <PieChart data={priorityData} />
+            </div>
+            <div className="dash-chart-card dash-chart-square">
+              <div className="dash-chart-title">Task Status</div>
+              <PieChart data={statusData} />
+            </div>
+          </div>
+        )
+
+      case 'pinned-note':
+        return <DashNoteWidget notes={allNotes} tags={allTags}
+          pinnedNoteId={pinnedNoteId} onPinNote={handlePinNote}
+          onUpdateNote={handleUpdateNote} />
+
+      case 'ai-chat':
+        return <AiChatPanel />
+
+      default:
+        if (id.startsWith('note-')) {
+          const noteId = Number(id.split('-')[1])
+          const note = allNotes.find(n => n.id === noteId)
+          if (!note) return <p className="dash-empty">Note not found.</p>
+          return <PinnedNoteCard note={note} tags={allTags} onUpdate={handleUpdateNote} />
+        }
+        return null
+    }
+  }
+
+  /* ── Render ── */
+
   if (loading) return (
     <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
       <p style={{ color: 'var(--muted)' }}>Loading your planner...</p>
@@ -326,139 +957,75 @@ export default function Dashboard() {
           <p>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
         <div className="dash-quick-btns">
+          <button className="btn-ghost" onClick={resetLayout} title="Reset dashboard layout">
+            <RotateCcw size={14} /> Reset
+          </button>
           <button className="btn-primary" onClick={() => setQuickMode('task')}>+ Quick Task</button>
           <button className="btn-secondary" onClick={() => setQuickMode('reminder')}>+ Quick Reminder</button>
         </div>
       </div>
 
       <div className="page-body">
-        <div className="dash-analytics">
-          <div className="dash-stats-row">
-            <div className="dash-stat-mini" style={{ background: '#FFA6A6' }}>
-              <div className="dash-stat-n" style={{ color: '#9C4848' }}>{overdue.length}</div>
-              <div className="dash-stat-l">Overdue</div>
-            </div>
-            <div className="dash-stat-mini" style={{ background: '#FFEFB5' }}>
-              <div className="dash-stat-n" style={{ color: '#92400E' }}>{dueToday.length + remToday.length}</div>
-              <div className="dash-stat-l">Due Today</div>
-            </div>
-            <div className="dash-stat-mini" style={{ background: '#E2FFAF' }}>
-              <div className="dash-stat-n" style={{ color: '#2D5016' }}>{upcoming.length + remUpcoming.length}</div>
-              <div className="dash-stat-l">This Week</div>
-            </div>
-            <div className="dash-stat-mini" style={{ background: 'var(--green-lt)' }}>
-              <div className="dash-stat-n" style={{ color: 'var(--green)' }}>{completed}</div>
-              <div className="dash-stat-l">Completed</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="dash-grid">
-          <div className="dash-col">
-            {overdue.length > 0 && (
-              <div className="card dash-section dash-section-overdue">
-                <div className="dash-section-header">
-                  <span className="dash-section-title" style={{ color: 'var(--red)' }}>⚠ Overdue</span>
-                  <Link to="/tasks" className="dash-section-link">View all</Link>
+        <div className="dash-widget-grid">
+          {layout.map((widget, idx) => {
+            const isNote = widget.id.startsWith('note-')
+            const noteId = isNote ? Number(widget.id.split('-')[1]) : null
+            const noteObj = isNote ? allNotes.find(n => n.id === noteId) : null
+            const meta = WIDGET_META[widget.id] || (isNote ? { title: noteObj?.title || 'Note' } : { title: '?' })
+            return (
+              <div
+                key={widget.id}
+                className={
+                  'dash-widget'
+                  + ` dash-widget-${widget.size}`
+                  + (widget.id === 'ai-chat' ? ' dash-widget-chat' : '')
+                  + (widget.id === 'pinned-note' ? ' dash-widget-note' : '')
+                  + (isNote ? ' dash-widget-pinned' : '')
+                  + (widget.id === 'overdue' && overdue.length > 0 ? ' dash-widget-alert' : '')
+                  + (dragIdx === idx ? ' dash-widget-dragging' : '')
+                  + (overIdx === idx ? ' dash-widget-dragover' : '')
+                }
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="dash-widget-handle">
+                  <div className="dash-widget-grip"><GripVertical size={14} /></div>
+                  {widget.id === 'ai-chat' && <Bot size={14} className="dash-widget-icon" />}
+                  {isNote && <StickyNote size={14} className="dash-widget-icon" />}
+                  <span className="dash-widget-title">{meta.title}</span>
+                  {widget.id === 'ai-chat' && <span className="ai-badge">Beta</span>}
+                  {isNote && (
+                    <button className="dash-unpin-btn" onClick={() => handleUnpinNote(noteId)} title="Unpin from Dashboard">
+                      <PinIcon size={11} /> Unpin
+                    </button>
+                  )}
+                  {meta.link && (
+                    <Link to={meta.link.to} className="dash-widget-link">{meta.link.text}</Link>
+                  )}
+                  {isNote && <Link to="/notes" className="dash-widget-link">Open</Link>}
+                  {widget.id === 'ai-chat' && (
+                    <div className="dash-widget-chat-actions">
+                      <button className="ai-header-btn" onClick={clearChat} title="Clear chat"><Trash2 size={12} /></button>
+                      <button className="ai-header-btn" onClick={togglePopOut} title="Dock to sidebar"><PanelRightOpen size={14} /></button>
+                    </div>
+                  )}
                 </div>
-                {overdue.map(task => (
-                  <TaskRow key={task.id} task={task} onToggle={handleToggle} />
-                ))}
+                <div className="dash-widget-body">
+                  {widgetContent(widget.id)}
+                </div>
               </div>
-            )}
+            )
+          })}
 
-            <div className="card dash-section">
-              <div className="dash-section-header">
-                <span className="dash-section-title">Due Today</span>
-                <Link to="/tasks" className="dash-section-link">View all tasks</Link>
-              </div>
-              {dueToday.length === 0 && remToday.length === 0 ? (
-                <p className="dash-empty">Nothing due today - enjoy your day!</p>
-              ) : (
-                <>
-                  {dueToday.map(task => (
-                    <TaskRow key={task.id} task={task} onToggle={handleToggle} />
-                  ))}
-                  {remToday.map(rem => (
-                    <ReminderRow key={rem.id} reminder={rem} />
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="dash-col">
-            <div className="card dash-section">
-              <div className="dash-section-header">
-                <span className="dash-section-title">Upcoming - Next 7 Days</span>
-                <Link to="/calendar" className="dash-section-link">Open calendar</Link>
-              </div>
-              {timeline.length === 0 ? (
-                <p className="dash-empty">Nothing scheduled for the next 7 days.</p>
-              ) : (
-                <>
-                  {timeline.map(item => (
-                    item._type === 'task'
-                      ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
-                      : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="dash-charts">
-          <div className="dash-chart-card dash-chart-square">
-            <div className="dash-chart-title">Tasks by Priority</div>
-            <PieChart data={priorityData} />
-          </div>
-          <div className="dash-chart-card dash-chart-square">
-            <div className="dash-chart-title">Task Status</div>
-            <PieChart data={statusData} />
-          </div>
         </div>
       </div>
 
       {quickMode === 'task' && <QuickTaskModal onSave={handleQuickTask} onClose={() => setQuickMode(null)} />}
       {quickMode === 'reminder' && <QuickReminderModal onSave={handleQuickReminder} onClose={() => setQuickMode(null)} />}
     </>
-  )
-}
-
-function TaskRow({ task, onToggle, showDate = false }) {
-  return (
-    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
-      <button
-        className={`dash-check${task.completed ? ' checked' : ''}`}
-        onClick={() => onToggle(task.id)}
-        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
-      >
-        {task.completed && <Check size={10} color="#FFF" strokeWidth={3} />}
-      </button>
-      <div className="dash-row-body">
-        <div className="dash-row-title">{task.title}</div>
-        <div className="dash-row-meta">
-          {showDate && <span>{formatDate(task.dueDate)}</span>}
-          {!showDate && task.category && <span>{task.category}</span>}
-          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ReminderRow({ reminder, showDate = false }) {
-  return (
-    <div className="dash-row dash-row-reminder">
-      <div className="dash-bell"><Bell size={18} /></div>
-      <div className="dash-row-body">
-        <div className="dash-row-title">{reminder.title}</div>
-        <div className="dash-row-meta">
-          {showDate && <span>{formatDate(reminder.date)}</span>}
-          {reminder.time && <span>{formatTime(reminder.time)}</span>}
-        </div>
-      </div>
-    </div>
   )
 }

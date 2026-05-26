@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
 import { getTasks, createTask, updateTask, deleteTask, toggleTask } from '../api/tasks'
 import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
@@ -56,13 +57,13 @@ function FilterDropdown({ value, options, onChange }) {
   )
 }
 
-function TaskModal({ task, categories, onSave, onClose }) {
+function TaskModal({ task, categories, onSave, onClose, defaultPriority, defaultCategory }) {
   const [form, setForm] = useState({
     title: task?.title || '',
     dueDate: task?.dueDate || today(),
     dueTime: task?.dueTime || '',
-    priority: task?.priority || 'medium',
-    category: task?.category || 'Homework',
+    priority: task?.priority || defaultPriority || 'medium',
+    category: task?.category || defaultCategory || 'Homework',
     notes: task?.notes || '',
   })
   const [addReminders, setAddReminders] = useState(false)
@@ -249,6 +250,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete }) {
 
 export default function Tasks() {
   const { user } = useAuth()
+  const { settings } = useSettings()
   const [tasks, setTasks] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -307,8 +309,13 @@ export default function Tasks() {
 
   const todayStr = today()
   let filtered = [...tasks]
-  if (statusFilter === 'active') filtered = filtered.filter(t => !t.completed)
-  if (statusFilter === 'completed') filtered = filtered.filter(t => t.completed)
+  if (!settings.showCompleted && statusFilter === 'all') {
+    filtered = filtered.filter(t => !t.completed)
+  } else if (statusFilter === 'active') {
+    filtered = filtered.filter(t => !t.completed)
+  } else if (statusFilter === 'completed') {
+    filtered = filtered.filter(t => t.completed)
+  }
   if (priorityFilter !== 'all') filtered = filtered.filter(t => t.priority === priorityFilter)
   if (categoryFilter !== 'all') filtered = filtered.filter(t => t.category === categoryFilter)
 
@@ -394,6 +401,8 @@ export default function Tasks() {
         <TaskModal
           task={modalTask}
           categories={categories}
+          defaultPriority={settings.defaultPriority}
+          defaultCategory={settings.defaultCategory}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setModalTask(null) }}
         />

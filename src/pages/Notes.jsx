@@ -1,18 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, deleteTag } from '../api/notes'
-import { Search, Trash2, X } from 'lucide-react'
+import { Search, Trash2, X, PinIcon } from 'lucide-react'
 import '../css/Notes.css'
 
 const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
 
-function NoteListItem({ note, selected, tags, onClick }) {
+function NoteListItem({ note, selected, tags, isPinned, onClick }) {
   const preview = note.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 80)
   const noteTags = tags.filter(t => note.tagIds.includes(t.id))
 
   return (
     <div className={`note-list-item${selected ? ' selected' : ''}`} onClick={onClick}>
-      <div className="note-list-title">{note.title || 'Untitled'}</div>
+      <div className="note-list-title">
+        {isPinned && <PinIcon size={11} className="note-list-pin-icon" />}
+        {note.title || 'Untitled'}
+      </div>
       {preview && <div className="note-list-preview">{preview}…</div>}
       <div className="note-list-meta">
         <span className="note-list-date">
@@ -84,7 +87,23 @@ export default function Notes() {
   const [editTitle, setEditTitle] = useState('')
   const [editBody, setEditBody] = useState('')
   const [dirty, setDirty] = useState(false)
+  const [pinnedNoteIds, setPinnedNoteIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nw_pinned_notes')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  })
   const tagPickerRef = useRef(null)
+
+  const handlePinToDashboard = (noteId) => {
+    setPinnedNoteIds(prev => {
+      const next = prev.includes(noteId)
+        ? prev.filter(id => id !== noteId)
+        : [...prev, noteId]
+      localStorage.setItem('nw_pinned_notes', JSON.stringify(next))
+      return next
+    })
+  }
 
   useEffect(() => {
     Promise.all([getNotes(user.id), getTags()]).then(([n, t]) => {
@@ -237,7 +256,7 @@ export default function Notes() {
           </div>
           <div className="notes-list">
             {filteredNotes.map(note => (
-              <NoteListItem key={note.id} note={note} selected={note.id === selectedId} tags={tags} onClick={() => selectNote(note)} />
+              <NoteListItem key={note.id} note={note} selected={note.id === selectedId} tags={tags} isPinned={pinnedNoteIds.includes(note.id)} onClick={() => selectNote(note)} />
             ))}
             {filteredNotes.length === 0 && (
               <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
@@ -258,6 +277,14 @@ export default function Notes() {
                   placeholder="Note title..."
                 />
                 <div className="note-editor-actions">
+                  <button
+                    className={`note-pin-btn${pinnedNoteIds.includes(selectedId) ? ' pinned' : ''}`}
+                    onClick={() => handlePinToDashboard(selectedId)}
+                    title={pinnedNoteIds.includes(selectedId) ? 'Unpin from Dashboard' : 'Pin to Dashboard'}
+                  >
+                    <PinIcon size={14} />
+                    {pinnedNoteIds.includes(selectedId) ? 'Pinned' : 'Pin to Dashboard'}
+                  </button>
                   <div className="editor-mode-toggle">
                     <button className={`editor-mode-btn${editorMode === 'write' ? ' active' : ''}`} onClick={() => setEditorMode('write')}>Write</button>
                     <button className={`editor-mode-btn${editorMode === 'preview' ? ' active' : ''}`} onClick={() => setEditorMode('preview')}>Preview</button>

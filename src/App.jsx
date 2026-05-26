@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { AiProvider } from './context/AiContext'
+import { SettingsProvider } from './context/SettingsContext'
 import SidebarNav from './components/SidebarNav'
+import AiSidebar from './components/AiSidebar'
 
 // Pages
 import Login     from './pages/Login'
@@ -9,6 +12,7 @@ import Calendar  from './pages/Calendar'
 import Tasks     from './pages/Tasks'
 import Reminders from './pages/Reminders'
 import Notes     from './pages/Notes'
+import Settings  from './pages/Settings'
 
 // PRIVATE ROUTE
 // Wraps all pages that requires login
@@ -31,6 +35,7 @@ function AppLayout({ children }) {
         </div>
         {children}
       </div>
+      <AiSidebar />
     </div>
   )
 }
@@ -77,6 +82,13 @@ function AppRoutes() {
           </AppLayout>
         </PrivateRoute>
       }/>
+      <Route path="/settings" element={
+        <PrivateRoute>
+          <AppLayout>
+            <Settings />
+          </AppLayout>
+        </PrivateRoute>
+      }/>
 
       {/* If it doesn't exist, go back to dashboard */}
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -86,10 +98,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </AuthProvider>
+    <SettingsProvider>
+      <AiProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </AuthProvider>
+      </AiProvider>
+    </SettingsProvider>
   )
 }

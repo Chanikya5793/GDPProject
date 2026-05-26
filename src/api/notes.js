@@ -1,3 +1,5 @@
+import { addToTrash } from './trash'
+
 const STORAGE_KEY = 'nw_notes'
 const TAGS_KEY = 'nw_tags'
 
@@ -88,8 +90,16 @@ export async function updateNote(id, updates) {
 
 export async function deleteNote(id) {
     const notes = loadNotes()
+    const note = notes.find(n => n.id === id)
+    if (note) await addToTrash(note, 'note')
     saveNotes(notes.filter(n => n.id !== id))
     return { success: true }
+}
+
+export function restoreNoteDirect(note) {
+    const notes = loadNotes()
+    notes.unshift(note)
+    saveNotes(notes)
 }
 
 export async function getTags() {

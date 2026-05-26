@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Home, Calendar, CheckSquare, Bell, FileText, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react'
+import { Home, Calendar, CheckSquare, Bell, FileText, Settings, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react'
 
 export default function SidebarNav() {
   const { user, logout } = useAuth()
@@ -55,6 +55,9 @@ export default function SidebarNav() {
         </NavLink>
         <NavLink to="/notes" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Notes">
           <FileText size={18} /><span className="sidebar-label">Notes</span>
+        </NavLink>
+        <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`} title="Settings">
+          <Settings size={18} /><span className="sidebar-label">Settings</span>
         </NavLink>
       </nav>
 
