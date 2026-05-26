@@ -741,7 +741,7 @@ export default function Dashboard() {
   const statusData = [
     { label: 'Overdue', value: overdue.length, color: '#DC2626' },
     { label: 'On Track', value: tasks.filter(t => !t.completed && t.dueDate >= todayStr).length, color: '#006A4E' },
-    { label: 'Completed', value: completed, color: '#B8DDD0' },
+    { label: 'Completed', value: completed, color: '#0AA56F' },
   ]
 
   const timeline = [
@@ -833,7 +833,7 @@ export default function Dashboard() {
           { key: 'overdue', label: 'Overdue', count: overdue.length, bg: '#FFA6A6', color: '#9C4848' },
           { key: 'today', label: 'Due Today', count: dueToday.length + remToday.length, bg: '#FFEFB5', color: '#92400E' },
           { key: 'week', label: 'This Week', count: upcoming.length + remUpcoming.length, bg: '#E2FFAF', color: '#2D5016' },
-          { key: 'completed', label: 'Completed', count: completed, bg: 'var(--green-lt)', color: 'var(--green)' },
+          { key: 'completed', label: 'Completed', count: completed, bg: '#6ACE8D', color: '#000000' },
         ]
         const drawerItems = activeStat === 'overdue' ? overdue
           : activeStat === 'today' ? [...dueToday, ...remToday.map(r => ({ ...r, _type: 'reminder' }))]
