@@ -293,15 +293,25 @@ button { font-family: inherit; cursor: pointer; }
 /* MAIN CONTENT */
 .main-content {
   margin-left: 220px;
+  margin-right: 360px;
   flex: 1;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  transition: margin-left .3s cubic-bezier(.4,0,.2,1);
+  transition: margin-left .3s cubic-bezier(.4,0,.2,1),
+              margin-right .3s cubic-bezier(.4,0,.2,1);
 }
 
 [data-sidebar="collapsed"] .main-content {
   margin-left: 64px;
+}
+
+[data-ai-sidebar="collapsed"] .main-content {
+  margin-right: 52px;
+}
+
+[data-ai-sidebar="popped"] .main-content {
+  margin-right: 0;
 }
 
 /* PAGE HEADER */
@@ -794,4 +804,178 @@ button { font-family: inherit; cursor: pointer; }
   text-transform: uppercase;
   letter-spacing: .08em;
   margin-right: 8px;
+}
+
+/* ═══════════════════════════════════════
+   SETTINGS: DARK THEME
+   ═══════════════════════════════════════ */
+
+[data-theme="dark"] {
+  --white:    #1A1F1D;
+  --off:      #111513;
+  --border:   #2A332E;
+  --text:     #E8EDE9;
+  --muted:    #8FA69A;
+  --green-lt: #0F2A1F;
+  --green-mid:#1B4A36;
+  --deep:     #0A0E0C;
+}
+
+[data-theme="dark"] body {
+  background: #111513;
+  color: #E8EDE9;
+}
+
+[data-theme="dark"] .sidebar {
+  background: #0A0E0C;
+}
+
+[data-theme="dark"] .modal {
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+
+[data-theme="dark"] .badge-high {
+  background: #3B1515;
+  color: #FCA5A5;
+}
+
+[data-theme="dark"] .badge-medium {
+  background: #3B2E10;
+  color: #FDE68A;
+}
+
+[data-theme="dark"] .badge-low {
+  background: #0F2A1A;
+  color: #86EFAC;
+}
+
+[data-theme="dark"] .badge-done {
+  background: #1F2937;
+  color: #9CA3AF;
+}
+
+[data-theme="dark"] .btn-danger {
+  background: #2A1212;
+  border-color: #5C2020;
+}
+
+[data-theme="dark"] .warn-box {
+  background: #2A2010;
+  border-color: #5C4A10;
+}
+
+[data-theme="dark"] .settings-danger-zone {
+  border-top-color: #5C2020;
+}
+
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-textarea {
+  background: #111513;
+  border-color: #2A332E;
+  color: #E8EDE9;
+}
+
+[data-theme="dark"] .dash-row-reminder {
+  background: #0F2A1F;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #2A332E;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #3A4A42;
+}
+
+/* ═══════════════════════════════════════
+   SETTINGS: ACCENT COLORS
+   ═══════════════════════════════════════ */
+
+[data-accent="blue"] {
+  --green:     #3B82F6;
+  --green-dk:  #2563EB;
+  --green-lt:  #EFF6FF;
+  --green-mid: #BFDBFE;
+  --cyber:     #60A5FA;
+}
+
+[data-accent="purple"] {
+  --green:     #7C3AED;
+  --green-dk:  #6D28D9;
+  --green-lt:  #F5F3FF;
+  --green-mid: #DDD6FE;
+  --cyber:     #A78BFA;
+}
+
+[data-accent="amber"] {
+  --green:     #D97706;
+  --green-dk:  #B45309;
+  --green-lt:  #FFFBEB;
+  --green-mid: #FDE68A;
+  --cyber:     #FBBF24;
+}
+
+/* Dark theme + accent combos */
+[data-theme="dark"][data-accent="blue"] {
+  --green-lt: #0F1A2E;
+  --green-mid:#1E3A5F;
+}
+
+[data-theme="dark"][data-accent="purple"] {
+  --green-lt: #1A0F2E;
+  --green-mid:#2E1A5F;
+}
+
+[data-theme="dark"][data-accent="amber"] {
+  --green-lt: #2A2010;
+  --green-mid:#5C4A10;
+}
+
+/* ═══════════════════════════════════════
+   SETTINGS: FONT SIZE
+   ═══════════════════════════════════════ */
+
+[data-font-size="large"] body {
+  font-size: 18px;
+}
+
+[data-font-size="larger"] body {
+  font-size: 20px;
+}
+
+/* ═══════════════════════════════════════
+   SETTINGS: COMPACT MODE
+   ═══════════════════════════════════════ */
+
+[data-compact="true"] .page-header {
+  padding: 14px 24px;
+}
+
+[data-compact="true"] .page-body {
+  padding: 18px 24px;
+}
+
+[data-compact="true"] .dash-widget-body {
+  padding: 10px 12px;
+}
+
+[data-compact="true"] .settings-section {
+  padding: 16px;
+}
+
+[data-compact="true"] .settings-row {
+  padding: 10px 0;
+}
+
+/* ═══════════════════════════════════════
+   SETTINGS: REDUCED MOTION
+   ═══════════════════════════════════════ */
+
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
