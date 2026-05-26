@@ -5,7 +5,7 @@ import { useAi } from "../context/AiContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
 import { getNotes, updateNote, getTags } from "../api/notes"
-import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon } from "lucide-react"
+import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon, ChevronsUpDown, ChevronsDownUp } from "lucide-react"
 import "../css/Dashboard.css"
 
 /* ─── Helpers ─── */
@@ -426,6 +426,7 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
 
 function PinnedNoteCard({ note, tags, onUpdate }) {
   const [mode, setMode] = useState('preview')
+  const [expanded, setExpanded] = useState(false)
   const [editTitle, setEditTitle] = useState(note.title)
   const [editBody, setEditBody] = useState(note.body)
   const [dirty, setDirty] = useState(false)
@@ -465,6 +466,14 @@ function PinnedNoteCard({ note, tags, onUpdate }) {
           )}
         </div>
         <div className="dash-note-actions">
+          <button
+            className={`dash-note-expand-btn${expanded ? ' expanded' : ''}`}
+            onClick={() => setExpanded(!expanded)}
+            title={expanded ? 'Collapse note' : 'Expand note'}
+          >
+            {expanded ? <ChevronsDownUp size={12} /> : <ChevronsUpDown size={12} />}
+            {expanded ? 'Less' : 'More'}
+          </button>
           <div className="editor-mode-toggle" style={{ fontSize: '11px' }}>
             <button className={`editor-mode-btn${mode === 'preview' ? ' active' : ''}`}
               onClick={() => { if (dirty) handleSave(); setMode('preview') }}>Preview</button>
@@ -475,13 +484,13 @@ function PinnedNoteCard({ note, tags, onUpdate }) {
       </div>
       {mode === 'write' ? (
         <div className="dash-note-edit-area">
-          <textarea className="dash-note-textarea" value={editBody}
+          <textarea className={`dash-note-textarea${expanded ? ' expanded' : ''}`} value={editBody}
             onChange={e => { setEditBody(e.target.value); setDirty(true) }}
             placeholder="Start writing..." />
           {dirty && <button className="btn-primary dash-note-save" onClick={handleSave}>Save</button>}
         </div>
       ) : (
-        <div className="dash-note-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(note.body) }} />
+        <div className={`dash-note-preview${expanded ? ' expanded' : ''}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(note.body) }} />
       )}
     </div>
   )
@@ -967,7 +976,7 @@ export default function Dashboard() {
             const note = allNotes.find(n => n.id === noteId)
             if (!note) return null
             return (
-              <div key={`pinned-${noteId}`} className="dash-widget dash-widget-half">
+              <div key={`pinned-${noteId}`} className="dash-widget dash-widget-half dash-widget-pinned">
                 <div className="dash-widget-handle">
                   <div className="dash-widget-grip"><GripVertical size={14} /></div>
                   <StickyNote size={14} className="dash-widget-icon" />
