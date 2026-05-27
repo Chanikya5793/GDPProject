@@ -289,7 +289,7 @@ function renderMarkdown(text) {
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code style="background:#f3f4f6;padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/`(.+?)`/g, '<code class="ai-inline-code">$1</code>')
     .replace(/^&gt; (.+)$/gm, '<blockquote style="border-left:3px solid var(--green-mid);padding-left:12px;color:var(--muted)">$1</blockquote>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
@@ -846,7 +846,7 @@ export default function Dashboard() {
             <div className="dash-stats-row">
               {statItems.map(s => (
                 <div key={s.key}
-                  className={`dash-stat-mini dash-stat-click${activeStat === s.key ? ' dash-stat-active' : ''}`}
+                  className={`dash-stat-mini dash-stat-click dash-stat-${s.key}${activeStat === s.key ? ' dash-stat-active' : ''}`}
                   style={{ background: s.bg, '--stat-color': s.color }}
                   onClick={() => setActiveStat(prev => prev === s.key ? null : s.key)}>
                   <div className="dash-stat-n" style={{ color: s.color }}>{s.count}</div>
