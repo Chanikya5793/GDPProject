@@ -700,9 +700,7 @@ export default function Calendar() {
           <h1>Calendar</h1>
           <p>{taskCount} task{taskCount !== 1 ? 's' : ''} · {remCount} reminder{remCount !== 1 ? 's' : ''}</p>
         </div>
-        <div className="cal-view-dropdown" ref={dropdownRef}
-          onMouseEnter={() => { clearTimeout(hoverTimeoutRef.current); setViewDropdownOpen(true) }}
-          onMouseLeave={() => { hoverTimeoutRef.current = setTimeout(() => setViewDropdownOpen(false), 250) }}>
+        <div className="cal-view-dropdown" ref={dropdownRef}>
           <button className="cal-view-dropdown-btn" onClick={() => setViewDropdownOpen(v => !v)}>
             {currentViewLabel}
             <ChevronDown size={14} className={`cal-view-chevron${viewDropdownOpen ? ' open' : ''}`} />
