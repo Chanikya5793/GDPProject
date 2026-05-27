@@ -389,3 +389,15 @@
   opacity: .85;
 }
 
+/* ═══════════════════════════════════
+   DUE DATE ALERT — Accent Borders
+   ═══════════════════════════════════ */
+
+.task-alert-nearing {
+  border: 2.5px solid var(--amber) !important;
+}
+
+.task-alert-overdue {
+  border: 2.5px solid var(--red) !important;
+}
+
