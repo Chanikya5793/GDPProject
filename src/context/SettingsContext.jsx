@@ -13,6 +13,7 @@ const DEFAULTS = {
   defaultCategory: 'Homework',
   showCompleted: true,
   reminderDefault: 30,
+  dueDateAlerts: true,
 }
 
 function loadSettings() {
