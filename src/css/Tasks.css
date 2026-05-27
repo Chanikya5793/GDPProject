@@ -393,6 +393,36 @@
    DUE DATE ALERT — Accent Borders
    ═══════════════════════════════════ */
 
+/* ─── Priority card text contrast ─── */
+
+.task-priority-high .task-card-title { color: #7F1D1D; }
+.task-priority-high .task-date-compact,
+.task-priority-high .task-date,
+.task-priority-high .task-notes,
+.task-priority-high .task-card-meta,
+.task-priority-high .task-cat { color: #991B1B; }
+
+.task-priority-medium .task-card-title { color: #78350F; }
+.task-priority-medium .task-date-compact,
+.task-priority-medium .task-date,
+.task-priority-medium .task-notes,
+.task-priority-medium .task-card-meta,
+.task-priority-medium .task-cat { color: #92400E; }
+
+.task-priority-low .task-card-title { color: #14532D; }
+.task-priority-low .task-date-compact,
+.task-priority-low .task-date,
+.task-priority-low .task-notes,
+.task-priority-low .task-card-meta,
+.task-priority-low .task-cat { color: #166534; }
+
+.task-priority-escalated .task-card-title { color: #1F2937; }
+.task-priority-escalated .task-date-compact,
+.task-priority-escalated .task-date,
+.task-priority-escalated .task-notes,
+.task-priority-escalated .task-card-meta,
+.task-priority-escalated .task-cat { color: #374151; }
+
 .task-alert-nearing {
   border: 2.5px solid var(--amber) !important;
 }
