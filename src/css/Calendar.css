@@ -555,6 +555,8 @@
   transition: background .12s;
   overflow: hidden;
   min-width: 0;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .cal-cell:nth-child(7n) { border-right: none; }
