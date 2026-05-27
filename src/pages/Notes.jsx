@@ -322,7 +322,8 @@ export default function Notes() {
                     className="note-body-input"
                     value={editBody}
                     onChange={e => { setEditBody(e.target.value); setDirty(true) }}
-                    placeholder="Start writing your note..."
+                    placeholder={`Start writing your note...\n\nTip: You can use markdown formatting:\n     ## Heading\n     **bold**  *italic*\n     - bullet list\n     > blockquote`}
+                    spellCheck
                   />
                   <div className="note-markdown-hint">
                     <strong>Markdown:</strong>
