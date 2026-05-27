@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { useSettings } from "../context/SettingsContext"
 import { useAi } from "../context/AiContext"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
@@ -241,9 +242,30 @@ function QuickReminderModal({ onSave, onClose }) {
 
 /* ─── Row Components ─── */
 
-function TaskRow({ task, onToggle, showDate = false }) {
+function getDashVisualPriority(task) {
+  if (task.completed || !task.dueDate) return task.priority || 'medium'
+  const todayStr = localDateStr()
+  if (task.dueDate < todayStr) return 'escalated'
+  const threshold = new Date(); threshold.setDate(threshold.getDate() + 4)
+  const thresholdStr = localDateStr(threshold)
+  if (task.dueDate <= thresholdStr) return 'high'
+  return task.priority || 'medium'
+}
+
+function getDashUrgency(task, alertsEnabled) {
+  if (task.completed || !task.dueDate || !alertsEnabled) return ''
+  const todayStr = localDateStr()
+  const tom = new Date(); tom.setDate(tom.getDate() + 1)
+  const tomorrowStr = localDateStr(tom)
+  if (task.dueDate < todayStr) return ' dash-row-alert-overdue'
+  if (task.dueDate === todayStr || task.dueDate === tomorrowStr) return ' dash-row-alert-nearing'
+  return ''
+}
+
+function TaskRow({ task, onToggle, showDate = false, dueDateAlerts = true }) {
+  const visPriority = getDashVisualPriority(task)
   return (
-    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}`}>
+    <div className={`dash-row${task.completed ? ' dash-row-done' : ''}${getDashUrgency(task, dueDateAlerts)}`}>
       <button
         className={`dash-check${task.completed ? ' checked' : ''}`}
         onClick={() => onToggle(task.id)}
@@ -256,7 +278,7 @@ function TaskRow({ task, onToggle, showDate = false }) {
         <div className="dash-row-meta">
           {showDate && <span>{formatDate(task.dueDate)}</span>}
           {!showDate && task.category && <span>{task.category}</span>}
-          <span className={`badge badge-${task.priority}`}>{task.priority}</span>
+          <span className={`badge badge-${visPriority}`}>{visPriority}</span>
         </div>
       </div>
     </div>
@@ -615,6 +637,7 @@ function persistLayout(layout) {
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { settings } = useSettings()
   const { poppedOut, togglePopOut, clearChat } = useAi()
   const [tasks, setTasks] = useState([])
   const [reminders, setReminders] = useState([])
@@ -872,7 +895,7 @@ export default function Dashboard() {
                     {drawerItems.map(item =>
                       item._type === 'reminder'
                         ? <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
-                        : <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                        : <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate dueDateAlerts={settings.dueDateAlerts} />
                     )}
                   </div>
                 )}
@@ -885,13 +908,13 @@ export default function Dashboard() {
       case 'overdue':
         return overdue.length === 0
           ? <p className="dash-empty">No overdue items — you're on track!</p>
-          : overdue.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)
+          : overdue.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} dueDateAlerts={settings.dueDateAlerts} />)
 
       case 'due-today':
         return dueToday.length === 0 && remToday.length === 0
           ? <p className="dash-empty">Nothing due today — enjoy your day!</p>
           : <>
-              {dueToday.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)}
+              {dueToday.map(task => <TaskRow key={task.id} task={task} onToggle={handleToggle} dueDateAlerts={settings.dueDateAlerts} />)}
               {remToday.map(rem => <ReminderRow key={rem.id} reminder={rem} />)}
             </>
 
@@ -900,7 +923,7 @@ export default function Dashboard() {
           ? <p className="dash-empty">Nothing scheduled for the next 7 days.</p>
           : timeline.map(item =>
               item._type === 'task'
-                ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate />
+                ? <TaskRow key={`t-${item.id}`} task={item} onToggle={handleToggle} showDate dueDateAlerts={settings.dueDateAlerts} />
                 : <ReminderRow key={`r-${item.id}`} reminder={item} showDate />
             )
 

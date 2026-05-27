@@ -182,20 +182,43 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
 }
 
 const PRIORITY_STYLES = {
-  high:   { bg: '#FFA6A6', border: '#E68E8E' },
-  medium: { bg: '#FFEFB5', border: '#F4DAB2' },
-  low:    { bg: '#E2FFAF', border: '#CEFFB0' },
+  high:      { bg: '#FFA6A6', border: '#E68E8E' },
+  medium:    { bg: '#FFEFB5', border: '#F4DAB2' },
+  low:       { bg: '#E2FFAF', border: '#CEFFB0' },
+  escalated: { bg: '#E5E7EB', border: '#D1D5DB' },
 }
 const DONE_STYLE = { bg: '#F9FAFB', border: '#E5E7EB', accent: '#9CA3AF' }
 
-function TaskCard({ task, onToggle, onEdit, onDelete }) {
+function getVisualPriority(task) {
+  if (task.completed || !task.dueDate) return task.priority || 'medium'
+  const todayStr = today()
+  if (task.dueDate < todayStr) return 'escalated'
+  const threshold = new Date(); threshold.setDate(threshold.getDate() + 4)
+  const thresholdStr = localDateStr(threshold)
+  if (task.dueDate <= thresholdStr) return 'high'
+  return task.priority || 'medium'
+}
+
+function getUrgencyClass(task, alertsEnabled) {
+  if (task.completed || !task.dueDate || !alertsEnabled) return ''
+  const todayStr = today()
+  const tom = new Date(); tom.setDate(tom.getDate() + 1)
+  const tomorrowStr = localDateStr(tom)
+  if (task.dueDate < todayStr) return ' task-alert-overdue'
+  if (task.dueDate === todayStr || task.dueDate === tomorrowStr) return ' task-alert-nearing'
+  return ''
+}
+
+function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
   const isOverdue = !task.completed && task.dueDate < today()
-  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium)
+  const visPriority = getVisualPriority(task)
+  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[visPriority] || PRIORITY_STYLES.medium)
+  const urgency = getUrgencyClass(task, dueDateAlerts)
 
   return (
     <div className="task-card-slot">
       <div
-        className={`task-card${task.completed ? ' task-done' : ` task-priority-${task.priority || 'medium'}`}`}
+        className={`task-card${task.completed ? ' task-done' : ` task-priority-${visPriority}`}${urgency}`}
         style={{
           background: colors.bg,
           borderTopColor: colors.border,
@@ -391,7 +414,7 @@ export default function Tasks() {
         ) : (
           <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
             {filtered.map(task => (
-              <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} />
+              <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} dueDateAlerts={settings.dueDateAlerts} />
             ))}
           </div>
         )}

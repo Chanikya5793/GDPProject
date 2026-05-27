@@ -357,6 +357,14 @@ export default function Settings() {
               </div>
               <Toggle checked={settings.showCompleted} onChange={v => updateSetting('showCompleted', v)} />
             </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Due Date Alerts</span>
+                <span className="settings-row-desc">Flash borders on tasks due today, tomorrow, or overdue — and auto-escalate tasks due within 4 days to urgent styling</span>
+              </div>
+              <Toggle checked={settings.dueDateAlerts !== false} onChange={v => updateSetting('dueDateAlerts', v)} />
+            </div>
           </section>
 
           {/* ═══ Recycle Bin ═══ */}
