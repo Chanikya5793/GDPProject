@@ -941,6 +941,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ── Dashboard stat cards (override inline styles) ── */
 [data-theme="dark"] .dash-stat-overdue {
   background: #3B1515 !important;
+  --stat-color: #FCA5A5;
 }
 
 [data-theme="dark"] .dash-stat-overdue .dash-stat-n {
@@ -949,6 +950,7 @@ button { font-family: inherit; cursor: pointer; }
 
 [data-theme="dark"] .dash-stat-today {
   background: #3B2E10 !important;
+  --stat-color: #FDE68A;
 }
 
 [data-theme="dark"] .dash-stat-today .dash-stat-n {
@@ -957,6 +959,7 @@ button { font-family: inherit; cursor: pointer; }
 
 [data-theme="dark"] .dash-stat-week {
   background: #0F2A1A !important;
+  --stat-color: #86EFAC;
 }
 
 [data-theme="dark"] .dash-stat-week .dash-stat-n {
@@ -965,6 +968,7 @@ button { font-family: inherit; cursor: pointer; }
 
 [data-theme="dark"] .dash-stat-completed {
   background: #1B4A36 !important;
+  --stat-color: #86EFAC;
 }
 
 [data-theme="dark"] .dash-stat-completed .dash-stat-n {

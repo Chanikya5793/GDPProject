@@ -195,7 +195,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete }) {
   return (
     <div className="task-card-slot">
       <div
-        className={`task-card${task.completed ? ' task-done' : ` task-priority-${task.priority}`}`}
+        className={`task-card${task.completed ? ' task-done' : ` task-priority-${task.priority || 'medium'}`}`}
         style={{
           background: colors.bg,
           borderTopColor: colors.border,
