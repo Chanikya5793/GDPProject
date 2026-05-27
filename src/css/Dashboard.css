@@ -804,6 +804,20 @@
 }
 
 /* ═══════════════════════════
+   DUE DATE ALERT — Accent Rows
+   ═══════════════════════════ */
+
+.dash-row-alert-nearing {
+  border-left: 3px solid var(--amber);
+  padding-left: 9px;
+}
+
+.dash-row-alert-overdue {
+  border-left: 3px solid var(--red);
+  padding-left: 9px;
+}
+
+/* ═══════════════════════════
    RESPONSIVE
    ═══════════════════════════ */
 

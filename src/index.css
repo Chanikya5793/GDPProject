@@ -492,6 +492,12 @@ button { font-family: inherit; cursor: pointer; }
   color: #166534;
 }
 
+.badge-escalated {
+  background: #E5E7EB;
+  color: #374151;
+  text-transform: uppercase;
+}
+
 .badge-done {
   background: #F3F4F6;
   color: #6B7280;
@@ -849,6 +855,11 @@ button { font-family: inherit; cursor: pointer; }
   color: #86EFAC;
 }
 
+[data-theme="dark"] .badge-escalated {
+  background: #374151;
+  color: #D1D5DB;
+}
+
 [data-theme="dark"] .badge-done {
   background: #1F2937;
   color: #9CA3AF;
@@ -878,6 +889,23 @@ button { font-family: inherit; cursor: pointer; }
 
 [data-theme="dark"] .dash-row-reminder {
   background: #0F2A1F;
+}
+
+/* Due-date alert dark overrides */
+[data-theme="dark"] .task-alert-nearing {
+  border-color: #F59E0B !important;
+}
+
+[data-theme="dark"] .task-alert-overdue {
+  border-color: #EF4444 !important;
+}
+
+[data-theme="dark"] .dash-row-alert-nearing {
+  border-left-color: #F59E0B;
+}
+
+[data-theme="dark"] .dash-row-alert-overdue {
+  border-left-color: #EF4444;
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb {
@@ -919,6 +947,11 @@ button { font-family: inherit; cursor: pointer; }
 [data-theme="dark"] .task-card.task-priority-low {
   background: #0F2A1A !important;
   border-color: #1B4A36 !important;
+}
+
+[data-theme="dark"] .task-card.task-priority-escalated {
+  background: #1F2937 !important;
+  border-color: #374151 !important;
 }
 
 [data-theme="dark"] .task-card.task-done {
