@@ -327,8 +327,8 @@ export default function Notes() {
                   />
                   <div className="note-markdown-hint">
                     <strong>Markdown:</strong>
-                    &nbsp;## Heading &nbsp;·&nbsp; **bold** &nbsp;·&nbsp; *italic*
-                    &nbsp;·&nbsp; - list &nbsp;·&nbsp; {'>'} quote &nbsp;·&nbsp; `code`
+                      &nbsp;## Heading &nbsp;·&nbsp; **bold** &nbsp;·&nbsp; *italic*
+                      &nbsp;·&nbsp; - list &nbsp;·&nbsp; {'>'} quote &nbsp;·&nbsp; `code`
                   </div>
                 </>
               ) : (
