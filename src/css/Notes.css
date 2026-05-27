@@ -575,4 +575,7 @@
   flex-shrink: 0;
   white-space: nowrap;
   overflow-x: auto;
+  position: fixed;
+  bottom: 0%;
+  width: 100%;
 }
