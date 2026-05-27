@@ -888,6 +888,218 @@ button { font-family: inherit; cursor: pointer; }
   background: #3A4A42;
 }
 
+/* ── Text on colored / dark backgrounds (var(--white) → #fff) ── */
+[data-theme="dark"] .sidebar-logo-text,
+[data-theme="dark"] .sidebar-user-name,
+[data-theme="dark"] .sidebar-link:hover,
+[data-theme="dark"] .sidebar-link.active,
+[data-theme="dark"] .btn-primary,
+[data-theme="dark"] .btn-secondary:hover,
+[data-theme="dark"] .cal-tg-daynum.today,
+[data-theme="dark"] .cal-cell-today .cal-cell-num,
+[data-theme="dark"] .ai-msg-user .ai-msg-bubble,
+[data-theme="dark"] .ai-collapsed-btn:hover,
+[data-theme="dark"] .ai-suggestion:hover,
+[data-theme="dark"] .ai-send-active,
+[data-theme="dark"] .tag-add-btn:hover {
+  color: #fff;
+}
+
+/* ── Task card priorities (override inline styles) ── */
+[data-theme="dark"] .task-card.task-priority-high {
+  background: #3B1515 !important;
+  border-color: #5C2020 !important;
+}
+
+[data-theme="dark"] .task-card.task-priority-medium {
+  background: #3B2E10 !important;
+  border-color: #5C4A10 !important;
+}
+
+[data-theme="dark"] .task-card.task-priority-low {
+  background: #0F2A1A !important;
+  border-color: #1B4A36 !important;
+}
+
+[data-theme="dark"] .task-card.task-done {
+  background: var(--white) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .task-cat {
+  background: rgba(0,106,78,.25);
+}
+
+[data-theme="dark"] .task-notes {
+  border-top-color: rgba(255,255,255,.08);
+}
+
+[data-theme="dark"] .task-card:hover {
+  box-shadow: 0 12px 32px rgba(0,0,0,.4), 0 4px 10px rgba(0,0,0,.2);
+}
+
+/* ── Dashboard stat cards (override inline styles) ── */
+[data-theme="dark"] .dash-stat-overdue {
+  background: #3B1515 !important;
+  --stat-color: #FCA5A5;
+}
+
+[data-theme="dark"] .dash-stat-overdue .dash-stat-n {
+  color: #FCA5A5 !important;
+}
+
+[data-theme="dark"] .dash-stat-today {
+  background: #3B2E10 !important;
+  --stat-color: #FDE68A;
+}
+
+[data-theme="dark"] .dash-stat-today .dash-stat-n {
+  color: #FDE68A !important;
+}
+
+[data-theme="dark"] .dash-stat-week {
+  background: #0F2A1A !important;
+  --stat-color: #86EFAC;
+}
+
+[data-theme="dark"] .dash-stat-week .dash-stat-n {
+  color: #86EFAC !important;
+}
+
+[data-theme="dark"] .dash-stat-completed {
+  background: #1B4A36 !important;
+  --stat-color: #86EFAC;
+}
+
+[data-theme="dark"] .dash-stat-completed .dash-stat-n {
+  color: #86EFAC !important;
+}
+
+[data-theme="dark"] .dash-stat-mini {
+  border-color: rgba(255,255,255,.06);
+}
+
+[data-theme="dark"] .dash-widget:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.2);
+}
+
+[data-theme="dark"] .dash-chart-card:hover {
+  box-shadow: 0 8px 24px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.2);
+}
+
+[data-theme="dark"] .dash-stat-mini:hover {
+  box-shadow: 0 4px 14px rgba(0,0,0,.3);
+}
+
+[data-theme="dark"] .dash-unpin-btn:hover {
+  background: #3B1515;
+  border-color: #5C2020;
+}
+
+[data-theme="dark"] .dash-note-picker {
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+
+/* ── Calendar ── */
+[data-theme="dark"] .cal-legend-reminder {
+  background: #2A2010;
+  color: #FCD34D;
+  border-color: #5C4A10;
+}
+
+[data-theme="dark"] .cal-tg-chip.reminder,
+[data-theme="dark"] .cal-tg-event.reminder {
+  background: #0F1A2E;
+  color: #60A5FA;
+}
+
+[data-theme="dark"] .cal-pill-reminder {
+  background: #0F1A2E;
+  color: #60A5FA;
+}
+
+[data-theme="dark"] .cal-tg-cell.today {
+  background: var(--green-lt);
+}
+
+[data-theme="dark"] .cal-cell-today {
+  background: var(--green-lt);
+}
+
+[data-theme="dark"] .cal-cell-today:hover {
+  background: var(--green-mid);
+}
+
+[data-theme="dark"] .cal-cell-selected {
+  background: var(--green-lt);
+}
+
+[data-theme="dark"] .cal-panel-item-reminder {
+  background: #0F1A2E;
+}
+
+[data-theme="dark"] .cal-view-dropdown-menu {
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+
+/* ── Reminders ── */
+[data-theme="dark"] .rem-bell-wrap {
+  background: #0F1A2E;
+}
+
+[data-theme="dark"] .rem-overdue .rem-bell-wrap {
+  background: #3B1515;
+}
+
+[data-theme="dark"] .rem-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,.3);
+}
+
+/* ── Settings ── */
+[data-theme="dark"] .settings-theme-btn.active {
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+
+[data-theme="dark"] .trash-filter-count {
+  background: rgba(255,255,255,.1);
+}
+
+/* ── Notes ── */
+[data-theme="dark"] .note-pin-btn.pinned:hover {
+  background: #3B1515;
+  border-color: #5C2020;
+}
+
+[data-theme="dark"] .tag-picker {
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+
+/* ── Login ── */
+[data-theme="dark"] .login-error {
+  background: #3B1515;
+  color: #FCA5A5;
+}
+
+/* ── Shared ── */
+[data-theme="dark"] .btn-icon-danger:hover {
+  background: #3B1515 !important;
+  border-color: #5C2020 !important;
+}
+
+[data-theme="dark"] .filter-dd-menu-inner {
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+
+.ai-inline-code {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+[data-theme="dark"] .ai-inline-code {
+  background: var(--off);
+}
+
 /* ═══════════════════════════════════════
    SETTINGS: ACCENT COLORS
    ═══════════════════════════════════════ */
