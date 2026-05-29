@@ -661,3 +661,142 @@
   mix-blend-mode: difference;
   pointer-events: none;
 }
+
+/* ─── Note attachments (#1) ─── */
+.note-attachments {
+  padding: 0 24px 8px;
+  flex-shrink: 0;
+}
+
+.note-attachments-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.attach-add-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.attach-add-btn:hover {
+  border-color: var(--green-mid);
+  color: var(--green);
+  background: var(--green-lt);
+}
+
+.note-attachments-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.note-attachments-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.note-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  max-width: 260px;
+}
+
+.note-attachment-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: block;
+}
+
+.note-attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.note-attachment-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--off);
+  color: var(--muted);
+}
+
+.note-attachment-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.note-attachment-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-attachment-name:hover {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+.note-attachment-size {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.note-attachment-dl {
+  color: var(--muted);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.note-attachment-dl:hover {
+  color: var(--green);
+}
+
+.note-attachment-rm {
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.note-attachment-rm:hover {
+  color: var(--red);
+}

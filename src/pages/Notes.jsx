@@ -1,11 +1,34 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, updateTag, deleteTag } from '../api/notes'
-import { Search, Trash2, X, PinIcon } from 'lucide-react'
+import { Search, Trash2, X, PinIcon, Paperclip, Download, File as FileIcon } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Notes.css'
 
 const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
+
+// Attachments are stored as data URLs inside the note (browser localStorage),
+// so we cap individual file size to stay well within storage limits.
+const MAX_ATTACHMENT_SIZE = 2 * 1024 * 1024 // 2 MB
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function makeAttachmentId() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
 
 function NoteListItem({ note, selected, tags, isPinned, onClick }) {
   const preview = note.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 80)
@@ -20,6 +43,9 @@ function NoteListItem({ note, selected, tags, isPinned, onClick }) {
       {preview && <div className="note-list-preview">{preview}…</div>}
       <div className="note-list-meta">
         <span className="note-list-date">
+          {note.attachments?.length > 0 && (
+            <Paperclip size={11} style={{ verticalAlign: '-1px', marginRight: '3px' }} />
+          )}
           {new Date(note.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
         </span>
         <div className="note-list-tags">
@@ -124,6 +150,7 @@ export default function Notes() {
     } catch { return [] }
   })
   const tagPickerRef = useRef(null)
+  const attachInputRef = useRef(null)
 
   const handlePinToDashboard = (noteId) => {
     setPinnedNoteIds(prev => {
@@ -222,6 +249,45 @@ export default function Notes() {
   const handleCreateTag = async (tag) => {
     const created = await createTag(tag)
     setTags(prev => [...prev, created])
+  }
+
+  const handleAttachFiles = async (fileList) => {
+    if (!selectedNote) return
+    const files = Array.from(fileList)
+    const newAtts = []
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        alert(`"${file.name}" is larger than 2 MB and can't be attached. Attachments are stored in your browser, so please use smaller files.`)
+        continue
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file)
+        newAtts.push({
+          id: makeAttachmentId(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl,
+        })
+      } catch {
+        alert(`Could not read "${file.name}".`)
+      }
+    }
+    if (newAtts.length === 0) return
+    const attachments = [...(selectedNote.attachments || []), ...newAtts]
+    try {
+      const updated = await updateNote(selectedId, { attachments })
+      setNotes(prev => prev.map(n => n.id === selectedId ? updated : n))
+    } catch {
+      alert('There is not enough browser storage to save these attachments. Try smaller files or remove some existing ones.')
+    }
+  }
+
+  const handleRemoveAttachment = async (attId) => {
+    if (!selectedNote) return
+    const attachments = (selectedNote.attachments || []).filter(a => a.id !== attId)
+    const updated = await updateNote(selectedId, { attachments })
+    setNotes(prev => prev.map(n => n.id === selectedId ? updated : n))
   }
 
   const handleUpdateTag = async (id, updates) => {
@@ -348,6 +414,45 @@ export default function Notes() {
                       </div>
                     ))}
                     {tags.length === 0 && <div style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: '13px' }}>No tags. Use Manage Tags to create some.</div>}
+                  </div>
+                )}
+              </div>
+
+              <div className="note-attachments">
+                <div className="note-attachments-head">
+                  <button className="attach-add-btn" onClick={() => attachInputRef.current?.click()}>
+                    <Paperclip size={13} /> Attach file
+                  </button>
+                  <input
+                    ref={attachInputRef}
+                    type="file"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={e => { handleAttachFiles(e.target.files); e.target.value = '' }}
+                  />
+                  {(selectedNote.attachments?.length > 0) && (
+                    <span className="note-attachments-count">{selectedNote.attachments.length} attached</span>
+                  )}
+                </div>
+                {selectedNote.attachments?.length > 0 && (
+                  <div className="note-attachments-list">
+                    {selectedNote.attachments.map(att => (
+                      <div key={att.id} className="note-attachment">
+                        {att.type?.startsWith('image/') ? (
+                          <a href={att.dataUrl} download={att.name} className="note-attachment-thumb" title={`Download ${att.name}`}>
+                            <img src={att.dataUrl} alt={att.name} />
+                          </a>
+                        ) : (
+                          <span className="note-attachment-icon"><FileIcon size={18} /></span>
+                        )}
+                        <div className="note-attachment-info">
+                          <a href={att.dataUrl} download={att.name} className="note-attachment-name" title={att.name}>{att.name}</a>
+                          <span className="note-attachment-size">{formatFileSize(att.size)}</span>
+                        </div>
+                        <a href={att.dataUrl} download={att.name} className="note-attachment-dl" title="Download"><Download size={14} /></a>
+                        <button className="note-attachment-rm" onClick={() => handleRemoveAttachment(att.id)} title="Remove"><X size={14} /></button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
