@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, deleteTag } from '../api/notes'
 import { Search, Trash2, X, PinIcon } from 'lucide-react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Notes.css'
 
 const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
@@ -84,6 +85,7 @@ export default function Notes() {
   const [editorMode, setEditorMode] = useState('write')
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const [showTagManager, setShowTagManager] = useState(false)
+  const [confirmDeleteNote, setConfirmDeleteNote] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editBody, setEditBody] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -171,6 +173,7 @@ export default function Notes() {
       setEditTitle('')
       setEditBody('')
     }
+    setConfirmDeleteNote(false)
   }
 
   const handleToggleTag = async (tagId) => {
@@ -290,7 +293,7 @@ export default function Notes() {
                     <button className={`editor-mode-btn${editorMode === 'preview' ? ' active' : ''}`} onClick={() => setEditorMode('preview')}>Preview</button>
                   </div>
                   {dirty && <button className="btn-primary" onClick={handleSave}>Save</button>}
-                  <button className="btn-danger" title="Delete note" onClick={handleDeleteNote}><Trash2 size={14} /></button>
+                  <button className="btn-danger" title="Delete note" onClick={() => setConfirmDeleteNote(true)}><Trash2 size={14} /></button>
                 </div>
               </div>
 
@@ -347,6 +350,16 @@ export default function Notes() {
 
       {showTagManager && (
         <TagManagerModal tags={tags} onCreateTag={handleCreateTag} onDeleteTag={handleDeleteTag} onClose={() => setShowTagManager(false)} />
+      )}
+
+      {confirmDeleteNote && selectedNote && (
+        <ConfirmDialog
+          title="Delete note?"
+          message={`"${selectedNote.title || 'Untitled'}" will be moved to the Recycle Bin. You can restore it later from Settings.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeleteNote}
+          onClose={() => setConfirmDeleteNote(false)}
+        />
       )}
     </div>
   )
