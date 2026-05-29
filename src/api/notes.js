@@ -113,6 +113,13 @@ export async function createTag(tag) {
     return newTag
 }
 
+export async function updateTag(id, updates) {
+    const tags = loadTags()
+    const updated = tags.map(t => t.id === id ? { ...t, ...updates } : t)
+    saveTags(updated)
+    return updated.find(t => t.id === id)
+}
+
 export async function deleteTag(id) {
     const tags = loadTags()
     saveTags(tags.filter(t => t.id !== id))
