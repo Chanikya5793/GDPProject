@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
-import { getTasks, toggleTask, updateTask } from '../api/tasks'
-import { getReminders, updateReminder } from '../api/reminders'
+import { getTasks, toggleTask, updateTask, createTask } from '../api/tasks'
+import { getReminders, updateReminder, createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
-import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save, CircleCheckBig, Bell } from 'lucide-react'
+import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save, CircleCheckBig, Bell, Plus } from 'lucide-react'
 import '../css/Calendar.css'
 
 /* ── helpers ── */
@@ -118,6 +118,86 @@ function ItemPill({ item }) {
 }
 
 /* ══════════════════════════════════════
+   QUICK-ADD MODAL (create task / reminder from calendar)
+   ══════════════════════════════════════ */
+
+function QuickAddModal({ type, date, categories, defaultPriority, defaultCategory, onSave, onClose }) {
+  const isTask = type === 'task'
+  const [form, setForm] = useState(
+    isTask
+      ? { title: '', dueDate: date, dueTime: '', priority: defaultPriority || 'medium', category: defaultCategory || 'Homework', notes: '' }
+      : { title: '', date, time: '', notes: '' }
+  )
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!form.title.trim()) return
+    onSave(form)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">{isTask ? 'New Task' : 'New Reminder'}</h2>
+          <button className="modal-close" onClick={onClose}><XIcon size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="form-group">
+              <label className="form-label">Title</label>
+              <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)}
+                placeholder={isTask ? 'What needs to be done?' : 'What do you need to remember?'} autoFocus />
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">{isTask ? 'Due Date' : 'Date'}</label>
+                <input className="form-input" type="date"
+                  value={isTask ? form.dueDate : form.date}
+                  onChange={e => set(isTask ? 'dueDate' : 'date', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">{isTask ? 'Due Time' : 'Time'}</label>
+                <input className="form-input" type="time"
+                  value={isTask ? form.dueTime : form.time}
+                  onChange={e => set(isTask ? 'dueTime' : 'time', e.target.value)} />
+              </div>
+            </div>
+            {isTask && (
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label className="form-label">Priority</label>
+                  <select className="form-select" value={form.priority} onChange={e => set('priority', e.target.value)}>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Category</label>
+                  <select className="form-select" value={form.category} onChange={e => set('category', e.target.value)}>
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Notes</label>
+              <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />
+            </div>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary">{isTask ? 'Add Task' : 'Add Reminder'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════
    TIME GRID VIEW (Day / Three Day / Work Week / Week)
    Outlook-style hourly layout
    ══════════════════════════════════════ */
@@ -125,7 +205,7 @@ function ItemPill({ item }) {
 const HOUR_HEIGHT = 56
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
-function TimeGridView({ dates, itemsByDate, todayStr, onItemDrop }) {
+function TimeGridView({ dates, itemsByDate, todayStr, selectedDate, onSelectDay, onItemDrop }) {
   const scrollRef = useRef(null)
   const [nowMinutes, setNowMinutes] = useState(() => {
     const n = new Date()
@@ -160,11 +240,15 @@ function TimeGridView({ dates, itemsByDate, todayStr, onItemDrop }) {
         {dates.map(ds => {
           const d = new Date(ds + 'T00:00:00')
           const isToday = ds === todayStr
+          const isSelected = ds === selectedDate
           return (
-            <div key={ds} className={`cal-tg-col-head${isToday ? ' today' : ''}`}>
+            <button key={ds} type="button"
+              className={`cal-tg-col-head${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`}
+              onClick={() => onSelectDay?.(ds)}
+              title="View this day">
               <span className="cal-tg-dow">{d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
               <span className={`cal-tg-daynum${isToday ? ' today' : ''}`}>{d.getDate()}</span>
-            </div>
+            </button>
           )
         })}
       </div>
@@ -311,7 +395,7 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
    DAY PANEL (sidebar for month view)
    ══════════════════════════════════════ */
 
-function DayPanel({ date, items, onToggle, onClose, onItemUpdated, autoEditItem, onAutoEditHandled, categories }) {
+function DayPanel({ date, items, onToggle, onClose, onItemUpdated, onAdd, autoEditItem, onAutoEditHandled, categories }) {
   const d = new Date(date + 'T00:00:00')
   const dayName = d.toLocaleDateString('en-US', { weekday: 'long' })
   const fullDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -389,6 +473,14 @@ function DayPanel({ date, items, onToggle, onClose, onItemUpdated, autoEditItem,
           <div className="cal-panel-date-full">{fullDate}</div>
         </div>
         <button className="modal-close" onClick={onClose}>&#10005;</button>
+      </div>
+      <div className="cal-panel-add">
+        <button className="cal-panel-add-btn" onClick={() => onAdd('task')}>
+          <Plus size={13} /> Task
+        </button>
+        <button className="cal-panel-add-btn" onClick={() => onAdd('reminder')}>
+          <Plus size={13} /> Reminder
+        </button>
       </div>
       {tasks.length === 0 && reminders.length === 0 && (
         <p className="cal-panel-empty">Nothing scheduled for this day.</p>
@@ -539,6 +631,7 @@ export default function Calendar() {
   const calRef = useRef(null)
   const [hoverTip, setHoverTip] = useState(null)
   const [autoEditItem, setAutoEditItem] = useState(null)
+  const [quickAdd, setQuickAdd] = useState(null) // 'task' | 'reminder' | null
 
   // sync year/month from selectedDate when in non-month views
   useEffect(() => {
@@ -589,7 +682,6 @@ export default function Calendar() {
           setYear(d.getFullYear())
           setMonth(d.getMonth())
           setSelectedDate(itemDate)
-          setView('month')
           setPanelOpen(true)
           setAutoEditItem({ type: data.type, id: data.id })
         }
@@ -616,6 +708,17 @@ export default function Calendar() {
   const handleToggle = async (id) => {
     const updated = await toggleTask(id)
     setTasks(prev => prev.map(t => t.id === id ? updated : t))
+  }
+
+  const handleQuickAdd = async (form) => {
+    if (quickAdd === 'task') {
+      const created = await createTask({ ...form, userId: user.id })
+      setTasks(prev => [...prev, created])
+    } else {
+      const created = await createReminder({ ...form, userId: user.id })
+      setReminders(prev => [...prev, created])
+    }
+    setQuickAdd(null)
   }
 
   const handleItemDrop = async (itemType, itemId, newDate, newTime) => {
@@ -727,7 +830,7 @@ export default function Calendar() {
       </div>
 
       <div className="page-body" ref={calRef}>
-        <div className={`cal-wrap${panelOpen && view === 'month' ? ' cal-wrap-split' : ''}`}>
+        <div className={`cal-wrap${panelOpen ? ' cal-wrap-split' : ''}`}>
           <div className="cal-main">
             {/* nav bar */}
             <div className="cal-nav">
@@ -770,17 +873,19 @@ export default function Calendar() {
                 onItemDrop={handleItemDrop} />
             )}
             {isTimeGrid && (
-              <TimeGridView dates={viewDates} itemsByDate={itemsByDate} todayStr={todayStr} onItemDrop={handleItemDrop} />
+              <TimeGridView dates={viewDates} itemsByDate={itemsByDate} todayStr={todayStr}
+                selectedDate={selectedDate} onSelectDay={onSelectDay} onItemDrop={handleItemDrop} />
             )}
           </div>
 
-          {panelOpen && view === 'month' && (
+          {panelOpen && (
             <DayPanel date={selectedDate} items={selectedItems}
               onToggle={handleToggle} onClose={() => setPanelOpen(false)}
               onItemUpdated={(type, updated) => {
                 if (type === 'task') setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
                 else setReminders(prev => prev.map(r => r.id === updated.id ? updated : r))
               }}
+              onAdd={(type) => setQuickAdd(type)}
               autoEditItem={autoEditItem}
               onAutoEditHandled={() => setAutoEditItem(null)}
               categories={categories} />
@@ -806,6 +911,18 @@ export default function Calendar() {
           )}
           <div className="cal-hover-tip-hint">Drag to reschedule · Double-click to edit</div>
         </div>
+      )}
+
+      {quickAdd && (
+        <QuickAddModal
+          type={quickAdd}
+          date={selectedDate}
+          categories={categories}
+          defaultPriority={settings.defaultPriority}
+          defaultCategory={settings.defaultCategory}
+          onSave={handleQuickAdd}
+          onClose={() => setQuickAdd(null)}
+        />
       )}
     </>
   )
