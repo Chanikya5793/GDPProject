@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getReminders, createReminder, updateReminder, deleteReminder } from '../api/reminders'
 import { Bell, Pencil, Trash2, List, LayoutGrid, X } from 'lucide-react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Reminders.css'
 
 function localDateStr(d = new Date()) {
@@ -89,7 +90,12 @@ function ReminderCard({ reminder, onEdit, onDelete }) {
   const isToday = reminder.date === todayStr
 
   return (
-    <div className={`rem-card${isOverdue ? ' rem-overdue' : ''}${isToday ? ' rem-today' : ''}`}>
+    <div
+      className={`rem-card${isOverdue ? ' rem-overdue' : ''}${isToday ? ' rem-today' : ''}`}
+      onMouseDown={e => { if (e.detail > 1) e.preventDefault() }}
+      onDoubleClick={() => onEdit(reminder)}
+      title="Double-click to edit"
+    >
       <div className="rem-card-left">
         <div className="rem-bell-wrap"><Bell size={18} /></div>
         <div className="rem-time-block">
@@ -125,6 +131,7 @@ export default function Reminders() {
   const [filter, setFilter] = useState('upcoming')
   const [modalReminder, setModalReminder] = useState(null)
   const [showModal, setShowModal] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   useEffect(() => {
     getReminders(user.id).then(r => { setReminders(r); setLoading(false) })
@@ -142,9 +149,11 @@ export default function Reminders() {
     setModalReminder(null)
   }
 
-  const handleDelete = async (id) => {
+  const handleDelete = async () => {
+    const id = confirmDeleteId
     await deleteReminder(id)
     setReminders(prev => prev.filter(r => r.id !== id))
+    setConfirmDeleteId(null)
   }
 
   const handleEdit = (rem) => {
@@ -220,10 +229,10 @@ export default function Reminders() {
                 </div>
                 {view === 'grid' ? (
                   <div className="rem-grid">
-                    {group.reminders.map(r => <ReminderCard key={r.id} reminder={r} onEdit={handleEdit} onDelete={handleDelete} />)}
+                    {group.reminders.map(r => <ReminderCard key={r.id} reminder={r} onEdit={handleEdit} onDelete={setConfirmDeleteId} />)}
                   </div>
                 ) : (
-                  group.reminders.map(r => <ReminderCard key={r.id} reminder={r} onEdit={handleEdit} onDelete={handleDelete} />)
+                  group.reminders.map(r => <ReminderCard key={r.id} reminder={r} onEdit={handleEdit} onDelete={setConfirmDeleteId} />)
                 )}
               </div>
             ))}
@@ -236,6 +245,16 @@ export default function Reminders() {
           reminder={modalReminder}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setModalReminder(null) }}
+        />
+      )}
+
+      {confirmDeleteId !== null && (
+        <ConfirmDialog
+          title="Delete reminder?"
+          message={`"${reminders.find(r => r.id === confirmDeleteId)?.title || 'This reminder'}" will be moved to the Recycle Bin. You can restore it later from Settings.`}
+          confirmLabel="Delete"
+          onConfirm={handleDelete}
+          onClose={() => setConfirmDeleteId(null)}
         />
       )}
     </>
