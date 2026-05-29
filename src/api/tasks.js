@@ -1,4 +1,5 @@
 import { addToTrash } from './trash'
+import { addLog } from './logs'
 
 const STORAGE_KEY = 'nw_tasks'
 
@@ -78,6 +79,7 @@ export async function createTask(task) {
         createdAt: new Date().toISOString(),
     }
     save([...tasks, newTask])
+    addLog('created', 'task', newTask.title)
     return newTask
 }
 
@@ -85,7 +87,9 @@ export async function updateTask(id, updates) {
     const tasks = load()
     const updated = tasks.map(t => t.id === id ? { ...t, ...updates } : t)
     save(updated)
-    return updated.find(t => t.id === id)
+    const task = updated.find(t => t.id === id)
+    addLog('updated', 'task', task?.title)
+    return task
 }
 
 export async function deleteTask(id) {
@@ -93,6 +97,7 @@ export async function deleteTask(id) {
     const task = tasks.find(t => t.id === id)
     if (task) await addToTrash(task, 'task')
     save(tasks.filter(t => t.id !== id))
+    addLog('deleted', 'task', task?.title)
     return { success: true }
 }
 
@@ -106,5 +111,7 @@ export async function toggleTask(id) {
     const tasks = load()
     const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t)
     save(updated)
-    return updated.find(t => t.id === id)
+    const task = updated.find(t => t.id === id)
+    addLog(task?.completed ? 'completed' : 'reopened', 'task', task?.title)
+    return task
 }
