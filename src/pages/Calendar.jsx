@@ -533,6 +533,7 @@ export default function Calendar() {
   const [viewDropdownOpen, setViewDropdownOpen] = useState(false)
   const [showTasks, setShowTasks] = useState(true)
   const [showReminders, setShowReminders] = useState(true)
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const dropdownRef = useRef(null)
   const hoverTimeoutRef = useRef(null)
   const calRef = useRef(null)
@@ -664,6 +665,7 @@ export default function Calendar() {
   if (showTasks) {
     for (const t of tasks) {
       if (!t.dueDate) continue
+      if (categoryFilter !== 'all' && t.category !== categoryFilter) continue
       if (!itemsByDate[t.dueDate]) itemsByDate[t.dueDate] = []
       itemsByDate[t.dueDate].push({ ...t, _type: 'task' })
     }
@@ -683,6 +685,7 @@ export default function Calendar() {
   const viewDates = isTimeGrid ? getViewDates(selectedDate, view, settings.weekStartsOn) : []
   const taskCount = tasks.filter(t => !t.completed).length
   const remCount = reminders.length
+  const calCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))].sort()
   const currentViewLabel = VIEW_OPTIONS.find(v => v.key === view)?.label || 'Month'
 
   if (loading) {
@@ -747,6 +750,15 @@ export default function Calendar() {
                   onClick={() => setShowReminders(v => !v)}
                   title={showReminders ? 'Hide reminders' : 'Show reminders'}
                 ><Bell size={14} className="cal-legend-icon" />Reminders</button>
+                <select
+                  className={`cal-cat-filter${categoryFilter !== 'all' ? ' active' : ''}`}
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                  title="Filter tasks by category"
+                >
+                  <option value="all">All Categories</option>
+                  {calCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
             </div>
 
