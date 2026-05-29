@@ -842,7 +842,11 @@ export default function Dashboard() {
 
   const resetLayout = () => {
     const noteWidgets = pinnedNoteIds.map(id => ({ id: `note-${id}`, size: 'half' }))
-    const reset = [...DEFAULT_LAYOUT, ...noteWidgets]
+    // Preserve the popped-out AI chat widget — otherwise it disappears on reset
+    // and only reappears after a page refresh (the pop-out sync effect only runs
+    // when `poppedOut` itself changes).
+    const chatWidget = poppedOut ? [{ id: 'ai-chat', size: 'half' }] : []
+    const reset = [...DEFAULT_LAYOUT, ...noteWidgets, ...chatWidget]
     setLayout(reset)
     persistLayout(reset)
   }
