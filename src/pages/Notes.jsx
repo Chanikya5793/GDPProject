@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, deleteTag } from '../api/notes'
+import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, updateTag, deleteTag } from '../api/notes'
 import { Search, Trash2, X, PinIcon } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Notes.css'
@@ -32,7 +32,33 @@ function NoteListItem({ note, selected, tags, isPinned, onClick }) {
   )
 }
 
-function TagManagerModal({ tags, onCreateTag, onDeleteTag, onClose }) {
+/* A row of preset swatches plus a native color picker for any custom color. */
+function ColorChooser({ value, onChange }) {
+  return (
+    <div className="tag-color-chooser">
+      {TAG_COLORS.map(c => (
+        <button
+          key={c}
+          type="button"
+          className={`tag-color-swatch${value?.toLowerCase() === c.toLowerCase() ? ' selected' : ''}`}
+          style={{ background: c }}
+          onClick={() => onChange(c)}
+          title={c}
+        />
+      ))}
+      <label className="tag-color-custom" title="Custom color" style={{ background: value }}>
+        <input
+          type="color"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+        <span className="tag-color-custom-plus">+</span>
+      </label>
+    </div>
+  )
+}
+
+function TagManagerModal({ tags, onCreateTag, onUpdateTag, onDeleteTag, onClose }) {
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(TAG_COLORS[0])
 
@@ -45,26 +71,28 @@ function TagManagerModal({ tags, onCreateTag, onDeleteTag, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
         <div className="modal-header">
           <h2 className="modal-title">Manage Tags</h2>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-          <input className="form-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="New tag name..." onKeyDown={e => e.key === 'Enter' && handleAdd()} style={{ flex: 1 }} />
-          <select className="form-select" value={newColor} onChange={e => setNewColor(e.target.value)} style={{ width: '80px', padding: '5px' }}>
-            {TAG_COLORS.map(c => <option key={c} value={c} style={{ background: c }}>■</option>)}
-          </select>
-          <button className="btn-primary" onClick={handleAdd} style={{ whiteSpace: 'nowrap' }}>Add</button>
+        <div className="tag-manager-create">
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input className="form-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="New tag name..." onKeyDown={e => e.key === 'Enter' && handleAdd()} style={{ flex: 1 }} />
+            <button className="btn-primary" onClick={handleAdd} style={{ whiteSpace: 'nowrap' }}>Add</button>
+          </div>
+          <ColorChooser value={newColor} onChange={setNewColor} />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
           {tags.map(tag => (
-            <div key={tag.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }}>
-              <span style={{ width: '14px', height: '14px', borderRadius: '4px', background: tag.color, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: '14px', fontWeight: 600 }}>#{tag.name}</span>
-              <button className="btn-icon btn-icon-danger" style={{ width: '24px', height: '24px' }} onClick={() => onDeleteTag(tag.id)}>
-                <Trash2 size={12} />
-              </button>
+            <div key={tag.id} className="tag-manager-row">
+              <div className="tag-manager-row-head">
+                <span className="tag-chip" style={{ background: tag.color }}>#{tag.name}</span>
+                <button className="btn-icon btn-icon-danger" style={{ width: '24px', height: '24px', marginLeft: 'auto' }} onClick={() => onDeleteTag(tag.id)} title="Delete tag">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <ColorChooser value={tag.color} onChange={c => onUpdateTag(tag.id, { color: c })} />
             </div>
           ))}
           {tags.length === 0 && <p style={{ color: 'var(--muted)', fontSize: '13px', textAlign: 'center', padding: '12px' }}>No tags yet. Create one above.</p>}
@@ -194,6 +222,11 @@ export default function Notes() {
   const handleCreateTag = async (tag) => {
     const created = await createTag(tag)
     setTags(prev => [...prev, created])
+  }
+
+  const handleUpdateTag = async (id, updates) => {
+    const updated = await updateTag(id, updates)
+    setTags(prev => prev.map(t => t.id === id ? updated : t))
   }
 
   const handleDeleteTag = async (id) => {
@@ -349,7 +382,7 @@ export default function Notes() {
       </div>
 
       {showTagManager && (
-        <TagManagerModal tags={tags} onCreateTag={handleCreateTag} onDeleteTag={handleDeleteTag} onClose={() => setShowTagManager(false)} />
+        <TagManagerModal tags={tags} onCreateTag={handleCreateTag} onUpdateTag={handleUpdateTag} onDeleteTag={handleDeleteTag} onClose={() => setShowTagManager(false)} />
       )}
 
       {confirmDeleteNote && selectedNote && (
