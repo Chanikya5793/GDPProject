@@ -1012,3 +1012,32 @@
   .cal-tg-allday-lbl { font-size: 8px; }
   .cal-tg-scroll { max-height: calc(100vh - 240px); }
 }
+
+/* ─── Calendar category filter ─── */
+.cal-cat-filter {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 28px 5px 12px;
+  cursor: pointer;
+  transition: all .2s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.cal-cat-filter:hover {
+  border-color: var(--muted);
+}
+
+.cal-cat-filter.active {
+  background-color: var(--green-lt);
+  color: var(--green);
+  border-color: var(--green-mid);
+}
