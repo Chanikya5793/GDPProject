@@ -5,6 +5,7 @@ import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTa
 import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle } from 'lucide-react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Tasks.css'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
@@ -329,6 +330,9 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
     <div className="task-card-slot">
       <div
         className={`task-card${task.completed ? ' task-done' : ` task-priority-${ep.effective}${ep.wasEscalated ? ' task-escalated' : ''}`}${urgency}`}
+        onMouseDown={e => { if (e.detail > 1) e.preventDefault() }}
+        onDoubleClick={e => { if (!e.target.closest('button')) onEdit(task) }}
+        title="Double-click to edit"
         style={{
           background: colors.bg,
           borderTopColor: colors.border,
@@ -502,6 +506,7 @@ export default function Tasks() {
   const [sortBy, setSortBy] = useState('dueDate')
   const [modalTask, setModalTask] = useState(null)
   const [showModal, setShowModal] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [showReschedule, setShowReschedule] = useState(false)
 
   useEffect(() => {
@@ -533,9 +538,11 @@ export default function Tasks() {
     setModalTask(null)
   }
 
-  const handleDelete = async (id) => {
+  const handleDelete = async () => {
+    const id = confirmDeleteId
     await deleteTask(id)
     setTasks(prev => prev.filter(t => t.id !== id))
+    setConfirmDeleteId(null)
   }
 
   const handleEdit = (task) => { setModalTask(task); setShowModal(true) }
@@ -654,7 +661,7 @@ export default function Tasks() {
         ) : (
           <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
             {filtered.map(task => (
-              <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={handleDelete} dueDateAlerts={settings.dueDateAlerts} />
+              <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
             ))}
           </div>
         )}
@@ -668,6 +675,16 @@ export default function Tasks() {
           defaultCategory={settings.defaultCategory}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setModalTask(null) }}
+        />
+      )}
+
+      {confirmDeleteId !== null && (
+        <ConfirmDialog
+          title="Delete task?"
+          message={`"${tasks.find(t => t.id === confirmDeleteId)?.title || 'This task'}" will be moved to the Recycle Bin. You can restore it later from Settings.`}
+          confirmLabel="Delete"
+          onConfirm={handleDelete}
+          onClose={() => setConfirmDeleteId(null)}
         />
       )}
 

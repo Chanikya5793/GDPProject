@@ -456,3 +456,86 @@
     width: 100%;
   }
 }
+
+/* ═══ Activity Log ═══ */
+.log-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.log-session {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.log-session-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--off);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-session-count {
+  margin-left: auto;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.log-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--off);
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-entry-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.log-entry-action {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.log-entry-entity {
+  color: var(--muted);
+}
+
+.log-entry-title {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.log-entry-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
