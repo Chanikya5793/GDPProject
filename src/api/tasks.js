@@ -108,3 +108,12 @@ export async function toggleTask(id) {
     save(updated)
     return updated.find(t => t.id === id)
 }
+
+export async function batchUpdateTasks(updates) {
+    // updates: [{ id, changes }]
+    const tasks = load()
+    const map = new Map(updates.map(u => [u.id, u.changes]))
+    const updated = tasks.map(t => map.has(t.id) ? { ...t, ...map.get(t.id) } : t)
+    save(updated)
+    return updated.filter(t => map.has(t.id))
+}
