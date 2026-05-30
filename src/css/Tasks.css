@@ -431,3 +431,326 @@
   border: 2.5px solid var(--red) !important;
 }
 
+/* ═══════════════════════════════════════
+   PRIORITY ESCALATION BADGES
+   ═══════════════════════════════════════ */
+
+/* Compact title row — wraps title + escalation badge side-by-side */
+.task-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Small "↑ tmr", "↑ overdue" badge next to the title */
+.task-escalation-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #B45309;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+/* When overdue, badge turns red */
+.task-escalated .task-escalation-badge {
+  color: #B91C1C;
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+/* Priority badge in the expanded detail row */
+.task-priority-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--muted);
+}
+
+.task-priority-badge.escalated {
+  background: rgba(245, 158, 11, 0.15);
+  color: #B45309;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+/* Subtle pulsing left-border on escalated incomplete tasks */
+.task-escalated {
+  border-left-width: 3px !important;
+}
+
+/* ═══════════════════════════════════════
+   OVERLOAD BANNER
+   ═══════════════════════════════════════ */
+
+.overload-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: #FFFBEB;
+  border: 1.5px solid #F59E0B;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.overload-banner:hover {
+  background: #FEF3C7;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.18);
+}
+
+.overload-banner-icon {
+  color: #D97706;
+  flex-shrink: 0;
+}
+
+.overload-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.overload-banner-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400E;
+}
+
+.overload-banner-text span {
+  font-size: 12px;
+  color: #B45309;
+}
+
+.overload-banner-cta {
+  font-size: 13px;
+  font-weight: 700;
+  color: #D97706;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════
+   RESCHEDULE MODAL
+   ═══════════════════════════════════════ */
+
+.reschedule-modal {
+  max-width: 520px !important;
+  width: 92vw;
+}
+
+.reschedule-info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #FFFBEB;
+  border: 1px solid #F59E0B;
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 13px;
+  color: #92400E;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.reschedule-info-box svg {
+  color: #D97706;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Day block */
+.reschedule-day-block {
+  background: var(--off);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.reschedule-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.reschedule-day-header strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.reschedule-day-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #B45309;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 12px;
+  padding: 2px 8px;
+}
+
+.reschedule-day-tasks {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: disc;
+}
+
+.reschedule-day-tasks li {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reschedule-escalated-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #B45309;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+/* Section label */
+.reschedule-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 14px 0 8px;
+}
+
+/* Suggestions list */
+.reschedule-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.reschedule-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--white);
+}
+
+.reschedule-suggestion:hover {
+  border-color: var(--green);
+  background: var(--green-lt);
+}
+
+.reschedule-suggestion.selected {
+  border-color: var(--green);
+  background: var(--green-lt);
+}
+
+.reschedule-suggestion input[type="checkbox"] {
+  flex-shrink: 0;
+  accent-color: var(--green);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.reschedule-suggestion-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reschedule-task-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reschedule-move-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.reschedule-from {
+  color: var(--muted);
+}
+
+.reschedule-arrow {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.reschedule-to {
+  color: var(--green);
+  font-weight: 700;
+}
+
+/* Priority dot */
+.reschedule-prio-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.prio-high   { background: #EF4444; }
+.prio-medium { background: #F59E0B; }
+.prio-low    { background: #22C55E; }
+
+/* Modal footer */
+.reschedule-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.reschedule-footer .btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Empty state when no free slots found */
+.reschedule-empty {
+  text-align: center;
+  padding: 20px 0 8px;
+}
+
+.reschedule-empty p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+

@@ -1,40 +1,179 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
-import { getTasks, createTask, updateTask, deleteTask, toggleTask } from '../api/tasks'
+import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTasks } from '../api/tasks'
 import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
-import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown } from 'lucide-react'
+import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle } from 'lucide-react'
 import '../css/Tasks.css'
+
+// ─── date helpers ────────────────────────────────────────────────────────────
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function today() {
-  return localDateStr()
+function today() { return localDateStr() }
+
+function getDaysUntilDue(dueDateStr) {
+  if (!dueDateStr) return Infinity
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  const due = new Date(dueDateStr + 'T00:00:00')
+  return Math.floor((due - t) / 86400000)
 }
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  const now = new Date()
-  const todayStr = localDateStr(now)
-  const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowStr = localDateStr(tomorrow)
+  const todayStr = today()
+  const tom = new Date(); tom.setDate(tom.getDate() + 1)
+  const tomorrowStr = localDateStr(tom)
   if (dateStr === todayStr) return 'Today'
   if (dateStr === tomorrowStr) return 'Tomorrow'
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function friendlyDate(dateStr) {
+  const d = getDaysUntilDue(dateStr)
+  if (d < 0) return 'Overdue'
+  if (d === 0) return 'Today'
+  if (d === 1) return 'Tomorrow'
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 function formatTime(t) {
   if (!t) return ''
   const [h, m] = t.split(':')
   const hour = parseInt(h)
-  const ampm = hour >= 12 ? 'PM' : 'AM'
-  return `${hour % 12 || 12}:${m} ${ampm}`
+  return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`
 }
+
+// ─── priority escalation ─────────────────────────────────────────────────────
+
+const PRIO_ORDER = { high: 0, medium: 1, low: 2 }
+
+/**
+ * Returns the effective (display) priority based on deadline proximity.
+ * Stored priority is NEVER changed — only the visual representation escalates.
+ *
+ * Rules (incomplete tasks with a due date only):
+ *   overdue / today (≤ 0 days)  →  any priority  →  HIGH
+ *   tomorrow         (1 day)    →  low/medium     →  HIGH
+ *   2–3 days                    →  low            →  MEDIUM
+ *   4 days                      →  low            →  MEDIUM  (mild)
+ */
+function getEffectivePriority(task) {
+  if (task.completed || !task.dueDate) return { effective: task.priority || 'medium', original: task.priority || 'medium', wasEscalated: false, daysUntilDue: Infinity }
+  const days = getDaysUntilDue(task.dueDate)
+  const original = task.priority || 'medium'
+  let effective = original
+  if (days <= 1) {
+    effective = 'high'
+  } else if (days <= 3) {
+    if (original === 'low') effective = 'medium'
+  } else if (days <= 4) {
+    if (original === 'low') effective = 'medium'
+  }
+  return { effective, original, wasEscalated: effective !== original, daysUntilDue: days }
+}
+
+// ─── overload detection & pull-forward rescheduling ──────────────────────────
+
+/**
+ * Finds future dates (> today) with >= threshold incomplete tasks.
+ * Today and overdue dates are excluded — you can't pull those any earlier.
+ */
+function detectOverloadedDays(tasks, threshold = 3) {
+  const todayStr = today()
+  const active = tasks.filter(t => !t.completed && t.dueDate && t.dueDate > todayStr)
+  const byDate = {}
+  for (const t of active) {
+    byDate[t.dueDate] = byDate[t.dueDate] || []
+    byDate[t.dueDate].push(t)
+  }
+  return Object.entries(byDate)
+    .filter(([, ts]) => ts.length >= threshold)
+    .map(([date, ts]) => ({ date, tasks: ts }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
+ * For each overloaded future day, suggests PULLING lower-priority tasks
+ * FORWARD to earlier available dates (between today+1 and the overloaded day-1).
+ * Never pushes tasks to a later date.
+ *
+ * Strategy: keep the `keepPerDay` highest-priority tasks on the original date;
+ * move the rest to the earliest available slot before that date.
+ */
+function suggestReschedule(overloadedDays, allTasks, keepPerDay = 2) {
+  const todayStr = today()
+
+  // Build a mutable count map for all active tasks (so we can reserve slots)
+  const countByDate = {}
+  for (const t of allTasks.filter(t => !t.completed && t.dueDate)) {
+    countByDate[t.dueDate] = (countByDate[t.dueDate] || 0) + 1
+  }
+
+  const suggestions = []
+
+  for (const day of overloadedDays) {
+    // Sort: highest stored priority first, then oldest creation date first
+    const sorted = [...day.tasks].sort((a, b) =>
+      PRIO_ORDER[a.priority] !== PRIO_ORDER[b.priority]
+        ? PRIO_ORDER[a.priority] - PRIO_ORDER[b.priority]
+        : new Date(a.createdAt) - new Date(b.createdAt)
+    )
+
+    // Keep top keepPerDay tasks; suggest pulling the rest EARLIER
+    const toMove = sorted.slice(keepPerDay)
+
+    for (const task of toMove) {
+      const overloadedDate = new Date(day.date + 'T00:00:00')
+      let targetStr = null
+
+      // Search BACKWARDS from (overloaded day - 1) to (today + 1)
+      for (let offset = 1; offset < getDaysUntilDue(day.date); offset++) {
+        const candidate = new Date(overloadedDate)
+        candidate.setDate(candidate.getDate() - offset)
+        const candStr = localDateStr(candidate)
+        if (candStr <= todayStr) break // don't go to today or past
+        const existing = countByDate[candStr] || 0
+        if (existing < keepPerDay) {
+          targetStr = candStr
+          countByDate[candStr] = existing + 1
+          break
+        }
+      }
+
+      if (targetStr) {
+        suggestions.push({ task, from: day.date, to: targetStr })
+      }
+    }
+  }
+
+  return suggestions
+}
+
+// ─── existing UI helpers (unchanged) ─────────────────────────────────────────
+
+const PRIORITY_STYLES = {
+  high:   { bg: '#FFA6A6', border: '#E68E8E' },
+  medium: { bg: '#FFEFB5', border: '#F4DAB2' },
+  low:    { bg: '#E2FFAF', border: '#CEFFB0' },
+  // 'escalated' kept for CSS class but colors now map to the effective priority
+}
+const DONE_STYLE = { bg: '#F9FAFB', border: '#E5E7EB', accent: '#9CA3AF' }
+
+function getUrgencyClass(task, alertsEnabled) {
+  if (task.completed || !task.dueDate || !alertsEnabled) return ''
+  const todayStr = today()
+  const tom = new Date(); tom.setDate(tom.getDate() + 1)
+  const tomorrowStr = localDateStr(tom)
+  if (task.dueDate < todayStr) return ' task-alert-overdue'
+  if (task.dueDate === todayStr || task.dueDate === tomorrowStr) return ' task-alert-nearing'
+  return ''
+}
+
+// ─── FilterDropdown (unchanged) ──────────────────────────────────────────────
 
 function FilterDropdown({ value, options, onChange }) {
   return (
@@ -57,6 +196,8 @@ function FilterDropdown({ value, options, onChange }) {
   )
 }
 
+// ─── TaskModal (unchanged) ────────────────────────────────────────────────────
+
 function TaskModal({ task, categories, onSave, onClose, defaultPriority, defaultCategory }) {
   const [form, setForm] = useState({
     title: task?.title || '',
@@ -73,27 +214,18 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
 
   const toggleReminders = (checked) => {
     setAddReminders(checked)
-    if (checked && reminders.length === 0) {
-      setReminders([{ date: form.dueDate, time: form.dueTime }])
-    }
+    if (checked && reminders.length === 0) setReminders([{ date: form.dueDate, time: form.dueTime }])
   }
 
-  const addReminderEntry = () => {
-    setReminders(prev => [...prev, { date: form.dueDate, time: form.dueTime }])
-  }
+  const addReminderEntry = () => setReminders(prev => [...prev, { date: form.dueDate, time: form.dueTime }])
 
-  const updateReminderEntry = (i, field, value) => {
+  const updateReminderEntry = (i, field, value) =>
     setReminders(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
-  }
 
   const removeReminderEntry = (i) => {
     const next = reminders.filter((_, idx) => idx !== i)
-    if (next.length === 0) {
-      setAddReminders(false)
-      setReminders([{ date: form.dueDate, time: form.dueTime }])
-    } else {
-      setReminders(next)
-    }
+    if (next.length === 0) { setAddReminders(false); setReminders([{ date: form.dueDate, time: form.dueTime }]) }
+    else setReminders(next)
   }
 
   const handleSubmit = (e) => {
@@ -158,14 +290,10 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
                       <div key={i} className="reminder-entry">
                         <input type="date" className="form-input" value={rem.date} onChange={e => updateReminderEntry(i, 'date', e.target.value)} />
                         <input type="time" className="form-input" value={rem.time} onChange={e => updateReminderEntry(i, 'time', e.target.value)} />
-                        <button type="button" className="btn-icon btn-icon-danger" onClick={() => removeReminderEntry(i)} title="Remove">
-                          <X size={14} />
-                        </button>
+                        <button type="button" className="btn-icon btn-icon-danger" onClick={() => removeReminderEntry(i)} title="Remove"><X size={14} /></button>
                       </div>
                     ))}
-                    <button type="button" className="reminder-add-btn" onClick={addReminderEntry}>
-                      + Add another reminder
-                    </button>
+                    <button type="button" className="reminder-add-btn" onClick={addReminderEntry}>+ Add another reminder</button>
                   </div>
                 )}
               </div>
@@ -181,44 +309,26 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
   )
 }
 
-const PRIORITY_STYLES = {
-  high:      { bg: '#FFA6A6', border: '#E68E8E' },
-  medium:    { bg: '#FFEFB5', border: '#F4DAB2' },
-  low:       { bg: '#E2FFAF', border: '#CEFFB0' },
-  escalated: { bg: '#E5E7EB', border: '#D1D5DB' },
-}
-const DONE_STYLE = { bg: '#F9FAFB', border: '#E5E7EB', accent: '#9CA3AF' }
-
-function getVisualPriority(task) {
-  if (task.completed || !task.dueDate) return task.priority || 'medium'
-  const todayStr = today()
-  if (task.dueDate < todayStr) return 'escalated'
-  const threshold = new Date(); threshold.setDate(threshold.getDate() + 4)
-  const thresholdStr = localDateStr(threshold)
-  if (task.dueDate <= thresholdStr) return 'high'
-  return task.priority || 'medium'
-}
-
-function getUrgencyClass(task, alertsEnabled) {
-  if (task.completed || !task.dueDate || !alertsEnabled) return ''
-  const todayStr = today()
-  const tom = new Date(); tom.setDate(tom.getDate() + 1)
-  const tomorrowStr = localDateStr(tom)
-  if (task.dueDate < todayStr) return ' task-alert-overdue'
-  if (task.dueDate === todayStr || task.dueDate === tomorrowStr) return ' task-alert-nearing'
-  return ''
-}
+// ─── TaskCard (updated: escalation badges, fixed overdue color) ───────────────
 
 function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
-  const isOverdue = !task.completed && task.dueDate < today()
-  const visPriority = getVisualPriority(task)
-  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[visPriority] || PRIORITY_STYLES.medium)
+  const isOverdue = !task.completed && task.dueDate && task.dueDate < today()
+  const ep = getEffectivePriority(task)
+  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[ep.effective] || PRIORITY_STYLES.medium)
   const urgency = getUrgencyClass(task, dueDateAlerts)
+
+  // Escalation badge label
+  let escalationLabel = null
+  if (ep.wasEscalated && !task.completed) {
+    if (ep.daysUntilDue <= 0) escalationLabel = ep.daysUntilDue < 0 ? 'overdue' : 'today'
+    else if (ep.daysUntilDue === 1) escalationLabel = 'tmr'
+    else escalationLabel = `${ep.daysUntilDue}d`
+  }
 
   return (
     <div className="task-card-slot">
       <div
-        className={`task-card${task.completed ? ' task-done' : ` task-priority-${visPriority}`}${urgency}`}
+        className={`task-card${task.completed ? ' task-done' : ` task-priority-${ep.effective}${ep.wasEscalated ? ' task-escalated' : ''}`}${urgency}`}
         style={{
           background: colors.bg,
           borderTopColor: colors.border,
@@ -228,15 +338,20 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
           borderLeftWidth: isOverdue ? 4 : 1,
         }}
       >
-        {/* Compact row - always visible */}
+        {/* Compact row */}
         <div className="task-card-compact">
-          <div className="task-card-title">{task.title}</div>
+          <div className="task-card-title-row">
+            <div className="task-card-title">{task.title}</div>
+            {escalationLabel && (
+              <span className="task-escalation-badge">↑ {escalationLabel}</span>
+            )}
+          </div>
           <span className={`task-date-compact${isOverdue ? ' overdue' : ''}`}>
             {isOverdue && '⚠ '}{formatDate(task.dueDate)}
           </span>
         </div>
 
-        {/* Details - expands on hover via grid-template-rows */}
+        {/* Expanded details */}
         <div className="task-card-details">
           <div className="task-card-details-inner">
             <div className="task-card-reveal-top">
@@ -252,15 +367,14 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
                     </span>
                   )}
                   {task.category && <span className="task-cat">{task.category}</span>}
+                  <span className={`task-priority-badge${ep.wasEscalated && !task.completed ? ' escalated' : ''}`}>
+                    {ep.effective}{ep.wasEscalated && !task.completed ? ' ↑' : ''}
+                  </span>
                 </div>
               </div>
               <div className="task-card-actions">
-                <button className="btn-icon" title="Edit" onClick={() => onEdit(task)}>
-                  <Pencil size={14} />
-                </button>
-                <button className="btn-icon btn-icon-danger" title="Delete" onClick={() => onDelete(task.id)}>
-                  <Trash2 size={14} />
-                </button>
+                <button className="btn-icon" title="Edit" onClick={() => onEdit(task)}><Pencil size={14} /></button>
+                <button className="btn-icon btn-icon-danger" title="Delete" onClick={() => onDelete(task.id)}><Trash2 size={14} /></button>
               </div>
             </div>
             {task.notes && <div className="task-notes">{task.notes}</div>}
@@ -270,6 +384,110 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
     </div>
   )
 }
+
+// ─── RescheduleModal ──────────────────────────────────────────────────────────
+
+function RescheduleModal({ overloadedDays, suggestions, onApply, onClose }) {
+  const [accepted, setAccepted] = useState(() => new Set(suggestions.map(s => s.task.id)))
+
+  const toggle = (id) => setAccepted(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const acceptedList = suggestions.filter(s => accepted.has(s.task.id))
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal reschedule-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title">
+            <Shuffle size={16} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+            Optimize Schedule
+          </h2>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="reschedule-info-box">
+          <AlertTriangle size={15} />
+          <span>
+            {overloadedDays.length === 1
+              ? `${overloadedDays[0].tasks.length} tasks are due on ${friendlyDate(overloadedDays[0].date)}.`
+              : `${overloadedDays.length} days have 3+ tasks due.`
+            }
+            {' '}High-priority tasks stay; lower-priority ones can be pulled to earlier free days.
+          </span>
+        </div>
+
+        {/* Overloaded days summary */}
+        {overloadedDays.map(day => {
+          const ep_tasks = day.tasks.map(t => ({ t, ep: getEffectivePriority(t) }))
+          return (
+            <div key={day.date} className="reschedule-day-block">
+              <div className="reschedule-day-header">
+                <strong>{friendlyDate(day.date)}</strong>
+                <span className="reschedule-day-count">{day.tasks.length} tasks due</span>
+              </div>
+              <ul className="reschedule-day-tasks">
+                {ep_tasks.map(({ t, ep }) => (
+                  <li key={t.id}>
+                    {t.title}
+                    {ep.wasEscalated && <span className="reschedule-escalated-tag">↑ escalated</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })}
+
+        {suggestions.length > 0 ? (
+          <>
+            <p className="reschedule-section-label">SUGGESTED MOVES — pulled to earlier free days</p>
+            <div className="reschedule-suggestions">
+              {suggestions.map(s => {
+                const isOn = accepted.has(s.task.id)
+                return (
+                  <label key={s.task.id} className={`reschedule-suggestion${isOn ? ' selected' : ''}`}>
+                    <input type="checkbox" checked={isOn} onChange={() => toggle(s.task.id)} />
+                    <div className="reschedule-suggestion-body">
+                      <span className="reschedule-task-title">{s.task.title}</span>
+                      <span className="reschedule-move-row">
+                        <span className="reschedule-from">{friendlyDate(s.from)}</span>
+                        <span className="reschedule-arrow">→</span>
+                        <span className="reschedule-to">{friendlyDate(s.to)}</span>
+                      </span>
+                    </div>
+                    <span className={`reschedule-prio-dot prio-${s.task.priority}`} />
+                  </label>
+                )
+              })}
+            </div>
+
+            <div className="reschedule-footer">
+              <button className="btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                className="btn-primary"
+                disabled={acceptedList.length === 0}
+                onClick={() => onApply(acceptedList)}
+              >
+                <Shuffle size={14} />
+                Pull {acceptedList.length} Task{acceptedList.length !== 1 ? 's' : ''} Earlier
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="reschedule-empty">
+            <p>No earlier free slots found within the next 14 days. Try adding tasks to earlier dates manually.</p>
+            <button className="btn-ghost" onClick={onClose}>Close</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── main Tasks page ──────────────────────────────────────────────────────────
 
 export default function Tasks() {
   const { user } = useAuth()
@@ -284,6 +502,7 @@ export default function Tasks() {
   const [sortBy, setSortBy] = useState('dueDate')
   const [modalTask, setModalTask] = useState(null)
   const [showModal, setShowModal] = useState(false)
+  const [showReschedule, setShowReschedule] = useState(false)
 
   useEffect(() => {
     Promise.all([getTasks(user.id), getCategories(user.id)]).then(([t, c]) => {
@@ -307,13 +526,7 @@ export default function Tasks() {
       const created = await createTask({ ...taskData, userId: user.id })
       setTasks(prev => [...prev, created])
       for (const rem of remindersList) {
-        await createReminder({
-          userId: user.id,
-          title: taskData.title,
-          date: rem.date,
-          time: rem.time,
-          notes: '',
-        })
+        await createReminder({ userId: user.id, title: taskData.title, date: rem.date, time: rem.time, notes: '' })
       }
     }
     setShowModal(false)
@@ -325,38 +538,47 @@ export default function Tasks() {
     setTasks(prev => prev.filter(t => t.id !== id))
   }
 
-  const handleEdit = (task) => {
-    setModalTask(task)
-    setShowModal(true)
+  const handleEdit = (task) => { setModalTask(task); setShowModal(true) }
+
+  const handleApplyReschedule = async (acceptedSuggestions) => {
+    const updates = acceptedSuggestions.map(s => ({ id: s.task.id, changes: { dueDate: s.to } }))
+    const updatedTasks = await batchUpdateTasks(updates)
+    setTasks(prev => prev.map(t => {
+      const hit = updatedTasks.find(u => u.id === t.id)
+      return hit || t
+    }))
+    setShowReschedule(false)
   }
 
+  // ── filtering & sorting ──
   const todayStr = today()
   let filtered = [...tasks]
-  if (!settings.showCompleted && statusFilter === 'all') {
-    filtered = filtered.filter(t => !t.completed)
-  } else if (statusFilter === 'active') {
-    filtered = filtered.filter(t => !t.completed)
-  } else if (statusFilter === 'completed') {
-    filtered = filtered.filter(t => t.completed)
-  }
+  if (!settings.showCompleted && statusFilter === 'all') filtered = filtered.filter(t => !t.completed)
+  else if (statusFilter === 'active') filtered = filtered.filter(t => !t.completed)
+  else if (statusFilter === 'completed') filtered = filtered.filter(t => t.completed)
   if (priorityFilter !== 'all') filtered = filtered.filter(t => t.priority === priorityFilter)
   if (categoryFilter !== 'all') filtered = filtered.filter(t => t.category === categoryFilter)
-
   filtered.sort((a, b) => {
     if (sortBy === 'dueDate') return (a.dueDate || '').localeCompare(b.dueDate || '')
-    if (sortBy === 'priority') {
-      const order = { high: 0, medium: 1, low: 2 }
-      return (order[a.priority] ?? 3) - (order[b.priority] ?? 3)
-    }
+    if (sortBy === 'priority') return (PRIO_ORDER[a.priority] ?? 3) - (PRIO_ORDER[b.priority] ?? 3)
     return a.title.localeCompare(b.title)
   })
 
   const activeCount = tasks.filter(t => !t.completed).length
   const completedCount = tasks.filter(t => t.completed).length
-  const overdueCount = tasks.filter(t => !t.completed && t.dueDate < todayStr).length
+  const overdueCount = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr).length
+
+  // ── overload detection (future days only) ──
+  const overloadedDays = statusFilter !== 'completed' ? detectOverloadedDays(tasks) : []
+  const rescheduleSuggestions = overloadedDays.length > 0 ? suggestReschedule(overloadedDays, tasks) : []
+
   const usedCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))]
 
-  if (loading) return <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}><p style={{ color: 'var(--muted)' }}>Loading tasks...</p></div>
+  if (loading) return (
+    <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <p style={{ color: 'var(--muted)' }}>Loading tasks...</p>
+    </div>
+  )
 
   return (
     <>
@@ -378,6 +600,24 @@ export default function Tasks() {
       </div>
 
       <div className="page-body">
+        {/* ── Overload banner (future days only) ── */}
+        {overloadedDays.length > 0 && (
+          <button className="overload-banner" onClick={() => setShowReschedule(true)}>
+            <AlertTriangle size={15} className="overload-banner-icon" />
+            <div className="overload-banner-text">
+              <strong>
+                {overloadedDays.length === 1
+                  ? `${overloadedDays[0].tasks.length} tasks due on ${friendlyDate(overloadedDays[0].date)}`
+                  : `${overloadedDays.reduce((s, d) => s + d.tasks.length, 0)} tasks across ${overloadedDays.length} busy days`
+                }
+              </strong>
+              <span>Pull some tasks to earlier free days · {rescheduleSuggestions.length} suggestion{rescheduleSuggestions.length !== 1 ? 's' : ''}</span>
+            </div>
+            <span className="overload-banner-cta">Optimize →</span>
+          </button>
+        )}
+
+        {/* ── Filter bar ── */}
         <div className="task-filter-bar">
           <div className="task-filter-group">
             <span className="task-filter-label">Status</span>
@@ -428,6 +668,15 @@ export default function Tasks() {
           defaultCategory={settings.defaultCategory}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setModalTask(null) }}
+        />
+      )}
+
+      {showReschedule && (
+        <RescheduleModal
+          overloadedDays={overloadedDays}
+          suggestions={rescheduleSuggestions}
+          onApply={handleApplyReschedule}
+          onClose={() => setShowReschedule(false)}
         />
       )}
     </>
