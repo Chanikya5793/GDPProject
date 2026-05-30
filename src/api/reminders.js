@@ -1,4 +1,5 @@
 import { addToTrash } from './trash'
+import { addLog } from './logs'
 
 const STORAGE_KEY = 'nw_reminders'
 
@@ -56,6 +57,7 @@ export async function createReminder(reminder) {
         createdAt: new Date().toISOString(),
     }
     save([...reminders, newReminder])
+    addLog('created', 'reminder', newReminder.title)
     return newReminder
 }
 
@@ -63,7 +65,9 @@ export async function updateReminder(id, updates) {
     const reminders = load()
     const updated = reminders.map(r => r.id === id ? { ...r, ...updates } : r)
     save(updated)
-    return updated.find(r => r.id === id)
+    const reminder = updated.find(r => r.id === id)
+    addLog('updated', 'reminder', reminder?.title)
+    return reminder
 }
 
 export async function deleteReminder(id) {
@@ -71,6 +75,7 @@ export async function deleteReminder(id) {
     const reminder = reminders.find(r => r.id === id)
     if (reminder) await addToTrash(reminder, 'reminder')
     save(reminders.filter(r => r.id !== id))
+    addLog('deleted', 'reminder', reminder?.title)
     return { success: true }
 }
 
