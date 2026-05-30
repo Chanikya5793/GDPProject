@@ -21,7 +21,11 @@ function load() {
 }
 
 function save(logs) {
-  localStorage.setItem(LOGS_KEY, JSON.stringify(logs))
+  // Activity logging must never block or fail the user action that triggered
+  // it — localStorage can throw when full (note attachments also live here).
+  try {
+    localStorage.setItem(LOGS_KEY, JSON.stringify(logs))
+  } catch { /* out of storage — drop the log entry silently */ }
 }
 
 /* Append an entry. action: 'created'|'updated'|'deleted'|'completed'|...
@@ -29,9 +33,12 @@ function save(logs) {
 export function addLog(action, entity, title = '') {
   const logs = load()
   const now = Date.now()
-  // Collapse repeated identical actions within a short window (e.g. note autosave).
+  // Collapse repeated identical actions within a short window (e.g. note
+  // autosave) — but only within the same session, so reloading the page never
+  // folds a new entry into a previous session's grouping.
   const last = logs[0]
-  if (last && last.action === action && last.entity === entity && last.title === title
+  if (last && last.sessionId === SESSION_ID && last.action === action
+      && last.entity === entity && last.title === title
       && now - new Date(last.ts).getTime() < DEDUPE_WINDOW_MS) {
     last.ts = new Date(now).toISOString()
     save(logs.slice(0, MAX_LOGS))

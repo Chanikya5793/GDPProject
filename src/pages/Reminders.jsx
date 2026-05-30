@@ -93,7 +93,7 @@ function ReminderCard({ reminder, onEdit, onDelete }) {
     <div
       className={`rem-card${isOverdue ? ' rem-overdue' : ''}${isToday ? ' rem-today' : ''}`}
       onMouseDown={e => { if (e.detail > 1) e.preventDefault() }}
-      onDoubleClick={() => onEdit(reminder)}
+      onDoubleClick={e => { if (!e.target.closest('button')) onEdit(reminder) }}
       title="Double-click to edit"
     >
       <div className="rem-card-left">
