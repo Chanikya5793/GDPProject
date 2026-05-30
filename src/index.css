@@ -1213,6 +1213,53 @@ button { font-family: inherit; cursor: pointer; }
   padding: 10px 0;
 }
 
+/* Densify task tiles */
+[data-compact="true"] .task-grid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 7px;
+}
+
+[data-compact="true"] .task-list {
+  gap: 4px;
+}
+
+[data-compact="true"] .task-card-slot {
+  height: 38px;
+}
+
+[data-compact="true"] .task-card {
+  padding: 7px 12px;
+  border-radius: 8px;
+}
+
+/* Densify reminder tiles */
+[data-compact="true"] .rem-list {
+  gap: 14px;
+}
+
+[data-compact="true"] .rem-card {
+  padding: 10px 12px;
+  gap: 12px;
+}
+
+[data-compact="true"] .rem-grid {
+  gap: 8px;
+}
+
+/* Densify notes list */
+[data-compact="true"] .note-list-item {
+  padding: 9px 14px;
+}
+
+/* Densify dashboard rows + grid */
+[data-compact="true"] .dash-widget-grid {
+  gap: 12px;
+}
+
+[data-compact="true"] .dash-row {
+  padding: 6px 6px;
+}
+
 /* ═══════════════════════════════════════
    SETTINGS: REDUCED MOTION
    ═══════════════════════════════════════ */

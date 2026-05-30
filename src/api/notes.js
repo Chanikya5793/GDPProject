@@ -1,4 +1,5 @@
 import { addToTrash } from './trash'
+import { addLog } from './logs'
 
 const STORAGE_KEY = 'nw_notes'
 const TAGS_KEY = 'nw_tags'
@@ -76,6 +77,7 @@ export async function createNote(note) {
         updatedAt: new Date().toISOString(),
     }
     saveNotes([newNote, ...notes])
+    addLog('created', 'note', newNote.title)
     return newNote
 }
 
@@ -85,7 +87,9 @@ export async function updateNote(id, updates) {
         n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
     )
     saveNotes(updated)
-    return updated.find(n => n.id === id)
+    const note = updated.find(n => n.id === id)
+    addLog('updated', 'note', note?.title)
+    return note
 }
 
 export async function deleteNote(id) {
@@ -93,6 +97,7 @@ export async function deleteNote(id) {
     const note = notes.find(n => n.id === id)
     if (note) await addToTrash(note, 'note')
     saveNotes(notes.filter(n => n.id !== id))
+    addLog('deleted', 'note', note?.title)
     return { success: true }
 }
 
@@ -110,13 +115,25 @@ export async function createTag(tag) {
     const tags = loadTags()
     const newTag = { ...tag, id: Date.now() }
     saveTags([...tags, newTag])
+    addLog('created', 'tag', newTag.name)
     return newTag
+}
+
+export async function updateTag(id, updates) {
+    const tags = loadTags()
+    const updated = tags.map(t => t.id === id ? { ...t, ...updates } : t)
+    saveTags(updated)
+    const tag = updated.find(t => t.id === id)
+    addLog('updated', 'tag', tag?.name)
+    return tag
 }
 
 export async function deleteTag(id) {
     const tags = loadTags()
+    const tag = tags.find(t => t.id === id)
     saveTags(tags.filter(t => t.id !== id))
     const notes = loadNotes()
     saveNotes(notes.map(n => ({ ...n, tagIds: n.tagIds.filter(tid => tid !== id) })))
+    addLog('deleted', 'tag', tag?.name)
     return { success: true }
 }
