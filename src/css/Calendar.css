@@ -273,6 +273,21 @@
   padding: 10px 4px 8px;
   border-right: 1px solid var(--off);
   gap: 2px;
+  /* button resets — header is clickable to open the day panel */
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border-top: none;
+  border-left: none;
+  border-bottom: none;
+  width: 100%;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.cal-tg-col-head:hover {
+  background: var(--off);
 }
 
 .cal-tg-col-head:last-child {
@@ -281,6 +296,10 @@
 
 .cal-tg-col-head.today {
   background: var(--green-lt);
+}
+
+.cal-tg-col-head.selected {
+  box-shadow: inset 0 -3px 0 var(--green);
 }
 
 .cal-tg-dow {
@@ -1011,4 +1030,67 @@
   .cal-tg-time { font-size: 9px; padding: 0 2px; }
   .cal-tg-allday-lbl { font-size: 8px; }
   .cal-tg-scroll { max-height: calc(100vh - 240px); }
+}
+
+/* ─── Calendar category filter ─── */
+.cal-cat-filter {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 28px 5px 12px;
+  cursor: pointer;
+  transition: all .2s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.cal-cat-filter:hover {
+  border-color: var(--muted);
+}
+
+.cal-cat-filter.active {
+  background-color: var(--green-lt);
+  color: var(--green);
+  border-color: var(--green-mid);
+}
+
+/* ─── Day panel: add task / reminder buttons ─── */
+.cal-panel-add {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--off);
+}
+
+.cal-panel-add-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--border);
+  background: var(--white);
+  color: var(--text);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.cal-panel-add-btn:hover {
+  border-color: var(--green-mid);
+  background: var(--green-lt);
+  color: var(--green);
 }
