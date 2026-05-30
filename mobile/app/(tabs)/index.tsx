@@ -13,6 +13,25 @@ import { getTasks, toggleTask, createTask } from '@/api/tasks';
 import { getReminders, createReminder } from '@/api/reminders';
 import { Task, Reminder } from '@/types';
 
+// ─── priority escalation (inline) ───────────────────────────────────────────
+type EscalatedPriority = { effective: Task['priority']; original: Task['priority']; wasEscalated: boolean; daysUntilDue: number };
+function getDaysUntilDueDash(dueDateStr: string): number {
+  if (!dueDateStr) return Infinity;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDateStr + 'T00:00:00');
+  return Math.floor((due.getTime() - today.getTime()) / 86400000);
+}
+function getEffectivePriority(task: Task): EscalatedPriority {
+  const daysUntilDue = getDaysUntilDueDash(task.dueDate);
+  const original = task.priority;
+  let effective: Task['priority'] = original;
+  if (!task.completed && task.dueDate) {
+    if (daysUntilDue <= 1) effective = 'high';
+    else if (daysUntilDue <= 4 && original === 'low') effective = 'medium';
+  }
+  return { effective, original, wasEscalated: effective !== original, daysUntilDue };
+}
+
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -429,12 +448,13 @@ function TaskRow({ task, onToggle, colors, accent, showDate = false, isLast = fa
   isLast?: boolean;
 }) {
   const isOverdue = !task.completed && task.dueDate < localDateStr();
+  const ep = getEffectivePriority(task);
   const priorityColors = {
     high: { bg: colors.priorityHigh, text: colors.priorityHighText },
     medium: { bg: colors.priorityMedium, text: colors.priorityMediumText },
     low: { bg: colors.priorityLow, text: colors.priorityLowText },
   };
-  const pc = priorityColors[task.priority] || priorityColors.medium;
+  const pc = priorityColors[ep.effective] || priorityColors.medium;
 
   return (
     <TouchableOpacity
@@ -465,7 +485,9 @@ function TaskRow({ task, onToggle, colors, accent, showDate = false, isLast = fa
             <Text style={[rowStyles.metaText, { color: colors.textMuted }]}>{task.category}</Text>
           )}
           <View style={[rowStyles.badge, { backgroundColor: pc.bg }]}>
-            <Text style={[rowStyles.badgeText, { color: pc.text }]}>{task.priority}</Text>
+            <Text style={[rowStyles.badgeText, { color: pc.text }]}>
+              {ep.effective}{ep.wasEscalated && !task.completed ? ' ↑' : ''}
+            </Text>
           </View>
         </View>
       </View>
