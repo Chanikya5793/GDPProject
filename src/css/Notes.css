@@ -579,3 +579,224 @@
   bottom: 0%;
   width: 100%;
 }
+
+/* ─── Tag Manager: color chooser ─── */
+.tag-manager-create {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-manager-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.tag-manager-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-color-chooser {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tag-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+  transition: transform .1s ease, border-color .1s ease;
+}
+
+.tag-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.tag-color-swatch.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--white), 0 0 0 4px var(--text);
+}
+
+.tag-color-custom {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px dashed var(--border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.tag-color-custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+}
+
+.tag-color-custom-plus {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  mix-blend-mode: difference;
+  pointer-events: none;
+}
+
+/* ─── Note attachments (#1) ─── */
+.note-attachments {
+  padding: 0 24px 8px;
+  flex-shrink: 0;
+}
+
+.note-attachments-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.attach-add-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.attach-add-btn:hover {
+  border-color: var(--green-mid);
+  color: var(--green);
+  background: var(--green-lt);
+}
+
+.note-attachments-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.note-attachments-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.note-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  max-width: 260px;
+}
+
+.note-attachment-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: block;
+}
+
+.note-attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.note-attachment-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--off);
+  color: var(--muted);
+}
+
+.note-attachment-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.note-attachment-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-attachment-name:hover {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+.note-attachment-size {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.note-attachment-dl {
+  color: var(--muted);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.note-attachment-dl:hover {
+  color: var(--green);
+}
+
+.note-attachment-rm {
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.note-attachment-rm:hover {
+  color: var(--red);
+}
