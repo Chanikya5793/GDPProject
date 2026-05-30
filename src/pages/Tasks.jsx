@@ -331,7 +331,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
       <div
         className={`task-card${task.completed ? ' task-done' : ` task-priority-${ep.effective}${ep.wasEscalated ? ' task-escalated' : ''}`}${urgency}`}
         onMouseDown={e => { if (e.detail > 1) e.preventDefault() }}
-        onDoubleClick={() => onEdit(task)}
+        onDoubleClick={e => { if (!e.target.closest('button')) onEdit(task) }}
         title="Double-click to edit"
         style={{
           background: colors.bg,
