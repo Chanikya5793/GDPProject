@@ -95,3 +95,12 @@ export async function restoreTaskDirect(task: Task): Promise<void> {
   tasks.push(task);
   await save(tasks);
 }
+
+export async function batchUpdateTasks(
+  updates: Array<{ id: number; changes: Partial<Task> }>,
+): Promise<void> {
+  const tasks = await load();
+  const map = new Map(updates.map(u => [u.id, u.changes]));
+  const updated = tasks.map(t => (map.has(t.id) ? { ...t, ...map.get(t.id)! } : t));
+  await save(updated);
+}
