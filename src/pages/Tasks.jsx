@@ -58,9 +58,8 @@ const PRIO_ORDER = { high: 0, medium: 1, low: 2 }
  *
  * Rules (incomplete tasks with a due date only):
  *   overdue / today (≤ 0 days)  →  any priority  →  HIGH
- *   tomorrow         (1 day)    →  low/medium     →  HIGH
- *   2–3 days                    →  low            →  MEDIUM
- *   4 days                      →  low            →  MEDIUM  (mild)
+ *   tomorrow         (1 day)    →  any priority  →  HIGH
+ *   2–4 days                    →  low            →  MEDIUM
  */
 function getEffectivePriority(task) {
   if (task.completed || !task.dueDate) return { effective: task.priority || 'medium', original: task.priority || 'medium', wasEscalated: false, daysUntilDue: Infinity }
@@ -69,8 +68,6 @@ function getEffectivePriority(task) {
   let effective = original
   if (days <= 1) {
     effective = 'high'
-  } else if (days <= 3) {
-    if (original === 'low') effective = 'medium'
   } else if (days <= 4) {
     if (original === 'low') effective = 'medium'
   }
