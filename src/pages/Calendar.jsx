@@ -338,10 +338,24 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
   const dayHeaders = startOffset === 1
     ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+  // Build a continuous grid of real dates: leading days spill over from the
+  // previous month, trailing days from the next month, so the first and last
+  // weeks are filled instead of blank.
   const cells = []
-  for (let i = 0; i < firstDay; i++) cells.push(null)
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
-  while (cells.length % 7 !== 0) cells.push(null)
+  // Leading days from the previous month
+  for (let i = firstDay; i > 0; i--) {
+    cells.push(new Date(year, month, 1 - i))
+  }
+  // Days of the current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push(new Date(year, month, d))
+  }
+  // Trailing days from the next month to complete the final week
+  while (cells.length % 7 !== 0) {
+    const last = cells[cells.length - 1]
+    cells.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1))
+  }
 
   const handleCellDrop = (e, dateStr) => {
     e.preventDefault()
@@ -358,11 +372,10 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
         {dayHeaders.map(d => <div key={d} className="cal-month-dow">{d}</div>)}
       </div>
       <div className="cal-month-grid">
-        {cells.map((day, i) => {
-          if (!day) return <div key={`empty-${i}`} className="cal-cell cal-cell-empty"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => e.preventDefault()} />
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        {cells.map((date) => {
+          const dateStr = localDateStr(date)
+          const day = date.getDate()
+          const inMonth = date.getMonth() === month && date.getFullYear() === year
           const isToday = dateStr === todayStr
           const isSelected = dateStr === selectedDate
           const isDragOver = dragOverDate === dateStr
@@ -371,7 +384,7 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
           const remItems = items.filter(x => x._type === 'reminder')
           return (
             <div key={dateStr}
-              className={`cal-cell${isToday ? ' cal-cell-today' : ''}${isSelected ? ' cal-cell-selected' : ''}${isDragOver ? ' cal-cell-dragover' : ''}`}
+              className={`cal-cell${inMonth ? '' : ' cal-cell-outside'}${isToday ? ' cal-cell-today' : ''}${isSelected ? ' cal-cell-selected' : ''}${isDragOver ? ' cal-cell-dragover' : ''}`}
               onClick={() => onSelectDay(dateStr)}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverDate(dateStr) }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverDate(null) }}
