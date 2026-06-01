@@ -585,6 +585,11 @@
 .cal-cell-empty { background: var(--off); cursor: default; }
 .cal-cell-empty:hover { background: var(--off); }
 
+/* Days spilling over from the previous/next month — dimmed but interactive */
+.cal-cell-outside { background: var(--off); }
+.cal-cell-outside .cal-cell-num { color: var(--border); }
+.cal-cell-outside .cal-cell-items { opacity: .6; }
+
 .cal-cell-today { background: var(--green-lt); }
 .cal-cell-today:hover { background: #D7EFE8; }
 

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Bot, Send, Trash2, PanelRightClose, ExternalLink } from 'lucide-react'
 import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
@@ -23,6 +24,12 @@ function TypingIndicator() {
 
 export default function AiSidebar() {
   const { poppedOut, togglePopOut, messages, typing, sendMessage, clearChat } = useAi()
+  const location = useLocation()
+  // The pop-out lives in the dashboard grid, so it only applies on the
+  // dashboard route. On every other page the assistant always stays in the
+  // sidebar (collapsible/expandable) regardless of the popped-out preference.
+  const isDashboard = location.pathname === '/'
+  const effectivePopped = poppedOut && isDashboard
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('nw_ai_sidebar') === 'collapsed'
   )
@@ -34,20 +41,20 @@ export default function AiSidebar() {
   useEffect(() => {
     document.documentElement.setAttribute(
       'data-ai-sidebar',
-      poppedOut ? 'popped' : collapsed ? 'collapsed' : 'expanded'
+      effectivePopped ? 'popped' : collapsed ? 'collapsed' : 'expanded'
     )
-  }, [collapsed, poppedOut])
+  }, [collapsed, effectivePopped])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typing])
 
   useEffect(() => {
-    if (!collapsed && !poppedOut) inputRef.current?.focus()
-  }, [collapsed, poppedOut])
+    if (!collapsed && !effectivePopped) inputRef.current?.focus()
+  }, [collapsed, effectivePopped])
 
-  /* When popped out, render nothing — chat lives in the dashboard grid */
-  if (poppedOut) return null
+  /* When popped out on the dashboard, render nothing — chat lives in the grid */
+  if (effectivePopped) return null
 
   const toggle = () => {
     const next = !collapsed
@@ -85,9 +92,11 @@ export default function AiSidebar() {
               <span className="ai-badge">Beta</span>
             </div>
             <div className="ai-header-actions">
-              <button className="ai-header-btn" onClick={togglePopOut} title="Pop out to dashboard">
-                <ExternalLink size={14} />
-              </button>
+              {isDashboard && (
+                <button className="ai-header-btn" onClick={togglePopOut} title="Pop out to dashboard">
+                  <ExternalLink size={14} />
+                </button>
+              )}
               <button className="ai-header-btn" onClick={clearChat} title="Clear chat">
                 <Trash2 size={14} />
               </button>
