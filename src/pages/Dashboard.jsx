@@ -242,16 +242,6 @@ function QuickReminderModal({ onSave, onClose }) {
 
 /* ─── Row Components ─── */
 
-function getDashVisualPriority(task) {
-  if (task.completed || !task.dueDate) return task.priority || 'medium'
-  const todayStr = localDateStr()
-  if (task.dueDate < todayStr) return 'escalated'
-  const threshold = new Date(); threshold.setDate(threshold.getDate() + 4)
-  const thresholdStr = localDateStr(threshold)
-  if (task.dueDate <= thresholdStr) return 'high'
-  return task.priority || 'medium'
-}
-
 function getDashUrgency(task, alertsEnabled) {
   if (task.completed || !task.dueDate || !alertsEnabled) return ''
   const todayStr = localDateStr()
@@ -263,7 +253,7 @@ function getDashUrgency(task, alertsEnabled) {
 }
 
 function TaskRow({ task, onToggle, showDate = false, dueDateAlerts = true }) {
-  const visPriority = getDashVisualPriority(task)
+  const realPriority = task.priority || 'medium'
   return (
     <div className={`dash-row${task.completed ? ' dash-row-done' : ''}${getDashUrgency(task, dueDateAlerts)}`}>
       <button
@@ -278,7 +268,7 @@ function TaskRow({ task, onToggle, showDate = false, dueDateAlerts = true }) {
         <div className="dash-row-meta">
           {showDate && <span>{formatDate(task.dueDate)}</span>}
           {!showDate && task.category && <span>{task.category}</span>}
-          <span className={`badge badge-${visPriority}`}>{visPriority}</span>
+          <span className={`badge badge-${realPriority}`}>{realPriority}</span>
         </div>
       </div>
     </div>

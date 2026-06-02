@@ -157,7 +157,8 @@ const PRIORITY_STYLES = {
   high:   { bg: '#FFA6A6', border: '#E68E8E' },
   medium: { bg: '#FFEFB5', border: '#F4DAB2' },
   low:    { bg: '#E2FFAF', border: '#CEFFB0' },
-  // 'escalated' kept for CSS class but colors now map to the effective priority
+  // overdue tasks render in a muted gray (past-due); the red left border + ⚠ still flag them
+  escalated: { bg: '#E5E7EB', border: '#D1D5DB' },
 }
 const DONE_STYLE = { bg: '#F9FAFB', border: '#E5E7EB', accent: '#9CA3AF' }
 
@@ -312,21 +313,23 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
 function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
   const isOverdue = !task.completed && task.dueDate && task.dueDate < today()
   const ep = getEffectivePriority(task)
-  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[ep.effective] || PRIORITY_STYLES.medium)
+  // Overdue → muted gray "past-due" card (the red left border + ⚠ flag it);
+  // upcoming tasks use their effective (possibly escalated) priority color.
+  const styleKey = isOverdue ? 'escalated' : ep.effective
+  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[styleKey] || PRIORITY_STYLES.medium)
   const urgency = getUrgencyClass(task, dueDateAlerts)
 
-  // Escalation badge label
+  // Escalation badge: only for UPCOMING tasks bumped by proximity (tomorrow … a few days out).
+  // Overdue/today are already obvious from the ⚠ date + red border, so no badge there.
   let escalationLabel = null
-  if (ep.wasEscalated && !task.completed) {
-    if (ep.daysUntilDue <= 0) escalationLabel = ep.daysUntilDue < 0 ? 'overdue' : 'today'
-    else if (ep.daysUntilDue === 1) escalationLabel = 'tmr'
-    else escalationLabel = `${ep.daysUntilDue}d`
+  if (ep.wasEscalated && !task.completed && ep.daysUntilDue >= 1) {
+    escalationLabel = ep.daysUntilDue === 1 ? 'tmr' : `${ep.daysUntilDue}d`
   }
 
   return (
     <div className="task-card-slot">
       <div
-        className={`task-card${task.completed ? ' task-done' : ` task-priority-${ep.effective}${ep.wasEscalated ? ' task-escalated' : ''}`}${urgency}`}
+        className={`task-card${task.completed ? ' task-done' : ` task-priority-${styleKey}${ep.wasEscalated && !isOverdue ? ' task-escalated' : ''}`}${urgency}`}
         onMouseDown={e => { if (e.detail > 1) e.preventDefault() }}
         onDoubleClick={e => { if (!e.target.closest('button')) onEdit(task) }}
         title="Double-click to edit"
@@ -368,8 +371,8 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
                     </span>
                   )}
                   {task.category && <span className="task-cat">{task.category}</span>}
-                  <span className={`task-priority-badge${ep.wasEscalated && !task.completed ? ' escalated' : ''}`}>
-                    {ep.effective}{ep.wasEscalated && !task.completed ? ' ↑' : ''}
+                  <span className={`task-priority-badge${ep.wasEscalated && !task.completed && !isOverdue ? ' escalated' : ''}`}>
+                    {isOverdue ? (task.priority || 'medium') : ep.effective}{ep.wasEscalated && !task.completed && !isOverdue ? ' ↑' : ''}
                   </span>
                 </div>
               </div>
