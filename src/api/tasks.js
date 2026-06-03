@@ -79,25 +79,27 @@ export async function createTask(task) {
         createdAt: new Date().toISOString(),
     }
     save([...tasks, newTask])
-    addLog('created', 'task', newTask.title)
+    addLog('created', 'task', newTask.title, { entityId: newTask.id, after: newTask })
     return newTask
 }
 
 export async function updateTask(id, updates) {
     const tasks = load()
+    const before = tasks.find(t => t.id === id)
     const updated = tasks.map(t => t.id === id ? { ...t, ...updates } : t)
     save(updated)
     const task = updated.find(t => t.id === id)
-    addLog('updated', 'task', task?.title)
+    addLog('updated', 'task', task?.title, { entityId: id, before, after: task })
     return task
 }
 
 export async function deleteTask(id) {
     const tasks = load()
     const task = tasks.find(t => t.id === id)
-    if (task) await addToTrash(task, 'task')
+    let trashId
+    if (task) trashId = await addToTrash(task, 'task')
     save(tasks.filter(t => t.id !== id))
-    addLog('deleted', 'task', task?.title)
+    addLog('deleted', 'task', task?.title, { entityId: id, before: task, trashId })
     return { success: true }
 }
 
@@ -109,10 +111,11 @@ export function restoreTaskDirect(task) {
 
 export async function toggleTask(id) {
     const tasks = load()
+    const before = tasks.find(t => t.id === id)
     const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t)
     save(updated)
     const task = updated.find(t => t.id === id)
-    addLog(task?.completed ? 'completed' : 'reopened', 'task', task?.title)
+    addLog(task?.completed ? 'completed' : 'reopened', 'task', task?.title, { entityId: id, before, after: task })
     return task
 }
 
