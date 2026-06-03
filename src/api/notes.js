@@ -136,13 +136,25 @@ export async function deleteTag(id) {
     const tag = tags.find(t => t.id === id)
     saveTags(tags.filter(t => t.id !== id))
     const notes = loadNotes()
+    // Remember which notes carried this tag so a rollback can re-link them.
+    const affectedNoteIds = notes.filter(n => n.tagIds?.includes(id)).map(n => n.id)
     saveNotes(notes.map(n => ({ ...n, tagIds: n.tagIds.filter(tid => tid !== id) })))
-    addLog('deleted', 'tag', tag?.name, { entityId: id, before: tag })
+    addLog('deleted', 'tag', tag?.name, { entityId: id, before: { ...tag, _affectedNoteIds: affectedNoteIds } })
     return { success: true }
 }
 
-// Re-insert a tag (used by the activity-log rollback to undo a tag deletion).
+// Re-insert a tag (used by the activity-log rollback to undo a tag deletion),
+// and re-attach it to the notes it was removed from.
 export function restoreTagDirect(tag) {
+    const { _affectedNoteIds, ...cleanTag } = tag || {}
     const tags = loadTags()
-    if (!tags.some(t => t.id === tag.id)) saveTags([...tags, tag])
+    if (!tags.some(t => t.id === cleanTag.id)) saveTags([...tags, cleanTag])
+    if (Array.isArray(_affectedNoteIds) && _affectedNoteIds.length) {
+        const notes = loadNotes()
+        saveNotes(notes.map(n =>
+            _affectedNoteIds.includes(n.id) && !n.tagIds?.includes(cleanTag.id)
+                ? { ...n, tagIds: [...(n.tagIds || []), cleanTag.id] }
+                : n
+        ))
+    }
 }

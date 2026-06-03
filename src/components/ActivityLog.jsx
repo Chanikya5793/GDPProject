@@ -84,7 +84,7 @@ function diffEntities(before, after) {
   const rows = []
   const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})])
   for (const k of keys) {
-    if (IGNORE_KEYS.has(k)) continue
+    if (IGNORE_KEYS.has(k) || k.startsWith('_')) continue
     const fromV = before ? before[k] : undefined
     const toV = after ? after[k] : undefined
     if (JSON.stringify(fromV) === JSON.stringify(toV)) continue
@@ -182,8 +182,10 @@ export default function ActivityLog() {
     const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `activity-log-${dayKey(Date.now())}.json`; a.click()
-    URL.revokeObjectURL(url)
+    a.href = url; a.download = `activity-log-${dayKey(Date.now())}.json`
+    document.body.appendChild(a); a.click(); a.remove()
+    // revoke in a macrotask so the download isn't cancelled before it starts
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
   return (
@@ -226,7 +228,7 @@ export default function ActivityLog() {
                 type="text" placeholder="Search by title…"
                 value={filters.search} onChange={e => setFilter('search', e.target.value)}
               />
-              {filters.search && <button className="log-search-clear" onClick={() => setFilter('search', '')}><X size={12} /></button>}
+              {filters.search && <button type="button" className="log-search-clear" aria-label="Clear search" onClick={() => setFilter('search', '')}><X size={12} /></button>}
             </div>
             <select className="log-select" value={filters.entity} onChange={e => setFilter('entity', e.target.value)}>
               {ENTITY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -273,7 +275,7 @@ export default function ActivityLog() {
                 const collapsed = collapsedGroups.has(group.key)
                 return (
                   <div key={group.key} className="log-session">
-                    <button className="log-session-head" onClick={() => toggleGroup(group.key)}>
+                    <button type="button" className="log-session-head" onClick={() => toggleGroup(group.key)}>
                       {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                       <Clock size={12} />
                       <span>{label}</span>
@@ -300,13 +302,13 @@ export default function ActivityLog() {
                                 {entry.reverted && <span className="log-reverted-badge"><CornerUpLeft size={10} /> reverted</span>}
                                 <span className="log-entry-spacer" />
                                 {diffRows.length > 0 && (
-                                  <button className="log-entry-expand" onClick={() => toggleExpand(entry.id)} title={isExpanded ? 'Hide details' : 'Show what changed'}>
+                                  <button type="button" className="log-entry-expand" aria-label={isExpanded ? 'Hide details' : 'Show what changed'} onClick={() => toggleExpand(entry.id)} title={isExpanded ? 'Hide details' : 'Show what changed'}>
                                     {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                                   </button>
                                 )}
                                 <span className="log-entry-time" title={new Date(entry.ts).toLocaleString()}>{relativeTime(entry.ts)}</span>
                                 {revertable && (
-                                  <button className="log-entry-revert" onClick={() => setConfirm({ type: 'revert', entry })} title="Roll back this change">
+                                  <button type="button" className="log-entry-revert" aria-label="Roll back this change" onClick={() => setConfirm({ type: 'revert', entry })} title="Roll back this change">
                                     <RotateCcw size={13} />
                                   </button>
                                 )}
