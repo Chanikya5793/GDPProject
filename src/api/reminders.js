@@ -57,25 +57,27 @@ export async function createReminder(reminder) {
         createdAt: new Date().toISOString(),
     }
     save([...reminders, newReminder])
-    addLog('created', 'reminder', newReminder.title)
+    addLog('created', 'reminder', newReminder.title, { entityId: newReminder.id, after: newReminder })
     return newReminder
 }
 
 export async function updateReminder(id, updates) {
     const reminders = load()
+    const before = reminders.find(r => r.id === id)
     const updated = reminders.map(r => r.id === id ? { ...r, ...updates } : r)
     save(updated)
     const reminder = updated.find(r => r.id === id)
-    addLog('updated', 'reminder', reminder?.title)
+    addLog('updated', 'reminder', reminder?.title, { entityId: id, before, after: reminder })
     return reminder
 }
 
 export async function deleteReminder(id) {
     const reminders = load()
     const reminder = reminders.find(r => r.id === id)
-    if (reminder) await addToTrash(reminder, 'reminder')
+    let trashId
+    if (reminder) trashId = await addToTrash(reminder, 'reminder')
     save(reminders.filter(r => r.id !== id))
-    addLog('deleted', 'reminder', reminder?.title)
+    addLog('deleted', 'reminder', reminder?.title, { entityId: id, before: reminder, trashId })
     return { success: true }
 }
 

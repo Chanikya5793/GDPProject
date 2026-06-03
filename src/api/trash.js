@@ -20,13 +20,15 @@ export async function getTrash(userId) {
 
 export async function addToTrash(item, type) {
     const trash = load()
+    const _trashId = `${type}_${item.id}_${Date.now()}`
     trash.unshift({
         ...item,
-        _trashId: `${type}_${item.id}_${Date.now()}`,
+        _trashId,
         _trashType: type,
         _deletedAt: new Date().toISOString(),
     })
     save(trash)
+    return _trashId
 }
 
 export async function restoreFromTrash(trashId) {
