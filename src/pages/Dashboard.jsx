@@ -7,6 +7,7 @@ import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
 import { getNotes, updateNote, getTags } from "../api/notes"
 import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon, ChevronsUpDown, ChevronsDownUp } from "lucide-react"
+import { getEffectivePriority } from "../utils/priority"
 import "../css/Dashboard.css"
 
 /* ─── Helpers ─── */
@@ -253,7 +254,11 @@ function getDashUrgency(task, alertsEnabled) {
 }
 
 function TaskRow({ task, onToggle, showDate = false, dueDateAlerts = true }) {
-  const realPriority = task.priority || 'medium'
+  // Mirror the Tasks page: upcoming tasks show their deadline-escalated priority,
+  // overdue tasks show their real stored priority (the row border already flags them).
+  const ep = getEffectivePriority(task)
+  const isOverdue = !task.completed && task.dueDate && task.dueDate < localDateStr()
+  const badgePriority = isOverdue ? (task.priority || 'medium') : ep.effective
   return (
     <div className={`dash-row${task.completed ? ' dash-row-done' : ''}${getDashUrgency(task, dueDateAlerts)}`}>
       <button
@@ -268,7 +273,7 @@ function TaskRow({ task, onToggle, showDate = false, dueDateAlerts = true }) {
         <div className="dash-row-meta">
           {showDate && <span>{formatDate(task.dueDate)}</span>}
           {!showDate && task.category && <span>{task.category}</span>}
-          <span className={`badge badge-${realPriority}`}>{realPriority}</span>
+          <span className={`badge badge-${badgePriority}`}>{badgePriority}</span>
         </div>
       </div>
     </div>
