@@ -644,6 +644,10 @@
   cursor: pointer;
   font-family: inherit;
   text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;                              /* reset native button border… */
+  border-bottom: 1px solid var(--border);    /* …but keep the divider */
 }
 .log-session-head:hover { background: var(--border); }
 
