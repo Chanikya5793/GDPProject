@@ -6,6 +6,7 @@ import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import '../css/Tasks.css'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
@@ -15,13 +16,6 @@ function localDateStr(d = new Date()) {
 }
 
 function today() { return localDateStr() }
-
-function getDaysUntilDue(dueDateStr) {
-  if (!dueDateStr) return Infinity
-  const t = new Date(); t.setHours(0, 0, 0, 0)
-  const due = new Date(dueDateStr + 'T00:00:00')
-  return Math.floor((due - t) / 86400000)
-}
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -49,30 +43,10 @@ function formatTime(t) {
 }
 
 // ─── priority escalation ─────────────────────────────────────────────────────
+// getDaysUntilDue + getEffectivePriority live in ../utils/priority (shared with
+// the Dashboard) so deadline escalation stays consistent across both views.
 
 const PRIO_ORDER = { high: 0, medium: 1, low: 2 }
-
-/**
- * Returns the effective (display) priority based on deadline proximity.
- * Stored priority is NEVER changed — only the visual representation escalates.
- *
- * Rules (incomplete tasks with a due date only):
- *   overdue / today (≤ 0 days)  →  any priority  →  HIGH
- *   tomorrow         (1 day)    →  any priority  →  HIGH
- *   2–4 days                    →  low            →  MEDIUM
- */
-function getEffectivePriority(task) {
-  if (task.completed || !task.dueDate) return { effective: task.priority || 'medium', original: task.priority || 'medium', wasEscalated: false, daysUntilDue: Infinity }
-  const days = getDaysUntilDue(task.dueDate)
-  const original = task.priority || 'medium'
-  let effective = original
-  if (days <= 1) {
-    effective = 'high'
-  } else if (days <= 4) {
-    if (original === 'low') effective = 'medium'
-  }
-  return { effective, original, wasEscalated: effective !== original, daysUntilDue: days }
-}
 
 // ─── overload detection & pull-forward rescheduling ──────────────────────────
 
@@ -335,11 +309,9 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
         title="Double-click to edit"
         style={{
           background: colors.bg,
-          borderTopColor: colors.border,
-          borderRightColor: colors.border,
-          borderBottomColor: colors.border,
-          borderLeftColor: isOverdue ? '#DC2626' : colors.border,
-          borderLeftWidth: isOverdue ? 4 : 1,
+          // Base border color; when due-date alerts are on, the .task-alert-*
+          // classes add the red/amber urgency border (via !important) on top.
+          borderColor: colors.border,
         }}
       >
         {/* Compact row */}
