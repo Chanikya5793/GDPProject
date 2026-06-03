@@ -14,7 +14,8 @@
       "infoPlist": {
         "CFBundleDisplayName": "NW Planner",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "appleTeamId": "YDF2TB9967"
     },
     "android": {
       "adaptiveIcon": {
