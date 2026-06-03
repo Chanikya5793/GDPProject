@@ -45,7 +45,10 @@ export function canRevert(entry) {
     case 'deleted': return !!(entry.trashId || entry.before)
     case 'updated':
     case 'completed':
-    case 'reopened': return !!entry.before
+    case 'reopened':
+      // Only offer rollback if at least one *restorable* field actually changed
+      // (e.g. a note whose only change was an attachment can't be rolled back).
+      return !!entry.before && Object.keys(buildRevertUpdate(entry.before, entry.after)).length > 0
     default: return false
   }
 }
