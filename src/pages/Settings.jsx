@@ -5,12 +5,11 @@ import { getTrash, restoreFromTrash, permanentDelete, emptyTrash } from '../api/
 import { restoreTaskDirect } from '../api/tasks'
 import { restoreReminderDirect } from '../api/reminders'
 import { restoreNoteDirect } from '../api/notes'
-import { getLogs, clearLogs, SESSION_ID } from '../api/logs'
+import ActivityLog from '../components/ActivityLog'
 import {
   User, Palette, CalendarDays, Database, Recycle,
   Sun, Moon, Monitor, RotateCcw, Download,
   Trash2, AlertTriangle, CheckSquare, Bell, FileText,
-  ScrollText, Clock, Tag,
 } from 'lucide-react'
 import '../css/Settings.css'
 
@@ -22,42 +21,6 @@ const ACCENT_COLORS = [
 ]
 
 const CATEGORIES = ['Homework', 'Exam', 'Project', 'Reading', 'Lab', 'Other']
-
-const LOG_ENTITY_META = {
-  task: { icon: CheckSquare, label: 'Task', color: '#D97706' },
-  reminder: { icon: Bell, label: 'Reminder', color: '#3B82F6' },
-  note: { icon: FileText, label: 'Note', color: '#7C3AED' },
-  tag: { icon: Tag, label: 'Tag', color: '#0AA56F' },
-}
-
-const LOG_ACTION_COLORS = {
-  created: '#0AA56F',
-  updated: '#3B82F6',
-  deleted: '#DC2626',
-  completed: '#006A4E',
-  reopened: '#D97706',
-}
-
-function groupLogsBySession(logs) {
-  const groups = []
-  let current = null
-  for (const log of logs) {
-    if (!current || current.sessionId !== log.sessionId) {
-      current = { sessionId: log.sessionId, sessionStart: log.sessionStart, entries: [log] }
-      groups.push(current)
-    } else {
-      current.entries.push(log)
-    }
-  }
-  return groups
-}
-
-function formatSessionLabel(startIso, isCurrent) {
-  const d = new Date(startIso)
-  const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  return `${isCurrent ? 'This session' : 'Session'} · ${dateStr}, ${timeStr}`
-}
 
 /* ─── Toggle Switch ─── */
 
@@ -93,25 +56,9 @@ export default function Settings() {
   const [trashFilter, setTrashFilter] = useState('all')
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
 
-  /* Activity log */
-  const [logs, setLogs] = useState([])
-  const [confirmClearLogs, setConfirmClearLogs] = useState(false)
-
   useEffect(() => {
     getTrash(user.id).then(setTrash)
-    getLogs().then(setLogs)
   }, [user.id])
-
-  const handleClearLogs = () => {
-    if (!confirmClearLogs) {
-      setConfirmClearLogs(true)
-      setTimeout(() => setConfirmClearLogs(false), 3000)
-      return
-    }
-    clearLogs()
-    setLogs([])
-    setConfirmClearLogs(false)
-  }
 
   const handleRestore = async (trashId) => {
     const result = await restoreFromTrash(trashId)
@@ -508,68 +455,7 @@ export default function Settings() {
           </section>
 
           {/* ═══ Activity Log ═══ */}
-          <section className="settings-section">
-            <div className="settings-section-header">
-              <ScrollText size={18} />
-              <h2>Activity Log</h2>
-              {logs.length > 0 && (
-                <span className="settings-trash-badge">{logs.length}</span>
-              )}
-              {logs.length > 0 && (
-                <button
-                  className={`btn-ghost${confirmClearLogs ? ' confirming' : ''}`}
-                  style={{ marginLeft: 'auto' }}
-                  onClick={handleClearLogs}
-                >
-                  <Trash2 size={13} /> {confirmClearLogs ? 'Confirm clear?' : 'Clear log'}
-                </button>
-              )}
-            </div>
-
-            <div className="settings-info-box" style={{ marginBottom: '16px' }}>
-              <p>A record of changes you make — created, updated, and deleted tasks, reminders, notes, and tags — grouped by session.</p>
-            </div>
-
-            {logs.length === 0 ? (
-              <div className="trash-empty">
-                <ScrollText size={30} />
-                <p>No activity recorded yet</p>
-              </div>
-            ) : (
-              <div className="log-sessions">
-                {groupLogsBySession(logs).map(group => (
-                  <div key={group.sessionId} className="log-session">
-                    <div className="log-session-head">
-                      <Clock size={12} />
-                      <span>{formatSessionLabel(group.sessionStart, group.sessionId === SESSION_ID)}</span>
-                      <span className="log-session-count">{group.entries.length}</span>
-                    </div>
-                    <div className="log-entries">
-                      {group.entries.map(entry => {
-                        const meta = LOG_ENTITY_META[entry.entity] || LOG_ENTITY_META.task
-                        const Icon = meta.icon
-                        return (
-                          <div key={entry.id} className="log-entry">
-                            <span className="log-entry-icon" style={{ color: meta.color }}>
-                              <Icon size={14} />
-                            </span>
-                            <span className="log-entry-action" style={{ color: LOG_ACTION_COLORS[entry.action] || 'var(--muted)' }}>
-                              {entry.action}
-                            </span>
-                            <span className="log-entry-entity">{meta.label.toLowerCase()}</span>
-                            {entry.title && <span className="log-entry-title">"{entry.title}"</span>}
-                            <span className="log-entry-time">
-                              {new Date(entry.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          <ActivityLog />
 
           {/* ═══ Data & Privacy ═══ */}
           <section className="settings-section">
