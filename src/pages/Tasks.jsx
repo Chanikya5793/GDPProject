@@ -6,6 +6,7 @@ import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import '../css/Tasks.css'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
@@ -15,13 +16,6 @@ function localDateStr(d = new Date()) {
 }
 
 function today() { return localDateStr() }
-
-function getDaysUntilDue(dueDateStr) {
-  if (!dueDateStr) return Infinity
-  const t = new Date(); t.setHours(0, 0, 0, 0)
-  const due = new Date(dueDateStr + 'T00:00:00')
-  return Math.floor((due - t) / 86400000)
-}
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -49,30 +43,10 @@ function formatTime(t) {
 }
 
 // ─── priority escalation ─────────────────────────────────────────────────────
+// getDaysUntilDue + getEffectivePriority live in ../utils/priority (shared with
+// the Dashboard) so deadline escalation stays consistent across both views.
 
 const PRIO_ORDER = { high: 0, medium: 1, low: 2 }
-
-/**
- * Returns the effective (display) priority based on deadline proximity.
- * Stored priority is NEVER changed — only the visual representation escalates.
- *
- * Rules (incomplete tasks with a due date only):
- *   overdue / today (≤ 0 days)  →  any priority  →  HIGH
- *   tomorrow         (1 day)    →  any priority  →  HIGH
- *   2–4 days                    →  low            →  MEDIUM
- */
-function getEffectivePriority(task) {
-  if (task.completed || !task.dueDate) return { effective: task.priority || 'medium', original: task.priority || 'medium', wasEscalated: false, daysUntilDue: Infinity }
-  const days = getDaysUntilDue(task.dueDate)
-  const original = task.priority || 'medium'
-  let effective = original
-  if (days <= 1) {
-    effective = 'high'
-  } else if (days <= 4) {
-    if (original === 'low') effective = 'medium'
-  }
-  return { effective, original, wasEscalated: effective !== original, daysUntilDue: days }
-}
 
 // ─── overload detection & pull-forward rescheduling ──────────────────────────
 
@@ -157,7 +131,8 @@ const PRIORITY_STYLES = {
   high:   { bg: '#FFA6A6', border: '#E68E8E' },
   medium: { bg: '#FFEFB5', border: '#F4DAB2' },
   low:    { bg: '#E2FFAF', border: '#CEFFB0' },
-  // 'escalated' kept for CSS class but colors now map to the effective priority
+  // overdue tasks render in a muted gray (past-due); the red left border + ⚠ still flag them
+  escalated: { bg: '#E5E7EB', border: '#D1D5DB' },
 }
 const DONE_STYLE = { bg: '#F9FAFB', border: '#E5E7EB', accent: '#9CA3AF' }
 
@@ -312,31 +287,31 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
 function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
   const isOverdue = !task.completed && task.dueDate && task.dueDate < today()
   const ep = getEffectivePriority(task)
-  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[ep.effective] || PRIORITY_STYLES.medium)
+  // Overdue → muted gray "past-due" card (the red left border + ⚠ flag it);
+  // upcoming tasks use their effective (possibly escalated) priority color.
+  const styleKey = isOverdue ? 'escalated' : ep.effective
+  const colors = task.completed ? DONE_STYLE : (PRIORITY_STYLES[styleKey] || PRIORITY_STYLES.medium)
   const urgency = getUrgencyClass(task, dueDateAlerts)
 
-  // Escalation badge label
+  // Escalation badge: only for UPCOMING tasks bumped by proximity (tomorrow … a few days out).
+  // Overdue/today are already obvious from the ⚠ date + red border, so no badge there.
   let escalationLabel = null
-  if (ep.wasEscalated && !task.completed) {
-    if (ep.daysUntilDue <= 0) escalationLabel = ep.daysUntilDue < 0 ? 'overdue' : 'today'
-    else if (ep.daysUntilDue === 1) escalationLabel = 'tmr'
-    else escalationLabel = `${ep.daysUntilDue}d`
+  if (ep.wasEscalated && !task.completed && ep.daysUntilDue >= 1) {
+    escalationLabel = ep.daysUntilDue === 1 ? 'tmr' : `${ep.daysUntilDue}d`
   }
 
   return (
     <div className="task-card-slot">
       <div
-        className={`task-card${task.completed ? ' task-done' : ` task-priority-${ep.effective}${ep.wasEscalated ? ' task-escalated' : ''}`}${urgency}`}
+        className={`task-card${task.completed ? ' task-done' : ` task-priority-${styleKey}${ep.wasEscalated && !isOverdue ? ' task-escalated' : ''}`}${urgency}`}
         onMouseDown={e => { if (e.detail > 1) e.preventDefault() }}
         onDoubleClick={e => { if (!e.target.closest('button')) onEdit(task) }}
         title="Double-click to edit"
         style={{
           background: colors.bg,
-          borderTopColor: colors.border,
-          borderRightColor: colors.border,
-          borderBottomColor: colors.border,
-          borderLeftColor: isOverdue ? '#DC2626' : colors.border,
-          borderLeftWidth: isOverdue ? 4 : 1,
+          // Base border color; when due-date alerts are on, the .task-alert-*
+          // classes add the red/amber urgency border (via !important) on top.
+          borderColor: colors.border,
         }}
       >
         {/* Compact row */}
@@ -368,8 +343,8 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
                     </span>
                   )}
                   {task.category && <span className="task-cat">{task.category}</span>}
-                  <span className={`task-priority-badge${ep.wasEscalated && !task.completed ? ' escalated' : ''}`}>
-                    {ep.effective}{ep.wasEscalated && !task.completed ? ' ↑' : ''}
+                  <span className={`task-priority-badge${ep.wasEscalated && !task.completed && !isOverdue ? ' escalated' : ''}`}>
+                    {isOverdue ? (task.priority || 'medium') : ep.effective}{ep.wasEscalated && !task.completed && !isOverdue ? ' ↑' : ''}
                   </span>
                 </div>
               </div>
