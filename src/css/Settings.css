@@ -539,3 +539,172 @@
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   ACTIVITY LOG v2 — diffs, rollback, multi-select, filters
+   ═══════════════════════════════════════════════════════════ */
+
+.log-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-ghost.active {
+  color: var(--green);
+  border-color: var(--green-mid);
+  background: var(--green-lt);
+}
+
+/* ── Filter toolbar ── */
+.log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.log-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--muted);
+  flex: 1 1 150px;
+  min-width: 130px;
+}
+.log-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 0;
+  width: 100%;
+  color: var(--text);
+}
+.log-search-clear {
+  border: none; background: none; cursor: pointer; color: var(--muted);
+  display: inline-flex; padding: 2px;
+}
+.log-search-clear:hover { color: var(--red); }
+
+.log-select {
+  -webkit-appearance: none; appearance: none;
+  font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 26px 7px 10px;
+  background: var(--white) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 8px center;
+  cursor: pointer;
+}
+.log-select:disabled { opacity: .5; cursor: not-allowed; }
+
+.log-groupby {
+  display: inline-flex;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.log-groupby button {
+  border: none; background: var(--white); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+  padding: 7px 12px;
+}
+.log-groupby button.active { background: var(--green); color: #fff; }
+
+.log-clear-filters { font-size: 12px; }
+
+/* ── Selection bar ── */
+.log-selectbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: var(--green-lt);
+  border: 1px solid var(--green-mid);
+  border-radius: 8px;
+}
+.log-selectall { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+.log-selectall input { accent-color: var(--green); width: 15px; height: 15px; }
+.log-selectcount { font-size: 12px; color: var(--muted); }
+.log-delete-selected {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; padding: 6px 12px;
+}
+.log-delete-selected:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── Session/day head as a clickable button ── */
+.log-session-head {
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;                              /* reset native button border… */
+  border-bottom: 1px solid var(--border);    /* …but keep the divider */
+}
+.log-session-head:hover { background: var(--border); }
+
+/* ── Entry: column wrapper holding the main row + optional diff ── */
+.log-entry {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+.log-entry.selected { background: var(--green-lt); }
+.log-entry.reverted .log-entry-action,
+.log-entry.reverted .log-entry-title { opacity: .55; }
+.log-entry.reverted .log-entry-title { text-decoration: line-through; }
+
+.log-entry-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.log-entry-check { accent-color: var(--green); width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+.log-entry-spacer { flex: 1; }
+.log-entry-main .log-entry-time { margin-left: 0; }
+
+.log-entry-expand, .log-entry-revert {
+  border: none; background: none; cursor: pointer; color: var(--muted);
+  display: inline-flex; align-items: center; padding: 3px; border-radius: 6px; flex-shrink: 0;
+}
+.log-entry-expand:hover { color: var(--text); background: var(--off); }
+.log-entry-revert:hover { color: var(--green); background: var(--green-lt); }
+
+.log-reverted-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 700; color: #9333EA;
+  background: rgba(147, 51, 234, .1); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
+}
+
+/* ── Diff block ── */
+.log-diff {
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 4px 0 6px 22px;
+  padding: 8px 10px;
+  background: var(--off);
+  border-radius: 8px;
+}
+.log-diff-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+.log-diff-field { font-weight: 700; color: var(--muted); min-width: 78px; }
+.log-diff-from { color: var(--red); text-decoration: line-through; opacity: .8; }
+.log-diff-arrow { color: var(--muted); }
+.log-diff-to { color: var(--green); font-weight: 600; }
+
+/* ── Toast ── */
+.log-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  background: var(--text); color: var(--white);
+  padding: 11px 16px; border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .22);
+  font-size: 13px; font-weight: 600; z-index: 1000;
+}
+.log-toast.error { background: var(--red); }
