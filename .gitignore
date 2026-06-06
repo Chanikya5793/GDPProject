@@ -27,3 +27,6 @@ dist-ssr
 # Native build output
 ios/build
 android/app/build
+
+# Claude Code local config (top-level only; mobile/.claude is intentional)
+/.claude/
