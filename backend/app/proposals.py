@@ -109,7 +109,13 @@ class ProposalService:
             raise InvalidProposal("Proposal expired")
         if expected_base_revision != proposal.base_revision:
             raise InvalidProposal("Confirmation does not match the previewed revision")
-        confirmed = self.repository.apply_proposal(uid, proposal, idempotency_key)
+        try:
+            confirmed = self.repository.apply_proposal(uid, proposal, idempotency_key)
+        except Exception as exc:
+            self.audit.record(uid, "failure", "failed", {
+                "stage": "proposal_confirmation", "error_type": type(exc).__name__,
+            })
+            raise
         self.audit.record(uid, "proposal_confirmed", metadata={
             "operation": proposal.operation.value, "entity_type": proposal.entity_type.value,
         })

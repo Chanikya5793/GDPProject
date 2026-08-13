@@ -97,8 +97,8 @@ def create_app(container: Container | None = None) -> FastAPI:
         return JSONResponse(status_code=409, content={"detail": str(exc), "code": "invalid_proposal"})
 
     @app.get("/healthz")
-    def health() -> Dict[str, Any]:
-        return {"status": "ok", "cloud_services_initialized": app.state.container is not None}
+    def health(_services: ContainerDep) -> Dict[str, Any]:
+        return {"status": "ok", "cloud_services_initialized": True}
 
     @app.get("/v1/records/{entity_type}", response_model=list[PlannerRecord])
     def list_records(entity_type: EntityType, user: CurrentUser, services: ContainerDep):
@@ -166,9 +166,18 @@ def create_app(container: Container | None = None) -> FastAPI:
 
     @app.put("/v1/privacy", response_model=PrivacySettings)
     def set_privacy(body: PrivacySettings, user: CurrentUser, services: ContainerDep):
+        previous = services.repository.get_privacy(user.uid)
+        if not body.ai_enabled:
+            body = body.model_copy(update={
+                "indexed_entity_types": [], "index_attachments": False,
+                "retain_chat": False, "chat_retention_days": 0,
+            })
         result = services.repository.set_privacy(user.uid, body)
         if not body.ai_enabled:
             services.indexing.delete_user_index(user.uid)
+        else:
+            for entity_type in set(previous.indexed_entity_types) - set(body.indexed_entity_types):
+                services.vector_store.delete_entity_type(user.uid, entity_type)
         if not body.retain_chat:
             services.repository.delete_chats(user.uid)
         services.audit.record(user.uid, "privacy_changed", metadata={
@@ -291,6 +300,9 @@ def create_app(container: Container | None = None) -> FastAPI:
                 })
             return {"jsonrpc": "2.0", "id": body.id, "result": result}
         except (PermissionError, KeyError, ValueError) as exc:
+            services.audit.record(user.uid, "failure", "denied", {
+                "stage": "mcp", "error_type": type(exc).__name__,
+            })
             return JSONResponse(status_code=403, content={
                 "jsonrpc": "2.0", "id": body.id,
                 "error": {"code": -32001, "message": str(exc)},

@@ -59,8 +59,14 @@ class IndexingService:
             self.audit.record(uid, "indexing", "denied", {"entity_type": entity_type.value})
             raise PermissionError("Record was not approved for AI indexing")
         text = record_text(record, include_attachments=settings.index_attachments)
-        embedding = self.embeddings.embed_document(text, record.content.title)
-        self.vector_store.index(uid, record, embedding)
+        try:
+            embedding = self.embeddings.embed_document(text, record.content.title)
+            self.vector_store.index(uid, record, embedding)
+        except Exception as exc:
+            self.audit.record(uid, "failure", "failed", {
+                "stage": "indexing", "error_type": type(exc).__name__,
+            })
+            raise
         self.audit.record(uid, "indexing", metadata={
             "entity_type": entity_type.value, "revision": revision,
             "attachment_text": settings.index_attachments,
@@ -88,8 +94,14 @@ class RetrievalService:
         if not settings.ai_enabled:
             self.audit.record(uid, "retrieval", "denied", {"reason": "opt_out"})
             raise PermissionError("AI is disabled")
-        query_vector = self.embeddings.embed_query(query)
-        hits = self.vector_store.search(uid, query_vector, self.limit)
+        try:
+            query_vector = self.embeddings.embed_query(query)
+            hits = self.vector_store.search(uid, query_vector, self.limit)
+        except Exception as exc:
+            self.audit.record(uid, "failure", "failed", {
+                "stage": "retrieval", "error_type": type(exc).__name__,
+            })
+            raise
         records: List[PlannerRecord] = []
         citations: List[Citation] = []
         for index, hit in enumerate(hits, start=1):
@@ -157,7 +169,13 @@ class CopilotService:
             f"UNTRUSTED_SOURCES={json.dumps(source_payload)}\n"
             f"RULE_RESULTS={json.dumps([r.model_dump(mode='json') for r in recommendations])}"
         )
-        generated = self.generator.generate(prompt)
+        try:
+            generated = self.generator.generate(prompt)
+        except Exception as exc:
+            self.audit.record(uid, "failure", "failed", {
+                "stage": "generation", "error_type": type(exc).__name__,
+            })
+            raise
         allowed = {citation.citation_id: citation for citation in citations}
         used = [allowed[citation_id] for citation_id in generated.citation_ids if citation_id in allowed]
         if not used:

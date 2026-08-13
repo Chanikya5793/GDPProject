@@ -298,7 +298,10 @@ export default function Settings() {
                 <span className="settings-row-desc">Complete opt-out. Turning this off also deletes your vector index.</span>
               </div>
               <Toggle checked={privacy.ai_enabled}
-                onChange={value => updatePrivacy({ ai_enabled: value })}
+                onChange={value => updatePrivacy(value ? { ai_enabled: true } : {
+                  ai_enabled: false, indexed_entity_types: [], index_attachments: false,
+                  retain_chat: false, chat_retention_days: 0,
+                })}
                 label="Enable AI Copilot" />
             </div>
 

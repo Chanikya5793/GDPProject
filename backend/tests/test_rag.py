@@ -123,3 +123,28 @@ def test_delete_user_index_is_scoped(services):
     assert services.indexing.delete_user_index("alice") == 1
     assert len(services.vector_store.vectors) == 1
 
+
+def test_delete_entity_type_index_is_scoped(services):
+    enable_ai(services, "alice")
+    enable_ai(services, "bob")
+    for uid in ("alice", "bob"):
+        record = add_task(services, uid, record_id=f"{uid}-task")
+        services.indexing.index(uid, EntityType.task, record.record_id, record.revision)
+    assert services.vector_store.delete_entity_type("alice", EntityType.task) == 1
+    assert all(key[0] == "bob" for key in services.vector_store.vectors)
+
+
+def test_generation_failure_is_audited_without_prompt_content(services):
+    enable_ai(services)
+    record = add_task(services)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+
+    def fail(_prompt):
+        raise RuntimeError("private prompt must not be logged")
+
+    services.test_generator.generate = fail
+    with pytest.raises(RuntimeError):
+        services.copilot.answer("alice", "chemistry")
+    event = services.test_sink.events[-1]
+    assert event.event_type == "failure"
+    assert event.metadata == {"stage": "generation", "error_type": "RuntimeError"}

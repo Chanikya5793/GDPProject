@@ -14,6 +14,7 @@ dist-ssr
 *.local
 .coverage
 coverage.json
+coverage/
 htmlcov/
 __pycache__/
 .pytest_cache/

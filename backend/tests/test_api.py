@@ -8,6 +8,12 @@ def test_authentication_is_required(client):
     assert client.get("/v1/records/task").status_code == 401
 
 
+def test_health_requires_a_constructed_runtime(client):
+    assert client.get("/healthz").json() == {
+        "status": "ok", "cloud_services_initialized": True,
+    }
+
+
 def test_bad_token_is_rejected(client):
     response = client.get("/v1/records/task", headers={"Authorization": "Bearer nope"})
     assert response.status_code == 401
@@ -55,7 +61,22 @@ def test_privacy_opt_out_deletes_only_user_index(client, auth, services):
         "retain_chat": False, "chat_retention_days": 0,
     }, headers=auth)
     assert response.status_code == 200
+    assert response.json()["indexed_entity_types"] == []
+    assert response.json()["retain_chat"] is False
     assert any(event.event_type == "privacy_changed" for event in services.test_sink.events)
+
+
+def test_privacy_removing_one_entity_type_deletes_that_vector_partition(client, auth, services):
+    client.put("/v1/privacy", json={
+        "ai_enabled": True, "indexed_entity_types": ["task", "note"],
+        "index_attachments": False, "retain_chat": False, "chat_retention_days": 0,
+    }, headers=auth)
+    response = client.put("/v1/privacy", json={
+        "ai_enabled": True, "indexed_entity_types": ["task"],
+        "index_attachments": False, "retain_chat": False, "chat_retention_days": 0,
+    }, headers=auth)
+    assert response.status_code == 200
+    assert response.json()["indexed_entity_types"] == ["task"]
 
 
 def test_mcp_initialize_and_tools_are_session_bound(client, auth):
