@@ -67,3 +67,15 @@ def test_mcp_unknown_tool_rejected(services):
     with pytest.raises(KeyError):
         services.mcp_tools.call("alice", "write_task", {})
 
+
+def test_mcp_runtime_rejects_arguments_outside_declared_schema(services):
+    with pytest.raises(ValueError):
+        services.mcp_tools.call("alice", "notes", {"unexpected": True})
+    with pytest.raises(ValueError):
+        services.mcp_tools.call("alice", "calendar_window", {"start": "2026-08-01"})
+    with pytest.raises(ValueError):
+        services.mcp_tools.call("alice", "tasks", {"include_completed": "yes"})
+    with pytest.raises(ValueError):
+        services.mcp_tools.call("alice", "planner_search", {"query": 3})
+    with pytest.raises(ValueError):
+        services.mcp_tools.call("alice", "planner_search", {"query": ""})

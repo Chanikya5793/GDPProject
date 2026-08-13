@@ -550,4 +550,4 @@ class FirestorePlannerRepository:
 
 
 def generated_record_id() -> str:
-    return secrets.token_urlsafe(18).replace("-", "_")
+    return f"ai_{secrets.token_urlsafe(18).replace('-', '_')}"

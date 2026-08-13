@@ -1,0 +1,17 @@
+{
+  "abstention_accuracy": 1.0,
+  "action_proposal_validity": 1.0,
+  "answerable_query_count": 25,
+  "citation_validity": 1.0,
+  "cross_user_leakage_count": 0,
+  "cross_user_leakage_rate": 0.0,
+  "dataset_version": "1.0.0",
+  "evaluation_mode": "offline deterministic contract; production Vertex run not executed",
+  "failures": [],
+  "hit_at_1": 1.0,
+  "hit_at_3": 1.0,
+  "hit_at_5": 1.0,
+  "mrr": 1.0,
+  "query_count": 30,
+  "recorded_at": "2026-08-13"
+}

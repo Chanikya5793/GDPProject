@@ -24,6 +24,7 @@ class VectorStore(Protocol):
     def search(self, uid: str, embedding: List[float], limit: int) -> List[VectorHit]: ...
     def delete_record(self, uid: str, entity_type: EntityType, record_id: str) -> None: ...
     def delete_user(self, uid: str) -> int: ...
+    def delete_entity_type(self, uid: str, entity_type: EntityType) -> int: ...
 
 
 class FirestoreVectorStore:
@@ -79,6 +80,18 @@ class FirestoreVectorStore:
             batch.commit()
         return len(documents)
 
+    def delete_entity_type(self, uid: str, entity_type: EntityType) -> int:
+        documents = list(
+            self.collection.where("uid", "==", uid)
+            .where("entity_type", "==", entity_type.value).stream()
+        )
+        batch = self.client.batch()
+        for document in documents:
+            batch.delete(document.reference)
+        if documents:
+            batch.commit()
+        return len(documents)
+
 
 class MemoryVectorStore:
     def __init__(self) -> None:
@@ -115,3 +128,8 @@ class MemoryVectorStore:
             del self.vectors[key]
         return len(keys)
 
+    def delete_entity_type(self, uid: str, entity_type: EntityType) -> int:
+        keys = [key for key in self.vectors if key[0] == uid and key[1] == entity_type]
+        for key in keys:
+            del self.vectors[key]
+        return len(keys)

@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "northwest-planner-copilot"
 version = "0.1.0"
 description = "Authenticated, encrypted planner RAG and proposal service"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
   "cryptography>=43.0,<47",
   "fastapi>=0.115,<1",

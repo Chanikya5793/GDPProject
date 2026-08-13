@@ -88,6 +88,26 @@ class McpToolService:
         if "uid" in arguments or "user_id" in arguments:
             self.audit.record(uid, "mcp_access", "denied", {"tool": name})
             raise PermissionError("UID is session-bound and cannot be supplied as a tool argument")
+        contracts = {
+            "tasks": ({"include_completed"}, set()),
+            "reminders": (set(), set()),
+            "notes": (set(), set()),
+            "calendar_window": ({"start", "end"}, {"start", "end"}),
+            "workload_summary": (set(), set()),
+            "planner_search": ({"query"}, {"query"}),
+        }
+        if name not in contracts:
+            raise KeyError(f"Unknown MCP tool: {name}")
+        allowed, required = contracts[name]
+        if set(arguments) - allowed or required - set(arguments):
+            raise ValueError("MCP tool arguments do not match the declared schema")
+        if "include_completed" in arguments and not isinstance(arguments["include_completed"], bool):
+            raise ValueError("include_completed must be a boolean")
+        for key in required:
+            if not isinstance(arguments[key], str):
+                raise ValueError(f"{key} must be a string")
+        if name == "planner_search" and not 1 <= len(arguments["query"]) <= 8000:
+            raise ValueError("Search query length is invalid")
         if name == "tasks":
             records = self.repository.list_records(uid, EntityType.task)
             if not arguments.get("include_completed", False):
@@ -120,7 +140,5 @@ class McpToolService:
             records, citations = self.retrieval.retrieve(uid, str(arguments["query"]))
             result = [{"citation": citation.model_dump(mode="json"),
                        "record": record_text(record)} for record, citation in zip(records, citations)]
-        else:
-            raise KeyError(f"Unknown MCP tool: {name}")
         self.audit.record(uid, "mcp_access", metadata={"tool": name, "result_count": len(result)})
         return result

@@ -50,6 +50,7 @@ export default function CopilotScreen() {
     text: 'Ask about planner records you approved for AI. Every answer cites exact records, and every change requires confirmation.',
   }]);
   const scrollRef = useRef<ScrollView>(null);
+  const controllerRef = useRef<AbortController | null>(null);
 
   const send = async () => {
     const text = input.trim();
@@ -57,9 +58,12 @@ export default function CopilotScreen() {
     setInput('');
     setMessages(previous => [...previous, { id: idempotencyKey('message'), role: 'user', text }]);
     setLoading(true);
+    const controller = new AbortController();
+    controllerRef.current = controller;
     try {
       const response = await apiRequest<ChatResponse>('/v1/copilot/chat', {
         method: 'POST',
+        signal: controller.signal,
         body: JSON.stringify({
           message: text, request_id: idempotencyKey('mobile-chat'),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
@@ -69,11 +73,21 @@ export default function CopilotScreen() {
         id: idempotencyKey('answer'), role: 'assistant', text: response.answer, ...response,
       }]);
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
       setMessages(previous => [...previous, {
         id: idempotencyKey('error'), role: 'error',
         text: error instanceof Error ? error.message : 'The copilot request failed.',
       }]);
-    } finally { setLoading(false); }
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null;
+      setLoading(false);
+    }
+  };
+
+  const cancel = () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setLoading(false);
   };
 
   const updateProposal = (proposalId: string, proposal: Proposal) => {
@@ -138,8 +152,9 @@ export default function CopilotScreen() {
         <TextInput style={styles.input} value={input} onChangeText={setInput}
           placeholder="Ask your planner…" placeholderTextColor={colors.textMuted}
           multiline maxLength={8000} />
-        <TouchableOpacity style={[styles.send, !input.trim() && styles.sendDisabled]} onPress={send} disabled={!input.trim() || loading}>
-          <Ionicons name="send" size={18} color="#FFF" />
+        <TouchableOpacity style={[styles.send, !loading && !input.trim() && styles.sendDisabled]}
+          onPress={loading ? cancel : send} disabled={!loading && !input.trim()}>
+          <Ionicons name={loading ? 'stop' : 'send'} size={18} color="#FFF" />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -174,4 +189,3 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     sendDisabled: { opacity: 0.45 },
   });
 }
-
