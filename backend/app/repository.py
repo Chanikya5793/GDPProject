@@ -11,13 +11,13 @@ from pydantic import TypeAdapter
 from .crypto import EncryptedPayload, EnvelopeCipher
 from .models import (
     ActionProposal,
+    ChatResponse,
     EntityType,
     PlannerContent,
     PlannerRecord,
     PrivacySettings,
     RecordUpsertRequest,
 )
-
 
 CONTENT_ADAPTER = TypeAdapter(PlannerContent)
 
@@ -49,6 +49,14 @@ class PlannerRepository(Protocol):
     def save_proposal(self, uid: str, proposal: ActionProposal) -> ActionProposal: ...
     def get_proposal(self, uid: str, proposal_id: str) -> ActionProposal: ...
     def update_proposal_status(self, uid: str, proposal_id: str, status: str) -> ActionProposal: ...
+    def apply_proposal(
+        self, uid: str, proposal: ActionProposal, idempotency_key: str
+    ) -> ActionProposal: ...
+    def get_chat_response(self, uid: str, request_id: str) -> Optional[ChatResponse]: ...
+    def save_chat_response(
+        self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
+    ) -> None: ...
+    def delete_chats(self, uid: str) -> int: ...
 
 
 class MemoryPlannerRepository:
@@ -59,6 +67,7 @@ class MemoryPlannerRepository:
         self.idempotency: Dict[Tuple[str, str], Tuple[str, Optional[PlannerRecord]]] = {}
         self.privacy: Dict[str, PrivacySettings] = {}
         self.proposals: Dict[Tuple[str, str], ActionProposal] = {}
+        self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime]] = {}
         self._lock = RLock()
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
@@ -159,6 +168,75 @@ class MemoryPlannerRepository:
         self.proposals[(uid, proposal_id)] = proposal
         return deepcopy(proposal)
 
+    def apply_proposal(
+        self, uid: str, proposal: ActionProposal, idempotency_key: str
+    ) -> ActionProposal:
+        with self._lock:
+            stored = self.proposals.get((uid, proposal.proposal_id))
+            if not stored:
+                raise NotFound("Proposal not found")
+            if stored.status == "confirmed":
+                return deepcopy(stored)
+            if stored.status != "pending":
+                raise ValueError(f"Proposal is {stored.status}")
+            if not proposal.record_id:
+                raise ValueError("Proposal has no target record")
+            key = (uid, proposal.entity_type, proposal.record_id)
+            current = self.records.get(key)
+            if proposal.operation.value == "create":
+                if current:
+                    raise RevisionConflict("Target record already exists")
+                assert proposal.after is not None
+                self.upsert_record(
+                    uid, proposal.entity_type, proposal.record_id,
+                    RecordUpsertRequest(
+                        content=proposal.after, expected_revision=None,
+                        idempotency_key=idempotency_key, approved_for_ai=False,
+                    ),
+                )
+            elif proposal.operation.value == "delete":
+                if not current or current.revision != proposal.base_revision:
+                    raise RevisionConflict("Record changed after the preview was created")
+                self.delete_record(
+                    uid, proposal.entity_type, proposal.record_id,
+                    proposal.base_revision or 0, idempotency_key,
+                )
+            else:
+                if not current or current.revision != proposal.base_revision:
+                    raise RevisionConflict("Record changed after the preview was created")
+                assert proposal.after is not None
+                self.upsert_record(
+                    uid, proposal.entity_type, proposal.record_id,
+                    RecordUpsertRequest(
+                        content=proposal.after, expected_revision=proposal.base_revision,
+                        idempotency_key=idempotency_key,
+                        approved_for_ai=current.approved_for_ai,
+                    ),
+                )
+            confirmed = stored.model_copy(update={"status": "confirmed"})
+            self.proposals[(uid, proposal.proposal_id)] = confirmed
+            return deepcopy(confirmed)
+
+    def get_chat_response(self, uid: str, request_id: str) -> Optional[ChatResponse]:
+        value = self.chats.get((uid, request_id))
+        if not value:
+            return None
+        if value[2] <= datetime.now(timezone.utc):
+            del self.chats[(uid, request_id)]
+            return None
+        return deepcopy(value[1])
+
+    def save_chat_response(
+        self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
+    ) -> None:
+        self.chats[(uid, request_id)] = (question, deepcopy(response), expires_at)
+
+    def delete_chats(self, uid: str) -> int:
+        keys = [key for key in self.chats if key[0] == uid]
+        for key in keys:
+            del self.chats[key]
+        return len(keys)
+
 
 class FirestorePlannerRepository:
     def __init__(self, client: firestore.Client, cipher: EnvelopeCipher):
@@ -220,7 +298,7 @@ class FirestorePlannerRepository:
                 prior = idem.to_dict()
                 if prior["request_hash"] != request_hash:
                     raise IdempotencyConflict("Idempotency key was already used")
-                return ref.get(transaction=txn)
+                return None
             current = ref.get(transaction=txn)
             now = datetime.now(timezone.utc)
             if current.exists:
@@ -253,9 +331,10 @@ class FirestorePlannerRepository:
                 "record_path": ref.path,
                 "created_at": now,
             })
-            return ref.get(transaction=txn)
+            return None
 
-        snapshot = apply(transaction)
+        apply(transaction)
+        snapshot = ref.get()
         return self._deserialize(uid, snapshot)
 
     def delete_record(
@@ -344,7 +423,131 @@ class FirestorePlannerRepository:
         ref.update({"status": status, "updated_at": firestore.SERVER_TIMESTAMP})
         return self.get_proposal(uid, proposal_id)
 
+    def apply_proposal(
+        self, uid: str, proposal: ActionProposal, idempotency_key: str
+    ) -> ActionProposal:
+        if not proposal.record_id:
+            raise ValueError("Proposal has no target record")
+        proposal_ref = self.client.collection("users").document(uid).collection(
+            "proposals"
+        ).document(proposal.proposal_id)
+        record_ref = self._record_ref(uid, proposal.entity_type, proposal.record_id)
+        idem_ref = self.client.collection("users").document(uid).collection(
+            "idempotency"
+        ).document(idempotency_key)
+        request_hash = hashlib.sha256(
+            f"proposal:{proposal.proposal_id}:{proposal.base_revision}".encode()
+        ).hexdigest()
+        transaction = self.client.transaction()
+
+        @firestore.transactional
+        def apply(txn):
+            stored_proposal = proposal_ref.get(transaction=txn)
+            idem = idem_ref.get(transaction=txn)
+            current = record_ref.get(transaction=txn)
+            if not stored_proposal.exists:
+                raise NotFound("Proposal not found")
+            status = stored_proposal.to_dict()["status"]
+            if idem.exists:
+                if idem.to_dict()["request_hash"] != request_hash:
+                    raise IdempotencyConflict("Idempotency key was already used")
+                if status != "confirmed":
+                    raise IdempotencyConflict("Proposal idempotency state is inconsistent")
+                return
+            if status != "pending":
+                raise ValueError(f"Proposal is {status}")
+
+            now = datetime.now(timezone.utc)
+            if proposal.operation.value == "create":
+                if current.exists:
+                    raise RevisionConflict("Target record already exists")
+                assert proposal.after is not None
+                revision = 1
+                created_at = now
+                approved_for_ai = False
+            elif proposal.operation.value == "delete":
+                if not current.exists or current.to_dict()["revision"] != proposal.base_revision:
+                    raise RevisionConflict("Record changed after the preview was created")
+                txn.delete(record_ref)
+                revision = 0
+                created_at = now
+                approved_for_ai = False
+            else:
+                if not current.exists or current.to_dict()["revision"] != proposal.base_revision:
+                    raise RevisionConflict("Record changed after the preview was created")
+                assert proposal.after is not None
+                data = current.to_dict()
+                revision = data["revision"] + 1
+                created_at = data["created_at"]
+                approved_for_ai = data.get("approved_for_ai", False)
+
+            if proposal.operation.value != "delete":
+                assert proposal.after is not None
+                encrypted = self.cipher.encrypt(
+                    uid, proposal.entity_type.value, proposal.record_id, revision,
+                    proposal.after.model_dump(mode="json"),
+                )
+                txn.set(record_ref, {
+                    "uid": uid,
+                    "record_id": proposal.record_id,
+                    "entity_type": proposal.entity_type.value,
+                    "revision": revision,
+                    "approved_for_ai": approved_for_ai,
+                    "encrypted_payload": encrypted.to_dict(),
+                    "created_at": created_at,
+                    "updated_at": now,
+                })
+            txn.create(idem_ref, {
+                "request_hash": request_hash,
+                "operation": "proposal",
+                "proposal_id": proposal.proposal_id,
+                "created_at": now,
+            })
+            txn.update(proposal_ref, {"status": "confirmed", "updated_at": now})
+
+        apply(transaction)
+        return self.get_proposal(uid, proposal.proposal_id)
+
+    def get_chat_response(self, uid: str, request_id: str) -> Optional[ChatResponse]:
+        ref = self.client.collection("users").document(uid).collection("chats").document(request_id)
+        snapshot = ref.get()
+        if not snapshot.exists:
+            return None
+        data = snapshot.to_dict()
+        if data["expires_at"] <= datetime.now(timezone.utc):
+            ref.delete()
+            return None
+        payload = self.cipher.decrypt(
+            uid, "chat", request_id, 1, EncryptedPayload.from_dict(data["encrypted_payload"])
+        )
+        return ChatResponse.model_validate(payload["response"])
+
+    def save_chat_response(
+        self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
+    ) -> None:
+        payload = self.cipher.encrypt(
+            uid, "chat", request_id, 1,
+            {"question": question, "response": response.model_dump(mode="json")},
+        )
+        self.client.collection("users").document(uid).collection("chats").document(request_id).set({
+            "uid": uid,
+            "request_id": request_id,
+            "encrypted_payload": payload.to_dict(),
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "expires_at": expires_at,
+        })
+
+    def delete_chats(self, uid: str) -> int:
+        documents = list(
+            self.client.collection("users").document(uid).collection("chats").stream()
+        )
+        batch = self.client.batch()
+        for document in documents:
+            batch.delete(document.reference)
+        if documents:
+            batch.commit()
+        return len(documents)
+
 
 def generated_record_id() -> str:
     return secrets.token_urlsafe(18).replace("-", "_")
-

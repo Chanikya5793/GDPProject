@@ -1,4 +1,5 @@
 from conftest import task_request
+
 from app.ai import GeneratedAction, GeneratedAnswer
 from app.models import EntityType, ProposalOperation
 
@@ -129,3 +130,22 @@ def test_mcp_requires_session_after_initialize(client, auth):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
     }, headers=auth)
     assert response.status_code == 403
+
+
+def test_retained_chat_is_encrypted_repository_backed_idempotent_and_deletable(
+    client, auth, services
+):
+    client.put("/v1/privacy", json={
+        "ai_enabled": True, "indexed_entity_types": ["task"], "index_attachments": False,
+        "retain_chat": True, "chat_retention_days": 7,
+    }, headers=auth)
+    client.put("/v1/records/task/t1", json=task_request(approved=True), headers=auth)
+    client.post("/v1/index/task/t1", json={
+        "approved": True, "expected_revision": 1,
+    }, headers=auth)
+    body = {"message": "When is my report due?", "request_id": "chatreq-0001", "timezone": "UTC"}
+    first = client.post("/v1/copilot/chat", json=body, headers=auth)
+    second = client.post("/v1/copilot/chat", json=body, headers=auth)
+    assert first.json() == second.json()
+    assert len(services.test_generator.prompts) == 1
+    assert client.delete("/v1/chats", headers=auth).json() == {"deleted": 1}

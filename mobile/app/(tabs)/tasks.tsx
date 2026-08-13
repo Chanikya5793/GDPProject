@@ -9,7 +9,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTasks } from '@/api/tasks';
 import { getCategories } from '@/api/categories';
-import { Task, Category } from '@/types';
+import { Category, PlannerRecordId, Task } from '@/types';
 
 // ─── priority escalation (inlined so Metro always picks up changes) ──────────
 
@@ -182,12 +182,12 @@ export default function TasksScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
-  const handleToggle = async (id: number) => {
+  const handleToggle = async (id: PlannerRecordId) => {
     const updated = await toggleTask(id);
     setTasks(prev => prev.map(t => t.id === id ? updated : t));
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: PlannerRecordId) => {
     Alert.alert('Delete Task', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -461,14 +461,14 @@ function RescheduleModal({
   onApply: (accepted: RescheduleSuggestion[]) => void;
   onClose: () => void;
 }) {
-  const [accepted, setAccepted] = useState<Set<number>>(new Set());
+  const [accepted, setAccepted] = useState<Set<PlannerRecordId>>(new Set());
 
   // Pre-select all on open
   useEffect(() => {
     if (visible) setAccepted(new Set(suggestions.map(s => s.task.id)));
   }, [visible, suggestions]);
 
-  const toggle = (id: number) => {
+  const toggle = (id: PlannerRecordId) => {
     setAccepted(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);

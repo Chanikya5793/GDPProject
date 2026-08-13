@@ -173,8 +173,8 @@ export default function ActivityLog() {
     const c = confirm
     setConfirm(null)
     if (!c) return
-    if (c.type === 'clearAll') { clearLogs(); await reload() }
-    else if (c.type === 'deleteSelected') { deleteLogs([...selected]); exitSelectMode(); await reload() }
+    if (c.type === 'clearAll') { await clearLogs(); await reload() }
+    else if (c.type === 'deleteSelected') { await deleteLogs([...selected]); exitSelectMode(); await reload() }
     else if (c.type === 'revert') { await doRevert(c.entry) }
   }
 

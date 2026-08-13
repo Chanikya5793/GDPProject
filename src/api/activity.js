@@ -80,9 +80,9 @@ export async function revertLog(entry) {
         let restored = false
         if (trashId) {
           const res = await restoreFromTrash(trashId)
-          if (res) { RESTORERS[res.type]?.(res.item); restored = true }
+          if (res) { await RESTORERS[res.type]?.(res.item); restored = true }
         }
-        if (!restored && before) RESTORERS[entity]?.(before)
+        if (!restored && before) await RESTORERS[entity]?.(before)
       } else {
         // updated / completed / reopened
         const payload = buildRevertUpdate(before, after)
@@ -95,7 +95,7 @@ export async function revertLog(entry) {
   }
 
   // Honest history: the revert is itself logged (from `after` back to `before`).
-  addLog('reverted', entity, title, { entityId, before: after, after: before, revertOf: entry.id })
-  markReverted(entry.id)
+  await addLog('reverted', entity, title, { entityId, before: after, after: before, revertOf: entry.id })
+  await markReverted(entry.id)
   return { ok: true }
 }

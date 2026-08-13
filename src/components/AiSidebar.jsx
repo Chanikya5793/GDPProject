@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, Send, Trash2, PanelRightClose, ExternalLink } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X } from 'lucide-react'
 import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
 
@@ -11,19 +11,75 @@ const SUGGESTIONS = [
   'Summarize my week ahead',
 ]
 
-function TypingIndicator() {
+export function ThinkingIndicator({ onCancel }) {
   return (
     <div className="ai-msg ai-msg-bot">
       <div className="ai-msg-avatar"><Bot size={14} /></div>
-      <div className="ai-msg-bubble ai-typing">
-        <span /><span /><span />
+      <div className="ai-msg-bubble ai-thinking">
+        <span>Retrieving approved records…</span>
+        <button onClick={onCancel}><Square size={11} /> Stop</button>
       </div>
     </div>
   )
 }
 
+export function CitationList({ citations }) {
+  if (!citations?.length) return null
+  return (
+    <div className="ai-citations" aria-label="Answer sources">
+      {citations.map(citation => (
+        <a
+          key={citation.citation_id}
+          href={`#/${citation.entity_type === 'task' ? 'tasks' : `${citation.entity_type}s`}?focus=${encodeURIComponent(citation.record_id)}`}
+          title={citation.excerpt}
+        >
+          [{citation.citation_id}] {citation.title} · rev {citation.revision}
+        </a>
+      ))}
+    </div>
+  )
+}
+
+export function ProposalCard({ proposal, onConfirm, onReject }) {
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const act = async callback => {
+    setWorking(true)
+    setError('')
+    try { await callback(proposal) }
+    catch (actionError) { setError(actionError.message) }
+    finally { setWorking(false) }
+  }
+  return (
+    <section className={`ai-proposal ai-proposal-${proposal.status}`}>
+      <div className="ai-proposal-title">
+        <ShieldCheck size={14} />
+        <strong>{proposal.operation} {proposal.entity_type}</strong>
+        <span>{proposal.status}</span>
+      </div>
+      <p>{proposal.rationale}</p>
+      <div className="ai-proposal-preview">
+        <div><span>Before</span><pre>{proposal.before ? JSON.stringify(proposal.before, null, 2) : 'Does not exist'}</pre></div>
+        <div><span>After</span><pre>{proposal.after ? JSON.stringify(proposal.after, null, 2) : 'Deleted'}</pre></div>
+      </div>
+      {error && <div className="ai-proposal-error">{error}</div>}
+      {proposal.status === 'pending' && (
+        <div className="ai-proposal-actions">
+          <button disabled={working} onClick={() => act(onReject)}><X size={12} /> Reject</button>
+          <button disabled={working} className="confirm" onClick={() => act(onConfirm)}>
+            <ShieldCheck size={12} /> {working ? 'Applying…' : 'Confirm change'}
+          </button>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function AiSidebar() {
-  const { poppedOut, togglePopOut, messages, typing, sendMessage, clearChat } = useAi()
+  const {
+    poppedOut, togglePopOut, messages, typing, sendMessage, cancelResponse,
+    clearChat, confirmProposal, rejectProposal,
+  } = useAi()
   const location = useLocation()
   // The pop-out lives in the dashboard grid, so it only applies on the
   // dashboard route. On every other page the assistant always stays in the
@@ -112,10 +168,24 @@ export default function AiSidebar() {
                 {msg.role === 'bot' && (
                   <div className="ai-msg-avatar"><Bot size={14} /></div>
                 )}
-                <div className="ai-msg-bubble">{msg.text}</div>
+                <div className="ai-msg-content">
+                  <div className="ai-msg-bubble">{msg.text}</div>
+                  <CitationList citations={msg.citations} />
+                  {msg.retrieval?.attempted && (
+                    <div className="ai-retrieval-disclosure">
+                      {msg.retrieval.abstained
+                        ? `Abstained: ${msg.retrieval.reason || 'insufficient approved evidence'}`
+                        : `Retrieved ${msg.retrieval.result_count} approved record${msg.retrieval.result_count === 1 ? '' : 's'}`}
+                    </div>
+                  )}
+                  {msg.proposals?.map(proposal => (
+                    <ProposalCard key={proposal.proposal_id} proposal={proposal}
+                      onConfirm={confirmProposal} onReject={rejectProposal} />
+                  ))}
+                </div>
               </div>
             ))}
-            {typing && <TypingIndicator />}
+            {typing && <ThinkingIndicator onCancel={cancelResponse} />}
 
             {messages.length <= 2 && !typing && (
               <div className="ai-suggestions">

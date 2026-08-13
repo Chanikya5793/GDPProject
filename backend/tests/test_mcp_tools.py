@@ -3,8 +3,13 @@ from datetime import date
 import pytest
 
 from app.models import (
-    EntityType, NoteContent, PrivacySettings, RecordUpsertRequest, ReminderContent,
-    ScheduleContent, TaskContent,
+    EntityType,
+    NoteContent,
+    PrivacySettings,
+    RecordUpsertRequest,
+    ReminderContent,
+    ScheduleContent,
+    TaskContent,
 )
 
 

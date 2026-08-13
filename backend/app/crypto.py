@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Protocol, Tuple
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from google.api_core.exceptions import AlreadyExists
 from google.cloud import firestore, kms
 
 
@@ -101,8 +102,15 @@ class EnvelopeCipher:
         else:
             key_version = "v1"
             plaintext = AESGCM.generate_key(bit_length=256)
-            self.key_store.put_wrapped_key(uid, key_version, self.key_wrapper.wrap(plaintext))
-            result = (key_version, plaintext)
+            try:
+                self.key_store.put_wrapped_key(uid, key_version, self.key_wrapper.wrap(plaintext))
+                result = (key_version, plaintext)
+            except AlreadyExists:
+                raced = self.key_store.get_wrapped_key(uid)
+                if not raced:
+                    raise
+                raced_version, raced_wrapped = raced
+                result = (raced_version, self.key_wrapper.unwrap(raced_wrapped))
         self._cache[uid] = result
         return result
 

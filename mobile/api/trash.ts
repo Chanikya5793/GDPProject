@@ -14,7 +14,7 @@ export async function addToTrash(item: object, type: string): Promise<void> {
   await setItem(KEY, [...trash, trashItem]);
 }
 
-export async function getTrash(userId: number): Promise<TrashItem[]> {
+export async function getTrash(userId: string): Promise<TrashItem[]> {
   const trash = await getItem<TrashItem[]>(KEY, []);
   return trash.filter(t => (t as Record<string, unknown>).userId === userId);
 }
@@ -33,7 +33,7 @@ export async function permanentDelete(trashId: number): Promise<void> {
   await setItem(KEY, trash.filter(t => t._trashId !== trashId));
 }
 
-export async function emptyTrash(userId: number): Promise<void> {
+export async function emptyTrash(userId: string): Promise<void> {
   const trash = await getItem<TrashItem[]>(KEY, []);
   await setItem(KEY, trash.filter(t => (t as Record<string, unknown>).userId !== userId));
 }

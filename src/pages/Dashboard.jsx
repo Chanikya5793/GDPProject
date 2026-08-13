@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useSettings } from "../context/SettingsContext"
 import { useAi } from "../context/AiContext"
+import { CitationList, ProposalCard, ThinkingIndicator } from "../components/AiSidebar"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
 import { getNotes, updateNote, getTags } from "../api/notes"
@@ -368,7 +369,7 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
                 : notes.map(n => (
                   <button key={n.id} className="dash-note-picker-item" onClick={() => { onPinNote(n.id); setPickerOpen(false) }}>
                     <span className="dash-note-picker-title">{n.title || 'Untitled'}</span>
-                    <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 50)}</span>
+                    <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\u005B\u005D-]/g, '').slice(0, 50)}</span>
                   </button>
                 ))
               }
@@ -417,7 +418,7 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
                     className={`dash-note-picker-item${n.id === pinnedNoteId ? ' active' : ''}`}
                     onClick={() => { onPinNote(n.id); setPickerOpen(false) }}>
                     <span className="dash-note-picker-title">{n.title || 'Untitled'}</span>
-                    <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 50)}</span>
+                    <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\u005B\u005D-]/g, '').slice(0, 50)}</span>
                   </button>
                 ))}
               </div>
@@ -533,7 +534,9 @@ const CHAT_SUGGESTIONS = [
 ]
 
 function AiChatPanel() {
-  const { messages, typing, sendMessage, clearChat } = useAi()
+  const {
+    messages, typing, sendMessage, cancelResponse, confirmProposal, rejectProposal,
+  } = useAi()
   const [input, setInput] = useState('')
   const msgsRef = useRef(null)
 
@@ -564,15 +567,24 @@ function AiChatPanel() {
             {msg.role === 'bot' && (
               <div className="ai-msg-avatar"><Bot size={14} /></div>
             )}
-            <div className="ai-msg-bubble">{msg.text}</div>
+            <div className="ai-msg-content">
+              <div className="ai-msg-bubble">{msg.text}</div>
+              <CitationList citations={msg.citations} />
+              {msg.retrieval?.attempted && (
+                <div className="ai-retrieval-disclosure">
+                  {msg.retrieval.abstained
+                    ? `Abstained: ${msg.retrieval.reason || 'insufficient approved evidence'}`
+                    : `Retrieved ${msg.retrieval.result_count} approved records`}
+                </div>
+              )}
+              {msg.proposals?.map(proposal => (
+                <ProposalCard key={proposal.proposal_id} proposal={proposal}
+                  onConfirm={confirmProposal} onReject={rejectProposal} />
+              ))}
+            </div>
           </div>
         ))}
-        {typing && (
-          <div className="ai-msg ai-msg-bot">
-            <div className="ai-msg-avatar"><Bot size={14} /></div>
-            <div className="ai-msg-bubble ai-typing"><span /><span /><span /></div>
-          </div>
-        )}
+        {typing && <ThinkingIndicator onCancel={cancelResponse} />}
         {messages.length <= 2 && !typing && (
           <div className="ai-suggestions">
             {CHAT_SUGGESTIONS.map((s, i) => (

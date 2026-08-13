@@ -1,5 +1,6 @@
 import pytest
 from cryptography.exceptions import InvalidTag
+from google.api_core.exceptions import AlreadyExists
 
 from app.crypto import EnvelopeCipher
 
@@ -47,3 +48,14 @@ def test_per_user_keys_are_distinct():
     cipher.encrypt("alice", "note", "n1", 1, {"body": "a"})
     cipher.encrypt("bob", "note", "n1", 1, {"body": "b"})
     assert keys.values["alice"] != keys.values["bob"]
+
+
+def test_concurrent_first_key_creation_uses_winning_wrapped_key():
+    class RacingKeys(Keys):
+        def put_wrapped_key(self, uid, version, wrapped):
+            self.values[uid] = (version, Wrapper().wrap(b"w" * 32))
+            raise AlreadyExists("another request created the key")
+
+    cipher = EnvelopeCipher(RacingKeys(), Wrapper())
+    encrypted = cipher.encrypt("alice", "note", "n1", 1, {"body": "safe after race"})
+    assert cipher.decrypt("alice", "note", "n1", 1, encrypted)["body"] == "safe after race"

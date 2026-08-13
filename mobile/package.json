@@ -4,19 +4,24 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
+    "@noble/ciphers": "^2.3.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@scure/base": "^2.3.0",
     "dayjs": "^1.11.21",
     "expo": "~56.0.6",
     "expo-blur": "~56.0.3",
     "expo-constants": "~56.0.16",
+    "expo-crypto": "~56.0.2",
     "expo-font": "~56.0.5",
     "expo-haptics": "~56.0.3",
     "expo-linking": "~56.0.12",
     "expo-router": "~56.2.7",
+    "expo-secure-store": "~56.0.4",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.5",
     "expo-web-browser": "~56.0.5",
+    "firebase": "^12.17.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
@@ -38,7 +43,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }

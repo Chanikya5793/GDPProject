@@ -1,7 +1,8 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
-from types import SimpleNamespace
 
 from app.auth import bearer_token
 from app.config import Settings

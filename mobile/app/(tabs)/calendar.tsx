@@ -9,7 +9,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getTasks, toggleTask } from '@/api/tasks';
 import { getReminders } from '@/api/reminders';
-import { Task, Reminder } from '@/types';
+import { PlannerRecordId, Task, Reminder } from '@/types';
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -50,7 +50,7 @@ export default function CalendarScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
-  const handleToggle = async (id: number) => {
+  const handleToggle = async (id: PlannerRecordId) => {
     const updated = await toggleTask(id);
     setTasks(prev => prev.map(t => t.id === id ? updated : t));
   };

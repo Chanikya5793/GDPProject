@@ -1,72 +1,139 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { apiFetch, idempotencyKey } from '../api/client'
+import { useAuth } from './AuthContext'
 
-const AiContext = createContext()
+const AiContext = createContext(null)
 
-function getSkeletonResponse(input) {
-  const lower = input.toLowerCase()
-  if (lower.includes('due today') || lower.includes('today'))
-    return "You have tasks and reminders due today. I'd pull them from your dashboard, but I'm still in skeleton mode! This feature is coming soon."
-  if (lower.includes('create') || lower.includes('add') || lower.includes('new'))
-    return "I can help create tasks, reminders, and notes. Once connected, I'll handle that for you right from this chat!"
-  if (lower.includes('overdue'))
-    return "I can see you have some overdue items. Once fully wired up, I'll list them here with options to reschedule or complete them."
-  if (lower.includes('summarize') || lower.includes('summary') || lower.includes('week'))
-    return "Here's what your week looks like: I'll soon be able to give you a full breakdown of upcoming tasks, reminders, and deadlines!"
-  if (lower.includes('help'))
-    return "I can help you with:\n- Managing tasks (create, edit, complete)\n- Setting reminders\n- Taking notes\n- Viewing your calendar\n- Summarizing your schedule\n\nJust ask!"
-  return "That's a great question! I'm currently in demo mode, but once fully connected I'll be able to help with all your planner needs."
+const WELCOME = {
+  id: 'welcome',
+  role: 'bot',
+  text: 'Ask about planner records you have approved for AI. I’ll cite exact sources and preview every requested change before anything is applied.',
+  retrieval: { attempted: false, result_count: 0, entity_types: [], abstained: false },
+  citations: [],
+  proposals: [],
 }
 
 export function AiProvider({ children }) {
+  const { user } = useAuth()
   const [poppedOut, setPoppedOut] = useState(() =>
     localStorage.getItem('nw_ai_popped') === 'true'
   )
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      role: 'bot',
-      text: "Hi! I'm your Northwest Planner assistant. I can help you manage tasks, reminders, notes, and more. What can I help you with?",
-    },
-  ])
+  const [messages, setMessages] = useState([WELCOME])
   const [typing, setTyping] = useState(false)
+  const [error, setError] = useState('')
+  const controllerRef = useRef(null)
+
+  useEffect(() => {
+    setMessages([WELCOME])
+    setError('')
+    controllerRef.current?.abort()
+  }, [user?.uid])
 
   const togglePopOut = useCallback(() => {
-    setPoppedOut(prev => {
-      const next = !prev
+    setPoppedOut(previous => {
+      const next = !previous
       localStorage.setItem('nw_ai_popped', next ? 'true' : 'false')
       return next
     })
   }, [])
 
-  const sendMessage = useCallback((text) => {
-    if (!text.trim()) return
-    setMessages(prev => [...prev, { id: Date.now(), role: 'user', text }])
+  const sendMessage = useCallback(async text => {
+    const trimmed = text.trim()
+    if (!trimmed || typing) return
+    const userMessage = { id: crypto.randomUUID(), role: 'user', text: trimmed }
+    setMessages(previous => [...previous, userMessage])
     setTyping(true)
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        role: 'bot',
-        text: getSkeletonResponse(text),
+    setError('')
+    const controller = new AbortController()
+    controllerRef.current = controller
+    try {
+      const response = await apiFetch('/v1/copilot/chat', {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({
+          message: trimmed,
+          request_id: idempotencyKey('chat'),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        }),
+      })
+      setMessages(previous => [...previous, {
+        id: crypto.randomUUID(), role: 'bot', text: response.answer,
+        citations: response.citations || [], retrieval: response.retrieval,
+        proposals: response.proposals || [],
       }])
+    } catch (requestError) {
+      if (requestError.name !== 'AbortError') {
+        setError(requestError.message)
+        setMessages(previous => [...previous, {
+          id: crypto.randomUUID(), role: 'error',
+          text: requestError.status === 403
+            ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
+            : `The copilot could not answer: ${requestError.message}`,
+          citations: [], proposals: [],
+        }])
+      }
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null
       setTyping(false)
-    }, 1200 + Math.random() * 800)
+    }
+  }, [typing])
+
+  const cancelResponse = useCallback(() => {
+    controllerRef.current?.abort()
+    controllerRef.current = null
+    setTyping(false)
+    setError('Response cancelled.')
   }, [])
 
+  const updateProposal = useCallback((proposalId, nextProposal) => {
+    setMessages(previous => previous.map(message => ({
+      ...message,
+      proposals: message.proposals?.map(proposal =>
+        proposal.proposal_id === proposalId ? nextProposal : proposal
+      ),
+    })))
+  }, [])
+
+  const confirmProposal = useCallback(async proposal => {
+    const confirmed = await apiFetch(`/v1/proposals/${proposal.proposal_id}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({
+        idempotency_key: idempotencyKey('confirm'),
+        expected_base_revision: proposal.base_revision,
+      }),
+    })
+    updateProposal(proposal.proposal_id, confirmed)
+    return confirmed
+  }, [updateProposal])
+
+  const rejectProposal = useCallback(async proposal => {
+    const rejected = await apiFetch(`/v1/proposals/${proposal.proposal_id}/reject`, {
+      method: 'POST', body: JSON.stringify({ reason: 'Rejected in assistant UI' }),
+    })
+    updateProposal(proposal.proposal_id, rejected)
+    return rejected
+  }, [updateProposal])
+
   const clearChat = useCallback(() => {
-    setMessages([{
-      id: Date.now(),
-      role: 'bot',
-      text: "Chat cleared! How can I help you?",
-    }])
+    controllerRef.current?.abort()
+    setMessages([WELCOME])
+    setTyping(false)
+    setError('')
   }, [])
 
   return (
-    <AiContext.Provider value={{ poppedOut, togglePopOut, messages, typing, sendMessage, clearChat }}>
+    <AiContext.Provider value={{
+      poppedOut, togglePopOut, messages, typing, error, sendMessage, cancelResponse,
+      clearChat, confirmProposal, rejectProposal,
+    }}>
       {children}
     </AiContext.Provider>
   )
 }
 
 export function useAi() {
-  return useContext(AiContext)
+  const context = useContext(AiContext)
+  if (!context) throw new Error('useAi must be used inside AiProvider')
+  return context
 }
+
