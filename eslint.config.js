@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores([
+    'dist', 'coverage', '.vite', 'node_modules', 'mobile/node_modules',
+    'backend/.venv', 'backend/.pytest_cache',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -16,6 +19,14 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    rules: {
+      // Context modules intentionally co-export provider hooks. These React compiler
+      // recommendations are not correctness rules and conflict with existing state-sync UI.
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/immutability': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
 ])

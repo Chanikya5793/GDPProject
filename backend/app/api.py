@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -168,6 +169,8 @@ def create_app(container: Container | None = None) -> FastAPI:
         result = services.repository.set_privacy(user.uid, body)
         if not body.ai_enabled:
             services.indexing.delete_user_index(user.uid)
+        if not body.retain_chat:
+            services.repository.delete_chats(user.uid)
         services.audit.record(user.uid, "privacy_changed", metadata={
             "ai_enabled": body.ai_enabled, "attachment_indexing": body.index_attachments,
             "chat_retention_days": body.chat_retention_days if body.retain_chat else 0,
@@ -191,8 +194,23 @@ def create_app(container: Container | None = None) -> FastAPI:
     def delete_index(user: CurrentUser, services: ContainerDep):
         return {"deleted": services.indexing.delete_user_index(user.uid)}
 
+    @app.delete("/v1/index/{entity_type}/{record_id}", status_code=204)
+    def delete_index_record(
+        entity_type: EntityType, record_id: str, user: CurrentUser, services: ContainerDep,
+    ) -> Response:
+        services.vector_store.delete_record(user.uid, entity_type, record_id)
+        services.audit.record(user.uid, "deletion", metadata={
+            "entity_type": entity_type.value, "index_only": True,
+        })
+        return Response(status_code=204)
+
     @app.post("/v1/copilot/chat", response_model=ChatResponse)
     def chat(body: ChatRequest, user: CurrentUser, services: ContainerDep):
+        privacy = services.repository.get_privacy(user.uid)
+        if privacy.retain_chat:
+            retained = services.repository.get_chat_response(user.uid, body.request_id)
+            if retained:
+                return retained
         try:
             answer, citations, disclosure, generated = services.copilot.answer(user.uid, body.message)
         except PermissionError as exc:
@@ -202,9 +220,21 @@ def create_app(container: Container | None = None) -> FastAPI:
             proposal = services.proposals.from_generated_action(user.uid, generated.action, answer)
             if proposal:
                 proposals.append(proposal)
-        return ChatResponse(
+        response = ChatResponse(
             answer=answer, citations=citations, retrieval=disclosure, proposals=proposals
         )
+        if privacy.retain_chat and privacy.chat_retention_days > 0:
+            services.repository.save_chat_response(
+                user.uid, body.request_id, body.message, response,
+                datetime.now(timezone.utc) + timedelta(days=privacy.chat_retention_days),
+            )
+        return response
+
+    @app.delete("/v1/chats", status_code=200)
+    def delete_chats(user: CurrentUser, services: ContainerDep):
+        deleted = services.repository.delete_chats(user.uid)
+        services.audit.record(user.uid, "deletion", metadata={"chat_exchanges": deleted})
+        return {"deleted": deleted}
 
     @app.post("/v1/proposals/{proposal_id}/confirm", response_model=ActionProposal)
     def confirm_proposal(

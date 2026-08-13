@@ -11,7 +11,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getTasks, toggleTask, createTask } from '@/api/tasks';
 import { getReminders, createReminder } from '@/api/reminders';
-import { Task, Reminder } from '@/types';
+import { PlannerRecordId, Task, Reminder } from '@/types';
 
 // ─── priority escalation (inline) ───────────────────────────────────────────
 type EscalatedPriority = { effective: Task['priority']; original: Task['priority']; wasEscalated: boolean; daysUntilDue: number };
@@ -154,7 +154,7 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
-  const handleToggle = async (id: number) => {
+  const handleToggle = async (id: PlannerRecordId) => {
     const updated = await toggleTask(id);
     setTasks(prev => prev.map(t => t.id === id ? updated : t));
   };
@@ -441,7 +441,7 @@ export default function DashboardScreen() {
 
 function TaskRow({ task, onToggle, colors, accent, showDate = false, isLast = false }: {
   task: Task;
-  onToggle: (id: number) => void;
+  onToggle: (id: PlannerRecordId) => void;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
   showDate?: boolean;

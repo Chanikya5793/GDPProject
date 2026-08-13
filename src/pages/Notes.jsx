@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, updateTag, deleteTag } from '../api/notes'
-import { Search, Trash2, X, PinIcon, Paperclip, Download, File as FileIcon } from 'lucide-react'
+import { Search, Trash2, X, PinIcon, Paperclip, Download, File as FileIcon, ShieldCheck } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Notes.css'
 
 const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
 
-// Attachments are stored as data URLs inside the note (browser localStorage),
-// so we cap individual file size to stay well within storage limits.
+// Attachment binaries stay only in the encrypted offline cache. Approved text
+// from text attachments can be synchronized for user-scoped retrieval.
 const MAX_ATTACHMENT_SIZE = 2 * 1024 * 1024 // 2 MB
 
 function formatFileSize(bytes) {
@@ -31,7 +31,7 @@ function readFileAsDataUrl(file) {
 }
 
 function NoteListItem({ note, selected, tags, isPinned, onClick }) {
-  const preview = note.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 80)
+  const preview = note.body.replace(/[#*_`>\u005B\u005D-]/g, '').slice(0, 80)
   const noteTags = tags.filter(t => note.tagIds.includes(t.id))
 
   return (
@@ -268,6 +268,8 @@ export default function Notes() {
           type: file.type,
           size: file.size,
           dataUrl,
+          text: file.type.startsWith('text/') ? await file.text() : '',
+          approvedForAi: false,
         })
       } catch {
         alert(`Could not read "${file.name}".`)
@@ -290,6 +292,21 @@ export default function Notes() {
     setNotes(prev => prev.map(n => n.id === selectedId ? updated : n))
   }
 
+  const handleAttachmentApproval = async (attId, approvedForAi) => {
+    if (!selectedNote) return
+    const attachments = (selectedNote.attachments || []).map(attachment =>
+      attachment.id === attId ? { ...attachment, approvedForAi } : attachment
+    )
+    const updated = await updateNote(selectedId, { attachments })
+    setNotes(previous => previous.map(note => note.id === selectedId ? updated : note))
+  }
+
+  const handleNoteApproval = async approvedForAi => {
+    if (!selectedNote) return
+    const updated = await updateNote(selectedId, { _approvedForAi: approvedForAi })
+    setNotes(previous => previous.map(note => note.id === selectedId ? updated : note))
+  }
+
   const handleUpdateTag = async (id, updates) => {
     const updated = await updateTag(id, updates)
     setTags(prev => prev.map(t => t.id === id ? updated : t))
@@ -307,7 +324,7 @@ export default function Notes() {
     filteredNotes = filteredNotes.filter(n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q))
   }
   if (tagFilter) {
-    filteredNotes = filteredNotes.filter(n => n.tagIds.includes(Number(tagFilter)))
+    filteredNotes = filteredNotes.filter(n => n.tagIds.includes(tagFilter))
   }
 
   const renderMarkdown = (text) => {
@@ -380,6 +397,14 @@ export default function Notes() {
                 />
                 <div className="note-editor-actions">
                   <button
+                    className={`note-pin-btn${selectedNote._approvedForAi ? ' pinned' : ''}`}
+                    onClick={() => handleNoteApproval(!selectedNote._approvedForAi)}
+                    title="Control whether this note can be indexed for AI retrieval"
+                  >
+                    <ShieldCheck size={14} />
+                    {selectedNote._approvedForAi ? 'AI approved' : 'Keep out of AI'}
+                  </button>
+                  <button
                     className={`note-pin-btn${pinnedNoteIds.includes(selectedId) ? ' pinned' : ''}`}
                     onClick={() => handlePinToDashboard(selectedId)}
                     title={pinnedNoteIds.includes(selectedId) ? 'Unpin from Dashboard' : 'Pin to Dashboard'}
@@ -448,6 +473,13 @@ export default function Notes() {
                         <div className="note-attachment-info">
                           <a href={att.dataUrl} download={att.name} className="note-attachment-name" title={att.name}>{att.name}</a>
                           <span className="note-attachment-size">{formatFileSize(att.size)}</span>
+                          {att.text && (
+                            <label className="note-attachment-ai">
+                              <input type="checkbox" checked={Boolean(att.approvedForAi)}
+                                onChange={event => handleAttachmentApproval(att.id, event.target.checked)} />
+                              Index extracted text
+                            </label>
+                          )}
                         </div>
                         <a href={att.dataUrl} download={att.name} className="note-attachment-dl" title="Download"><Download size={14} /></a>
                         <button className="note-attachment-rm" onClick={() => handleRemoveAttachment(att.id)} title="Remove"><X size={14} /></button>

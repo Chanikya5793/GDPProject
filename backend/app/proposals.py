@@ -12,7 +12,6 @@ from .models import (
     NoteContent,
     PlannerContent,
     ProposalOperation,
-    RecordUpsertRequest,
     ReminderContent,
     TaskContent,
 )
@@ -110,27 +109,7 @@ class ProposalService:
             raise InvalidProposal("Proposal expired")
         if expected_base_revision != proposal.base_revision:
             raise InvalidProposal("Confirmation does not match the previewed revision")
-        assert proposal.record_id
-        if proposal.operation == ProposalOperation.delete:
-            assert proposal.base_revision is not None
-            self.repository.delete_record(
-                uid, proposal.entity_type, proposal.record_id, proposal.base_revision, idempotency_key
-            )
-        elif proposal.after is not None:
-            current_approval = False
-            if proposal.base_revision:
-                current = self.repository.get_record(uid, proposal.entity_type, proposal.record_id)
-                if current.revision != proposal.base_revision:
-                    raise InvalidProposal("Record changed after the preview was created")
-                current_approval = current.approved_for_ai
-            self.repository.upsert_record(
-                uid, proposal.entity_type, proposal.record_id,
-                RecordUpsertRequest(
-                    content=proposal.after, expected_revision=proposal.base_revision,
-                    idempotency_key=idempotency_key, approved_for_ai=current_approval,
-                ),
-            )
-        confirmed = self.repository.update_proposal_status(uid, proposal_id, "confirmed")
+        confirmed = self.repository.apply_proposal(uid, proposal, idempotency_key)
         self.audit.record(uid, "proposal_confirmed", metadata={
             "operation": proposal.operation.value, "entity_type": proposal.entity_type.value,
         })

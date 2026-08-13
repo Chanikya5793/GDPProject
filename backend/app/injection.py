@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, List
 
-
 INJECTION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (

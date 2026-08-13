@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
-import { Note, Tag } from '@/types';
+import { Note, PlannerRecordId, Tag } from '@/types';
 
 export default function NotesScreen() {
   const { user } = useAuth();
@@ -39,13 +39,13 @@ export default function NotesScreen() {
     setEditorVisible(true);
   };
 
-  const handleSaveNote = async (id: number, updates: Partial<Note>) => {
+  const handleSaveNote = async (id: PlannerRecordId, updates: Partial<Note>) => {
     const updated = await updateNote(id, updates);
     setNotes(prev => prev.map(n => n.id === id ? updated : n));
     setSelectedNote(updated);
   };
 
-  const handleDeleteNote = (id: number) => {
+  const handleDeleteNote = (id: PlannerRecordId) => {
     Alert.alert('Delete Note', 'This note will be moved to trash.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -147,8 +147,8 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
   tags: Tag[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
-  onSave: (id: number, updates: Partial<Note>) => void;
-  onDelete: (id: number) => void;
+  onSave: (id: PlannerRecordId, updates: Partial<Note>) => void;
+  onDelete: (id: PlannerRecordId) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState('');

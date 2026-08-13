@@ -6,10 +6,11 @@ import { restoreTaskDirect } from '../api/tasks'
 import { restoreReminderDirect } from '../api/reminders'
 import { restoreNoteDirect } from '../api/notes'
 import ActivityLog from '../components/ActivityLog'
+import { apiFetch } from '../api/client'
 import {
   User, Palette, CalendarDays, Database, Recycle,
   Sun, Moon, Monitor, RotateCcw, Download,
-  Trash2, AlertTriangle, CheckSquare, Bell, FileText,
+  Trash2, AlertTriangle, CheckSquare, Bell, FileText, ShieldCheck, Brain,
 } from 'lucide-react'
 import '../css/Settings.css'
 
@@ -55,10 +56,75 @@ export default function Settings() {
   const [trash, setTrash] = useState([])
   const [trashFilter, setTrashFilter] = useState('all')
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
+  const [privacy, setPrivacy] = useState({
+    ai_enabled: false,
+    indexed_entity_types: [],
+    index_attachments: false,
+    retain_chat: false,
+    chat_retention_days: 0,
+  })
+  const [privacyStatus, setPrivacyStatus] = useState('loading')
+  const [privacyError, setPrivacyError] = useState('')
 
   useEffect(() => {
     getTrash(user.id).then(setTrash)
   }, [user.id])
+
+  useEffect(() => {
+    apiFetch('/v1/privacy')
+      .then(value => { setPrivacy(value); setPrivacyStatus('ready') })
+      .catch(error => { setPrivacyError(error.message); setPrivacyStatus('error') })
+  }, [])
+
+  const updatePrivacy = async updates => {
+    const next = { ...privacy, ...updates }
+    setPrivacy(next)
+    setPrivacyStatus('saving')
+    setPrivacyError('')
+    try {
+      const saved = await apiFetch('/v1/privacy', {
+        method: 'PUT', body: JSON.stringify(next),
+      })
+      setPrivacy(saved)
+      setPrivacyStatus('ready')
+    } catch (error) {
+      setPrivacyStatus('error')
+      setPrivacyError(error.message)
+    }
+  }
+
+  const toggleIndexedType = type => {
+    const selected = privacy.indexed_entity_types.includes(type)
+    updatePrivacy({
+      indexed_entity_types: selected
+        ? privacy.indexed_entity_types.filter(value => value !== type)
+        : [...privacy.indexed_entity_types, type],
+    })
+  }
+
+  const deleteAiIndex = async () => {
+    setPrivacyStatus('saving')
+    setPrivacyError('')
+    try {
+      await apiFetch('/v1/index', { method: 'DELETE' })
+      setPrivacyStatus('ready')
+    } catch (error) {
+      setPrivacyStatus('error')
+      setPrivacyError(error.message)
+    }
+  }
+
+  const deleteCopilotChats = async () => {
+    setPrivacyStatus('saving')
+    setPrivacyError('')
+    try {
+      await apiFetch('/v1/chats', { method: 'DELETE' })
+      setPrivacyStatus('ready')
+    } catch (error) {
+      setPrivacyStatus('error')
+      setPrivacyError(error.message)
+    }
+  }
 
   const handleRestore = async (trashId) => {
     const result = await restoreFromTrash(trashId)
@@ -215,6 +281,89 @@ export default function Settings() {
                   </button>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* ═══ AI Privacy ═══ */}
+          <section className="settings-section">
+            <div className="settings-section-header">
+              <ShieldCheck size={18} />
+              <h2>AI Privacy & Indexing</h2>
+              {privacyStatus === 'saving' && <span className="settings-saved">Saving…</span>}
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">AI Copilot</span>
+                <span className="settings-row-desc">Complete opt-out. Turning this off also deletes your vector index.</span>
+              </div>
+              <Toggle checked={privacy.ai_enabled}
+                onChange={value => updatePrivacy({ ai_enabled: value })}
+                label="Enable AI Copilot" />
+            </div>
+
+            <div className="settings-row settings-row-stack">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Indexed record types</span>
+                <span className="settings-row-desc">Only individually approved records from these types can be indexed.</span>
+              </div>
+              <div className="settings-theme-picker">
+                {['task', 'reminder', 'note', 'schedule'].map(type => (
+                  <button key={type}
+                    className={`settings-theme-btn${privacy.indexed_entity_types.includes(type) ? ' active' : ''}`}
+                    onClick={() => toggleIndexedType(type)} disabled={!privacy.ai_enabled}>
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Attachment text</span>
+                <span className="settings-row-desc">Index text only from attachments you approve on the record.</span>
+              </div>
+              <Toggle checked={privacy.index_attachments}
+                onChange={value => updatePrivacy({ index_attachments: value })}
+                label="Index approved attachment text" />
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Retain copilot chats</span>
+                <span className="settings-row-desc">Off by default. Current chats remain in memory only.</span>
+              </div>
+              <Toggle checked={privacy.retain_chat}
+                onChange={value => updatePrivacy({
+                  retain_chat: value, chat_retention_days: value ? 30 : 0,
+                })}
+                label="Retain copilot chats" />
+            </div>
+
+            {privacy.retain_chat && (
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <span className="settings-row-label">Chat retention</span>
+                  <span className="settings-row-desc">Automatically expire server-side chat data.</span>
+                </div>
+                <select className="form-select settings-select" value={privacy.chat_retention_days}
+                  onChange={event => updatePrivacy({ chat_retention_days: Number(event.target.value) })}>
+                  <option value={7}>7 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </div>
+            )}
+
+            {privacyError && <p className="login-error">{privacyError}</p>}
+            <div className="settings-profile-actions">
+              <button className="btn-danger" onClick={deleteAiIndex} disabled={privacyStatus === 'saving'}>
+                <Trash2 size={14} /> Delete my AI index
+              </button>
+              <button className="btn-danger" onClick={deleteCopilotChats} disabled={privacyStatus === 'saving'}>
+                <Trash2 size={14} /> Delete retained chats
+              </button>
+              <span className="settings-row-desc"><Brain size={12} /> Record content is never indexed without approval.</span>
             </div>
           </section>
 
@@ -465,7 +614,7 @@ export default function Settings() {
             </div>
 
             <div className="settings-info-box">
-              <p>All your data is stored locally in your browser. Nothing is sent to any server.</p>
+              <p>Planner data is cached locally with AES-GCM encryption and synchronized through the authenticated planner API. AI indexing remains opt-in.</p>
             </div>
 
             <div className="settings-row">

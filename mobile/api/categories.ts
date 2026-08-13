@@ -12,12 +12,12 @@ const BUILT_IN: Category[] = [
   { id: 'other', name: 'Other', color: '#6B7280', builtin: true },
 ];
 
-export async function getCategories(userId: number): Promise<Category[]> {
+export async function getCategories(userId: string): Promise<Category[]> {
   const custom = await getItem<Category[]>(KEY, []);
   return [...BUILT_IN, ...custom.filter(c => c.userId === userId)];
 }
 
-export async function createCategory(category: Partial<Category> & { userId: number; name: string }): Promise<Category> {
+export async function createCategory(category: Partial<Category> & { userId: string; name: string }): Promise<Category> {
   const custom = await getItem<Category[]>(KEY, []);
   const newCat: Category = {
     id: `custom_${Date.now()}`,
