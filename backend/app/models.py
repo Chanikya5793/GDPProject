@@ -202,7 +202,8 @@ class AuditEvent(StrictModel):
     uid_hash: str
     event_type: Literal[
         "indexing", "retrieval", "generation", "mcp_access", "proposal_created",
-        "proposal_confirmed", "proposal_rejected", "failure", "privacy_changed", "deletion"
+        "proposal_confirmed", "proposal_rejected", "failure", "privacy_changed", "deletion",
+        "rate_limited",
     ]
     outcome: Literal["success", "denied", "failed", "abstained"]
     occurred_at: datetime

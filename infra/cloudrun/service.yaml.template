@@ -39,6 +39,12 @@ spec:
               value: ${GDP_MCP_SECRET_RESOURCE}
             - name: PLANNER_ALLOWED_ORIGINS
               value: ${GDP_ALLOWED_ORIGINS}
+            # Per-user copilot chat budget. Literal values rather than envsubst
+            # placeholders: an unset variable would render empty and fail startup.
+            - name: PLANNER_CHAT_RATE_LIMIT_REQUESTS
+              value: "20"
+            - name: PLANNER_CHAT_RATE_LIMIT_WINDOW_SECONDS
+              value: "3600"
           startupProbe:
             httpGet:
               path: /healthz

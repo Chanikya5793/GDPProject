@@ -68,7 +68,10 @@ export function AiProvider({ children }) {
           id: crypto.randomUUID(), role: 'error',
           text: requestError.status === 403
             ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
-            : `The copilot could not answer: ${requestError.message}`,
+            : requestError.status === 429
+              // A budget, not a malfunction — the backend's detail names the wait.
+              ? `You have reached the copilot request limit. ${requestError.message}`
+              : `The copilot could not answer: ${requestError.message}`,
           citations: [], proposals: [],
         }])
       }
