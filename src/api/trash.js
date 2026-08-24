@@ -1,55 +1,48 @@
-const TRASH_KEY = 'nw_trash'
+import { getSecureCollection, setSecureCollection } from './secureCollections'
 
-function load() {
-    try {
-        const raw = localStorage.getItem(TRASH_KEY)
-        return raw ? JSON.parse(raw) : []
-    } catch {
-        localStorage.removeItem(TRASH_KEY)
-        return []
-    }
+const NAMESPACE = 'records:trash'
+
+async function load() {
+  return getSecureCollection(NAMESPACE, [])
 }
 
-function save(items) {
-    localStorage.setItem(TRASH_KEY, JSON.stringify(items))
+async function save(items) {
+  return setSecureCollection(NAMESPACE, items)
 }
 
-export async function getTrash(userId) {
-    return load().filter(t => t.userId === userId)
+export async function getTrash() {
+  return load()
 }
 
 export async function addToTrash(item, type) {
-    const trash = load()
-    const _trashId = `${type}_${item.id}_${Date.now()}`
-    trash.unshift({
-        ...item,
-        _trashId,
-        _trashType: type,
-        _deletedAt: new Date().toISOString(),
-    })
-    save(trash)
-    return _trashId
+  const trash = await load()
+  const trashId = `${type}_${item.id}_${crypto.randomUUID()}`
+  await save([{ ...item, _trashId: trashId, _trashType: type,
+    _deletedAt: new Date().toISOString() }, ...trash])
+  return trashId
 }
 
 export async function restoreFromTrash(trashId) {
-    const trash = load()
-    const item = trash.find(t => t._trashId === trashId)
-    if (!item) return null
-    save(trash.filter(t => t._trashId !== trashId))
-    const { _trashId, _trashType, _deletedAt, ...restored } = item
-    return { item: restored, type: _trashType }
+  const trash = await load()
+  const item = trash.find(value => value._trashId === trashId)
+  if (!item) return null
+  await save(trash.filter(value => value._trashId !== trashId))
+  const { _trashType } = item
+  const restored = { ...item }
+  delete restored._trashId
+  delete restored._trashType
+  delete restored._deletedAt
+  return { item: restored, type: _trashType }
 }
 
 export async function permanentDelete(trashId) {
-    const trash = load()
-    save(trash.filter(t => t._trashId !== trashId))
+  await save((await load()).filter(value => value._trashId !== trashId))
 }
 
-export async function emptyTrash(userId) {
-    const trash = load()
-    save(trash.filter(t => t.userId !== userId))
+export async function emptyTrash() {
+  await save([])
 }
 
-export async function getTrashCount(userId) {
-    return load().filter(t => t.userId === userId).length
+export async function getTrashCount() {
+  return (await load()).length
 }

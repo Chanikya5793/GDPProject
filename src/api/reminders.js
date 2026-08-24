@@ -1,88 +1,34 @@
 import { addToTrash } from './trash'
 import { addLog } from './logs'
+import { createRecord, deleteRecord, listRecords, updateRecord } from './plannerStore'
 
-const STORAGE_KEY = 'nw_reminders'
-
-function load() {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : defaultReminders()
-}
-
-function save(reminders) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(reminders))
-}
-
-function defaultReminders() {
-    return [
-        {
-            id: 1,
-            userId: 1,
-            title: 'Advisor Meeting',
-            date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-            time: '10:00',
-            notes: 'Discuss spring course schedule',
-            createdAt: new Date().toISOString(),
-        },
-        {
-            id: 2,
-            userId: 1,
-            title: 'Study Group - Library room 204',
-            date: new Date(Date.now() + 172800000).toISOString().split('T')[0],
-            time: '14:00',
-            notes: 'Bring organic chemistry notes',
-            createdAt: new Date().toISOString(),
-        },
-        {
-            id: 3,
-            userId: 1,
-            title: 'Office Hours - Prof. Fellah',
-            date: new Date(Date.now() + 259200000).toISOString().split('T')[0],
-            time: '09:30',
-            notes: 'Ask about assignment formatting',
-            createdAt: new Date().toISOString(),
-        },
-    ]
-}
-
-// TODO: API functions
-export async function getReminders(userId) {
-    return load().filter(r => r.userId === userId)
+export async function getReminders() {
+  return listRecords('reminder')
 }
 
 export async function createReminder(reminder) {
-    const reminders = load()
-    const newReminder = {
-        ...reminder,
-        id: Date.now(),
-        createdAt: new Date().toISOString(),
-    }
-    save([...reminders, newReminder])
-    addLog('created', 'reminder', newReminder.title, { entityId: newReminder.id, after: newReminder })
-    return newReminder
+  const created = await createRecord('reminder', reminder)
+  void addLog('created', 'reminder', created.title, { entityId: created.id, after: created })
+  return created
 }
 
 export async function updateReminder(id, updates) {
-    const reminders = load()
-    const before = reminders.find(r => r.id === id)
-    const updated = reminders.map(r => r.id === id ? { ...r, ...updates } : r)
-    save(updated)
-    const reminder = updated.find(r => r.id === id)
-    addLog('updated', 'reminder', reminder?.title, { entityId: id, before, after: reminder })
-    return reminder
+  const before = (await listRecords('reminder')).find(item => String(item.id) === String(id))
+  const updated = await updateRecord('reminder', id, updates)
+  void addLog('updated', 'reminder', updated.title, { entityId: id, before, after: updated })
+  return updated
 }
 
 export async function deleteReminder(id) {
-    const reminders = load()
-    const reminder = reminders.find(r => r.id === id)
-    let trashId
-    if (reminder) trashId = await addToTrash(reminder, 'reminder')
-    save(reminders.filter(r => r.id !== id))
-    addLog('deleted', 'reminder', reminder?.title, { entityId: id, before: reminder, trashId })
-    return { success: true }
+  const reminder = (await listRecords('reminder')).find(item => String(item.id) === String(id))
+  let trashId
+  if (reminder) trashId = await addToTrash(reminder, 'reminder')
+  await deleteRecord('reminder', id)
+  void addLog('deleted', 'reminder', reminder?.title, { entityId: id, before: reminder, trashId })
+  return { success: true }
 }
 
-export function restoreReminderDirect(reminder) {
-    const reminders = load()
-    reminders.push(reminder)
-    save(reminders)
+export async function restoreReminderDirect(reminder) {
+  return createRecord('reminder', { ...reminder, _revision: undefined })
 }
+

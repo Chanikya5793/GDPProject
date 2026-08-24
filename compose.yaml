@@ -1,0 +1,13 @@
+services:
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS:?Set GOOGLE_APPLICATION_CREDENTIALS}:/var/run/secrets/google/application-default.json:ro
+    environment:
+      PORT: "8080"
+      GOOGLE_APPLICATION_CREDENTIALS: /var/run/secrets/google/application-default.json

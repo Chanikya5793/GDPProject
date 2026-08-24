@@ -4,7 +4,7 @@ import { useSettings } from '../context/SettingsContext'
 import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTasks } from '../api/tasks'
 import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
-import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle } from 'lucide-react'
+import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle, ShieldCheck } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import '../css/Tasks.css'
@@ -179,6 +179,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
     priority: task?.priority || defaultPriority || 'medium',
     category: task?.category || defaultCategory || 'Homework',
     notes: task?.notes || '',
+    _approvedForAi: task?._approvedForAi || false,
   })
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])
@@ -220,6 +221,12 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
               <label className="form-label">Title</label>
               <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)} placeholder="What needs to be done?" autoFocus />
             </div>
+            <label className="form-checkbox">
+              <input type="checkbox" checked={form._approvedForAi}
+                onChange={e => set('_approvedForAi', e.target.checked)} />
+              <ShieldCheck size={14} />
+              <span>Approve this task for AI retrieval</span>
+            </label>
             <div className="form-grid-2">
               <div className="form-group">
                 <label className="form-label">Due Date</label>

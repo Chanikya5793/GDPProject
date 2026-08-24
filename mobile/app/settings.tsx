@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { migrateLegacyStorage } from '@/api/storage';
 
 const ACCENT_COLORS = [
   { id: 'green' as const, label: 'Green', color: '#006A4E' },
@@ -38,6 +39,18 @@ export default function SettingsScreen() {
         router.replace('/login');
       }},
     ]);
+  };
+
+  const handleLegacyMigration = async () => {
+    if (!user) return;
+    try {
+      const count = await migrateLegacyStorage(user.uid);
+      Alert.alert('Migration complete', count
+        ? `Encrypted and moved ${count} legacy local data stores.`
+        : 'No legacy plaintext planner data was found.');
+    } catch (error) {
+      Alert.alert('Migration failed', error instanceof Error ? error.message : 'Unknown error');
+    }
   };
 
   const s = makeStyles(colors, accent);
@@ -170,6 +183,10 @@ export default function SettingsScreen() {
 
       {/* Actions */}
       <View style={s.section}>
+        <TouchableOpacity style={s.actionRow} onPress={handleLegacyMigration}>
+          <Ionicons name="shield-checkmark" size={18} color={accent.primary} />
+          <Text style={[s.actionText, { color: colors.text }]}>Migrate legacy data securely</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={s.actionRow} onPress={resetSettings}>
           <Ionicons name="refresh" size={18} color={colors.textSecondary} />
           <Text style={[s.actionText, { color: colors.text }]}>Reset All Settings</Text>
@@ -181,7 +198,7 @@ export default function SettingsScreen() {
       </View>
 
       <Text style={s.footer}>
-        Northwest Student Planner{'\n'}Data stored locally on device.
+        Northwest Student Planner{'\n'}Encrypted offline data · Firebase account identity
       </Text>
       <View style={{ height: 40 }} />
     </ScrollView>
