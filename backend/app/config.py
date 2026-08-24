@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     mcp_session_secret_resource: str = ""
     chat_retention_days: int = Field(default=30, ge=0, le=365)
     retrieval_limit: int = Field(default=5, ge=1, le=20)
+    chat_rate_limit_requests: int = Field(default=20, ge=1, le=1000)
+    chat_rate_limit_window_seconds: int = Field(default=3600, ge=1, le=86400)
 
     @field_validator("kms_key_name")
     @classmethod

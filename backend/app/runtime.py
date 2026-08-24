@@ -13,6 +13,7 @@ from .mcp_api import McpSessionManager, McpToolService
 from .planner import PlannerEngine
 from .proposals import ProposalService
 from .rag import CopilotService, IndexingService, RetrievalService
+from .ratelimit import FirestoreRateLimiter, RateLimiter, RateLimitPolicy
 from .repository import FirestorePlannerRepository, PlannerRepository
 from .secrets import SecretResolver
 from .vector_store import FirestoreVectorStore, VectorStore
@@ -39,6 +40,7 @@ class Container:
     audit: AuditLogger
     mcp_sessions: McpSessionManager
     mcp_tools: McpToolService
+    rate_limiter: RateLimiter
 
 
 def build_production_container(settings: Settings) -> Container:
@@ -62,10 +64,17 @@ def build_production_container(settings: Settings) -> Container:
     indexing = IndexingService(repository, vector_store, embeddings, audit)
     proposals = ProposalService(repository, audit)
     copilot = CopilotService(retrieval, generator, planner, repository, audit)
+    rate_limiter = FirestoreRateLimiter(
+        client,
+        RateLimitPolicy(
+            settings.chat_rate_limit_requests, settings.chat_rate_limit_window_seconds
+        ),
+    )
     return Container(
         repository=repository, vector_store=vector_store, indexing=indexing,
         retrieval=retrieval, copilot=copilot, proposals=proposals, planner=planner,
         audit=audit, mcp_sessions=McpSessionManager(secret),
         mcp_tools=McpToolService(repository, retrieval, planner, audit),
+        rate_limiter=rate_limiter,
     )
 
