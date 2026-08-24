@@ -12,6 +12,35 @@ import { auth, firebaseConfigured, persistenceReady } from '../lib/firebase'
 
 const AuthContext = createContext(null)
 
+// Demo mode keeps the public GitHub Pages build usable when no Firebase project
+// is wired up. Every branch below is gated on `!firebaseConfigured`, so a real
+// deployment never reaches it. The planner store already degrades to its
+// encrypted local cache on `not_configured`, so only sign-in needs a fallback.
+const DEMO_USER_KEY = 'nw_user'
+
+function demoUid(email) {
+  const slug = String(email || 'guest').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  return `demo_${slug || 'guest'}`
+}
+
+function demoUser(name, email) {
+  const address = String(email || '').trim()
+  return {
+    id: demoUid(address),
+    uid: demoUid(address),
+    name: name?.trim() || address.split('@')[0] || 'Planner user',
+    email: address,
+    emailVerified: true,
+    isDemo: true,
+  }
+}
+
+function persistDemoUser(value) {
+  localStorage.setItem(DEMO_USER_KEY, JSON.stringify(value))
+  sessionStorage.setItem('nw_authenticated_uid', value.uid)
+  return value
+}
+
 function publicUser(firebaseUser) {
   if (!firebaseUser) return null
   return {
@@ -40,6 +69,16 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!firebaseConfigured || !auth) {
+      const stored = localStorage.getItem(DEMO_USER_KEY)
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          // Sessions saved before demo users carried a uid are upgraded in place.
+          setUser(persistDemoUser(parsed.uid ? parsed : demoUser(parsed.name, parsed.email)))
+        } catch {
+          localStorage.removeItem(DEMO_USER_KEY)
+        }
+      }
       setLoading(false)
       return undefined
     }
@@ -57,7 +96,9 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     if (!firebaseConfigured || !auth) {
-      return { success: false, error: 'Firebase Authentication is not configured.' }
+      if (!email?.trim()) return { success: false, error: 'Enter an email address.' }
+      setUser(persistDemoUser(demoUser(null, email)))
+      return { success: true }
     }
     try {
       await persistenceReady
@@ -70,7 +111,9 @@ export function AuthProvider({ children }) {
 
   const register = async (name, email, password) => {
     if (!firebaseConfigured || !auth) {
-      return { success: false, error: 'Firebase Authentication is not configured.' }
+      if (!email?.trim()) return { success: false, error: 'Enter an email address.' }
+      setUser(persistDemoUser(demoUser(name, email)))
+      return { success: true }
     }
     try {
       await persistenceReady
@@ -85,7 +128,13 @@ export function AuthProvider({ children }) {
   }
 
   const updateUser = async updates => {
-    if (!auth?.currentUser) throw new Error('Sign in is required')
+    if (!firebaseConfigured || !auth) {
+      if (!user) throw new Error('Sign in is required')
+      // The uid namespaces the encrypted cache, so it stays fixed on rename.
+      setUser(persistDemoUser({ ...user, ...updates, uid: user.uid, id: user.id }))
+      return
+    }
+    if (!auth.currentUser) throw new Error('Sign in is required')
     if (updates.name && updates.name !== auth.currentUser.displayName) {
       await updateProfile(auth.currentUser, { displayName: updates.name.trim() })
     }
@@ -96,11 +145,20 @@ export function AuthProvider({ children }) {
   }
 
   const logout = async () => {
-    if (auth) await signOut(auth)
+    if (!firebaseConfigured || !auth) {
+      localStorage.removeItem(DEMO_USER_KEY)
+      sessionStorage.removeItem('nw_authenticated_uid')
+      setUser(null)
+      return
+    }
+    await signOut(auth)
     sessionStorage.removeItem('nw_authenticated_uid')
     setUser(null)
   }
 
+  // updateUser closes over `user`, which is already a dependency, so the memo
+  // never hands out a callback bound to a stale user.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const value = useMemo(() => ({
     user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
   }), [user, loading])
@@ -113,4 +171,3 @@ export function useAuth() {
   if (!context) throw new Error('useAuth must be used inside AuthProvider')
   return context
 }
-
