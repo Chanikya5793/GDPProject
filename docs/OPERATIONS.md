@@ -48,6 +48,32 @@ List known-good revisions with `gcloud run revisions list --service "$GDP_SERVIC
 revision before moving 100% of traffic. Data schema v1 is backward-compatible; do not
 destroy Firestore or wrapped DEKs during rollback.
 
+## Copilot rate limiting
+
+`POST /v1/copilot/chat` is metered per authenticated UID with a token bucket, so a
+signed-in caller cannot loop the endpoint and run up Vertex/Gemini spend.
+
+- `PLANNER_CHAT_RATE_LIMIT_REQUESTS` (default 20) is both the bucket capacity and the
+  per-window allowance, so a user may burst up to 20 and then settles into the
+  sustained rate.
+- `PLANNER_CHAT_RATE_LIMIT_WINDOW_SECONDS` (default 3600) is the refill window.
+
+Counters live at `users/{uid}/limits/copilot_chat` and are updated in a Firestore
+transaction. That matters because Cloud Run runs several workers per instance and
+scales out: a process-local counter would give each worker its own budget, so the
+effective limit would be N times the configured one.
+
+Over-budget requests get `429` with a `Retry-After` header and `"code":
+"rate_limited"`, and are recorded as a `rate_limited` audit event carrying only the
+hashed UID — never the prompt.
+
+Only the chat endpoint is metered. Record CRUD and `/mcp` tool calls are unmetered;
+if MCP tool traffic starts driving generation cost, meter it the same way.
+
+To change the budget, edit the two values in `infra/cloudrun/service.yaml.template`
+and redeploy. They are literal values, not `envsubst` placeholders, because an unset
+variable would render an empty string and fail startup validation.
+
 ## Incident and deletion handling
 
 - Disable AI in privacy settings to delete that UID's vectors immediately.
