@@ -754,3 +754,64 @@
   line-height: 1.5;
 }
 
+
+/* ── Auto-balance notice ─────────────────────────────────────────────────────
+   Confirms what auto-balance moved and offers a one-click undo. Styled calmer
+   than .overload-banner: that one asks for action, this one reports a result. */
+.auto-balance-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: var(--auto-balance-bg, #ECFDF5);
+  border: 1.5px solid var(--auto-balance-border, #10B981);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.auto-balance-notice-icon {
+  color: var(--auto-balance-border, #10B981);
+  flex-shrink: 0;
+}
+
+.auto-balance-undo,
+.auto-balance-dismiss {
+  font-family: inherit;
+  cursor: pointer;
+  background: transparent;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.auto-balance-undo {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--auto-balance-border, #10B981);
+  border: 1.5px solid var(--auto-balance-border, #10B981);
+}
+
+.auto-balance-undo:hover {
+  background: var(--auto-balance-border, #10B981);
+  color: #fff;
+}
+
+.auto-balance-dismiss {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 4px;
+  border: none;
+  color: var(--muted);
+}
+
+.auto-balance-dismiss:hover { color: var(--text); }
+
+[data-theme="dark"] .auto-balance-notice {
+  --auto-balance-bg: rgba(16, 185, 129, 0.12);
+  --auto-balance-border: #34D399;
+}

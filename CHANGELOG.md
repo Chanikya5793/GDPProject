@@ -5,6 +5,23 @@ All notable changes to the Northwest Student Planner are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Auto-balance overloaded days** (#26) — when a future day holds more
+  unfinished tasks than the configured limit, the lowest-priority overflow is
+  pulled onto the nearest earlier day that still has room. A dismissible notice
+  reports what moved and offers one-click undo, and every move is written to the
+  activity log so it can also be rolled back from there.
+- **Two new Planner Preferences** (#26) — "Auto-Balance Busy Days" turns the
+  automatic pass off so suggestions stay manual, and "Maximum Tasks Per Day"
+  sets what counts as overloaded. The limit drives the existing Optimize banner
+  too, which previously hardcoded a threshold of 3.
+
+### Fixed
+- Bulk task reschedules now write activity-log entries. The Optimize dialog
+  wrote none, so those changes could not be rolled back.
+
 ## [1.1.0] - 2026-05-31
 
 Builds on v1.0.0 with 10 resolved issues, a companion mobile app, and smart
