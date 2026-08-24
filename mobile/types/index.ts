@@ -1,12 +1,16 @@
 export interface User {
-  id: number;
+  id: string;
+  uid: string;
   name: string;
   email: string;
+  emailVerified: boolean;
 }
 
+export type PlannerRecordId = string | number;
+
 export interface Task {
-  id: number;
-  userId: number;
+  id: PlannerRecordId;
+  userId: string;
   title: string;
   dueDate: string;
   dueTime: string;
@@ -15,26 +19,35 @@ export interface Task {
   notes: string;
   completed: boolean;
   createdAt: string;
+  _revision?: number;
+  _approvedForAi?: boolean;
+  _pending?: boolean;
 }
 
 export interface Reminder {
-  id: number;
-  userId: number;
+  id: PlannerRecordId;
+  userId: string;
   title: string;
   date: string;
   time: string;
   notes: string;
   createdAt: string;
+  _revision?: number;
+  _approvedForAi?: boolean;
+  _pending?: boolean;
 }
 
 export interface Note {
-  id: number;
-  userId: number;
+  id: PlannerRecordId;
+  userId: string;
   title: string;
   body: string;
   tagIds: number[];
   updatedAt: string;
   createdAt: string;
+  _revision?: number;
+  _approvedForAi?: boolean;
+  _pending?: boolean;
 }
 
 export interface Tag {
@@ -48,7 +61,7 @@ export interface Category {
   name: string;
   color: string;
   builtin: boolean;
-  userId?: number;
+  userId?: string;
 }
 
 export interface Settings {

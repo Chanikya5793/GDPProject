@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getReminders, createReminder, updateReminder, deleteReminder } from '@/api/reminders';
-import { Reminder } from '@/types';
+import { PlannerRecordId, Reminder } from '@/types';
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -60,7 +60,7 @@ export default function RemindersScreen() {
     setEditingRem(null);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: PlannerRecordId) => {
     Alert.alert('Delete Reminder', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {

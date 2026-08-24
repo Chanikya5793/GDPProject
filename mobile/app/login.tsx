@@ -33,6 +33,8 @@ export default function LoginScreen() {
 
     if (result.success) {
       router.replace('/(tabs)');
+    } else {
+      setError(result.error || 'Authentication failed.');
     }
   };
 
@@ -123,7 +125,7 @@ export default function LoginScreen() {
         </View>
 
         <Text style={styles.disclaimer}>
-          Demo version — data is stored locally on your device.
+          Planner data is encrypted on this device and scoped to your authenticated account.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -4,6 +4,7 @@ import { AiProvider } from './context/AiContext'
 import { SettingsProvider } from './context/SettingsContext'
 import SidebarNav from './components/SidebarNav'
 import AiSidebar from './components/AiSidebar'
+import MigrationBanner from './components/MigrationBanner'
 
 // Pages
 import Login     from './pages/Login'
@@ -18,7 +19,8 @@ import Settings  from './pages/Settings'
 // Wraps all pages that requires login
 // If not logged in, they will be redirected to /login instead
 function PrivateRoute({ children }) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  if (loading) return <div className="auth-loading">Securing your planner…</div>
   return user ? children : <Navigate to="/login" replace />
 }
 
@@ -31,8 +33,10 @@ function AppLayout({ children }) {
       <div className="main-content">
         <div className="beta-banner">
           <span>Beta</span>
-          This is a demo version for testing purposes only — data is stored locally in your browser.
+          Secure Copilot
+          Planner records are encrypted offline and synchronized to your authenticated account.
         </div>
+        <MigrationBanner />
         {children}
       </div>
       <AiSidebar />
@@ -42,7 +46,9 @@ function AppLayout({ children }) {
 
 // ROUTES
 function AppRoutes() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+
+  if (loading) return <div className="auth-loading">Securing your planner…</div>
 
   return (
     <Routes>
@@ -99,13 +105,13 @@ function AppRoutes() {
 export default function App() {
   return (
     <SettingsProvider>
-      <AiProvider>
-        <AuthProvider>
+      <AuthProvider>
+        <AiProvider>
           <HashRouter>
             <AppRoutes />
           </HashRouter>
-        </AuthProvider>
-      </AiProvider>
+        </AiProvider>
+      </AuthProvider>
     </SettingsProvider>
   )
 }

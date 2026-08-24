@@ -1,160 +1,86 @@
 import { addToTrash } from './trash'
 import { addLog } from './logs'
+import { createRecord, deleteRecord, listRecords, updateRecord } from './plannerStore'
+import { getSecureCollection, setSecureCollection } from './secureCollections'
 
-const STORAGE_KEY = 'nw_notes'
-const TAGS_KEY = 'nw_tags'
+const TAGS_NAMESPACE = 'metadata:tags'
+const DEFAULT_TAGS = [
+  { id: 'chemistry', name: 'Chemistry', color: '#DBEAFE' },
+  { id: 'cs', name: 'CS', color: '#DCFCE7' },
+  { id: 'history', name: 'History', color: '#FEF3C7' },
+  { id: 'study-tips', name: 'Study Tips', color: '#F3E8FF' },
+]
 
-function loadNotes() {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : defaultNotes()
-}
-
-function saveNotes(notes) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes))
-}
-
-function loadTags() {
-    const raw = localStorage.getItem(TAGS_KEY)
-    return raw ? JSON.parse(raw) : defaultTags()
-}
-
-function saveTags(tags) {
-    localStorage.setItem(TAGS_KEY, JSON.stringify(tags))
-}
-
-function defaultTags() {
-    return [
-        { id: 1, name: 'Chemistry', color: '#DBEAFE' },
-        { id: 2, name: 'CS', color: '#DCFCE7' },
-        { id: 3, name: 'History', color: '#FEF3C7' },
-        { id: 4, name: 'Study Tips', color: '#F3E8FF' },
-    ]
-}
-
-function defaultNotes() {
-    return [
-        {
-            id: 1,
-            userId: 1,
-            title: 'Binary Search Trees',
-            body: 'A BST maintains the property that left child < parent < right child.\n\n## Key Operations\n- **Insert**: O(log n) average\n- **Search**: O(log n) average\n- **Delete**: O(log n) average\n\n## Traversals\n- In-order: left, root, right (sorted output)\n- Pre-order: root, left, right\n- Post-order: left, right, root',
-            tagIds: [2],
-            updatedAt: new Date(Date.now() - 86400000).toISOString(),
-            createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-        },
-        {
-            id: 2,
-            userId: 1,
-            title: 'Reaction Mechanisms Overview',
-            body: 'SN1 reactions proceed via carbocation intermediate. SN2 reactions are concerted.\n\n## SN1 vs SN2\n- SN1: two-step, favored by tertiary substrates\n- SN2: one-step, favored by primary substrates\n\n## Key Factors\n- Solvent polarity\n- Leaving group ability\n- Nucleophile strength',
-            tagIds: [1],
-            updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-            createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-        },
-        {
-            id: 3,
-            userId: 1,
-            title: 'Active Recall Technique',
-            body: 'Instead of rereading, close the book and write down everything you remember.\n\n## Steps\n1. Read a section once\n2. Close the material\n3. Write everything you recall\n4. Check what you missed\n5. Focus review on gaps\n\n> "Testing yourself is one of the most effective study strategies." - Make It Stick',
-            tagIds: [4],
-            updatedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-            createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-        },
-    ]
-}
-
-export async function getNotes(userId) {
-    return loadNotes().filter(n => n.userId === userId)
+export async function getNotes() {
+  return listRecords('note')
 }
 
 export async function createNote(note) {
-    const notes = loadNotes()
-    const newNote = {
-        ...note,
-        id: Date.now(),
-        tagIds: note.tagIds || [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    }
-    saveNotes([newNote, ...notes])
-    addLog('created', 'note', newNote.title, { entityId: newNote.id, after: newNote })
-    return newNote
+  const created = await createRecord('note', {
+    ...note, title: note.title || 'Untitled Note', tagIds: note.tagIds || [],
+  })
+  void addLog('created', 'note', created.title, { entityId: created.id, after: created })
+  return created
 }
 
 export async function updateNote(id, updates) {
-    const notes = loadNotes()
-    const before = notes.find(n => n.id === id)
-    const updated = notes.map(n =>
-        n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
-    )
-    saveNotes(updated)
-    const note = updated.find(n => n.id === id)
-    addLog('updated', 'note', note?.title, { entityId: id, before, after: note })
-    return note
+  const before = (await listRecords('note')).find(note => String(note.id) === String(id))
+  const updated = await updateRecord('note', id, updates)
+  void addLog('updated', 'note', updated.title, { entityId: id, before, after: updated })
+  return updated
 }
 
 export async function deleteNote(id) {
-    const notes = loadNotes()
-    const note = notes.find(n => n.id === id)
-    let trashId
-    if (note) trashId = await addToTrash(note, 'note')
-    saveNotes(notes.filter(n => n.id !== id))
-    addLog('deleted', 'note', note?.title, { entityId: id, before: note, trashId })
-    return { success: true }
+  const note = (await listRecords('note')).find(item => String(item.id) === String(id))
+  let trashId
+  if (note) trashId = await addToTrash(note, 'note')
+  await deleteRecord('note', id)
+  void addLog('deleted', 'note', note?.title, { entityId: id, before: note, trashId })
+  return { success: true }
 }
 
-export function restoreNoteDirect(note) {
-    const notes = loadNotes()
-    notes.unshift(note)
-    saveNotes(notes)
+export async function restoreNoteDirect(note) {
+  return createRecord('note', { ...note, _revision: undefined })
 }
 
 export async function getTags() {
-    return loadTags()
+  return getSecureCollection(TAGS_NAMESPACE, DEFAULT_TAGS)
 }
 
 export async function createTag(tag) {
-    const tags = loadTags()
-    const newTag = { ...tag, id: Date.now() }
-    saveTags([...tags, newTag])
-    addLog('created', 'tag', newTag.name, { entityId: newTag.id, after: newTag })
-    return newTag
+  const tags = await getTags()
+  const created = { ...tag, id: `tag_${crypto.randomUUID()}` }
+  await setSecureCollection(TAGS_NAMESPACE, [...tags, created])
+  void addLog('created', 'tag', created.name, { entityId: created.id, after: created })
+  return created
 }
 
 export async function updateTag(id, updates) {
-    const tags = loadTags()
-    const before = tags.find(t => t.id === id)
-    const updated = tags.map(t => t.id === id ? { ...t, ...updates } : t)
-    saveTags(updated)
-    const tag = updated.find(t => t.id === id)
-    addLog('updated', 'tag', tag?.name, { entityId: id, before, after: tag })
-    return tag
+  const tags = await getTags()
+  const before = tags.find(tag => String(tag.id) === String(id))
+  const updated = tags.map(tag => String(tag.id) === String(id) ? { ...tag, ...updates } : tag)
+  await setSecureCollection(TAGS_NAMESPACE, updated)
+  const tag = updated.find(item => String(item.id) === String(id))
+  void addLog('updated', 'tag', tag?.name, { entityId: id, before, after: tag })
+  return tag
 }
 
 export async function deleteTag(id) {
-    const tags = loadTags()
-    const tag = tags.find(t => t.id === id)
-    saveTags(tags.filter(t => t.id !== id))
-    const notes = loadNotes()
-    // Remember which notes carried this tag so a rollback can re-link them.
-    const affectedNoteIds = notes.filter(n => n.tagIds?.includes(id)).map(n => n.id)
-    saveNotes(notes.map(n => ({ ...n, tagIds: n.tagIds.filter(tid => tid !== id) })))
-    addLog('deleted', 'tag', tag?.name, { entityId: id, before: { ...tag, _affectedNoteIds: affectedNoteIds } })
-    return { success: true }
+  const tags = await getTags()
+  const tag = tags.find(item => String(item.id) === String(id))
+  await setSecureCollection(TAGS_NAMESPACE, tags.filter(item => String(item.id) !== String(id)))
+  const notes = await getNotes()
+  await Promise.all(notes.filter(note => note.tagIds?.includes(id)).map(note =>
+    updateRecord('note', note.id, { tagIds: note.tagIds.filter(tagId => tagId !== id) })
+  ))
+  void addLog('deleted', 'tag', tag?.name, { entityId: id, before: tag })
+  return { success: true }
 }
 
-// Re-insert a tag (used by the activity-log rollback to undo a tag deletion),
-// and re-attach it to the notes it was removed from.
-export function restoreTagDirect(tag) {
-    const { _affectedNoteIds, ...cleanTag } = tag || {}
-    const tags = loadTags()
-    if (!tags.some(t => t.id === cleanTag.id)) saveTags([...tags, cleanTag])
-    if (Array.isArray(_affectedNoteIds) && _affectedNoteIds.length) {
-        const notes = loadNotes()
-        saveNotes(notes.map(n =>
-            _affectedNoteIds.includes(n.id) && !n.tagIds?.includes(cleanTag.id)
-                ? { ...n, tagIds: [...(n.tagIds || []), cleanTag.id] }
-                : n
-        ))
-    }
+export async function restoreTagDirect(tag) {
+  const tags = await getTags()
+  if (!tags.some(item => String(item.id) === String(tag.id))) {
+    await setSecureCollection(TAGS_NAMESPACE, [...tags, tag])
+  }
 }
+
