@@ -29,6 +29,7 @@ from .models import (
     RejectProposalRequest,
 )
 from .proposals import InvalidProposal
+from .ratelimit import RateLimitExceeded
 from .repository import IdempotencyConflict, NotFound, RevisionConflict
 from .runtime import Container, build_production_container
 
@@ -77,7 +78,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id", "Idempotency-Key"],
-        expose_headers=["Mcp-Session-Id"],
+        expose_headers=["Mcp-Session-Id", "Retry-After"],
     )
 
     @app.exception_handler(RevisionConflict)
@@ -87,6 +88,14 @@ def create_app(container: Container | None = None) -> FastAPI:
     @app.exception_handler(IdempotencyConflict)
     async def idempotency_conflict(_request: Request, exc: IdempotencyConflict):
         return JSONResponse(status_code=409, content={"detail": str(exc), "code": "idempotency_conflict"})
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limited(_request: Request, exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": str(exc), "code": "rate_limited"},
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        )
 
     @app.exception_handler(NotFound)
     async def not_found(_request: Request, exc: NotFound):
@@ -220,6 +229,17 @@ def create_app(container: Container | None = None) -> FastAPI:
             retained = services.repository.get_chat_response(user.uid, body.request_id)
             if retained:
                 return retained
+        try:
+            services.rate_limiter.check(user.uid)
+        except RateLimitExceeded as exc:
+            services.audit.record(
+                user.uid, "rate_limited", outcome="denied",
+                metadata={
+                    "endpoint": "copilot_chat",
+                    "retry_after_seconds": exc.retry_after_seconds,
+                },
+            )
+            raise
         try:
             answer, citations, disclosure, generated = services.copilot.answer(user.uid, body.message)
         except PermissionError as exc:
