@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
+import { DEFAULT_DAILY_TASK_LIMIT } from '../utils/schedule'
 import { getTrash, restoreFromTrash, permanentDelete, emptyTrash } from '../api/trash'
 import { restoreTaskDirect } from '../api/tasks'
 import { restoreReminderDirect } from '../api/reminders'
@@ -509,6 +510,30 @@ export default function Settings() {
                 <span className="settings-row-desc">Display completed tasks in task lists</span>
               </div>
               <Toggle checked={settings.showCompleted} onChange={v => updateSetting('showCompleted', v)} />
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Auto-Balance Busy Days</span>
+                <span className="settings-row-desc">Automatically pull lower-priority tasks off overloaded days onto earlier free days. Turn this off to review the suggestions yourself instead.</span>
+              </div>
+              <Toggle checked={settings.autoBalance !== false} onChange={v => updateSetting('autoBalance', v)} />
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Maximum Tasks Per Day</span>
+                <span className="settings-row-desc">A day counts as overloaded once it holds more than this many unfinished tasks. Also sets how many stay put when rebalancing.</span>
+              </div>
+              <select
+                className="form-select settings-select"
+                value={settings.dailyTaskLimit ?? DEFAULT_DAILY_TASK_LIMIT}
+                onChange={e => updateSetting('dailyTaskLimit', Number(e.target.value))}
+              >
+                {[1, 2, 3, 4, 5, 6, 8].map(n => (
+                  <option key={n} value={n}>{n} task{n !== 1 ? 's' : ''}</option>
+                ))}
+              </select>
             </div>
 
             <div className="settings-row">
