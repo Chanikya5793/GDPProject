@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
 import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTasks } from '../api/tasks'
@@ -7,6 +7,7 @@ import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle, ShieldCheck } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
+import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } from '../utils/schedule'
 import '../css/Tasks.css'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
@@ -47,83 +48,6 @@ function formatTime(t) {
 // the Dashboard) so deadline escalation stays consistent across both views.
 
 const PRIO_ORDER = { high: 0, medium: 1, low: 2 }
-
-// ─── overload detection & pull-forward rescheduling ──────────────────────────
-
-/**
- * Finds future dates (> today) with >= threshold incomplete tasks.
- * Today and overdue dates are excluded — you can't pull those any earlier.
- */
-function detectOverloadedDays(tasks, threshold = 3) {
-  const todayStr = today()
-  const active = tasks.filter(t => !t.completed && t.dueDate && t.dueDate > todayStr)
-  const byDate = {}
-  for (const t of active) {
-    byDate[t.dueDate] = byDate[t.dueDate] || []
-    byDate[t.dueDate].push(t)
-  }
-  return Object.entries(byDate)
-    .filter(([, ts]) => ts.length >= threshold)
-    .map(([date, ts]) => ({ date, tasks: ts }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-}
-
-/**
- * For each overloaded future day, suggests PULLING lower-priority tasks
- * FORWARD to earlier available dates (between today+1 and the overloaded day-1).
- * Never pushes tasks to a later date.
- *
- * Strategy: keep the `keepPerDay` highest-priority tasks on the original date;
- * move the rest to the earliest available slot before that date.
- */
-function suggestReschedule(overloadedDays, allTasks, keepPerDay = 2) {
-  const todayStr = today()
-
-  // Build a mutable count map for all active tasks (so we can reserve slots)
-  const countByDate = {}
-  for (const t of allTasks.filter(t => !t.completed && t.dueDate)) {
-    countByDate[t.dueDate] = (countByDate[t.dueDate] || 0) + 1
-  }
-
-  const suggestions = []
-
-  for (const day of overloadedDays) {
-    // Sort: highest stored priority first, then oldest creation date first
-    const sorted = [...day.tasks].sort((a, b) =>
-      PRIO_ORDER[a.priority] !== PRIO_ORDER[b.priority]
-        ? PRIO_ORDER[a.priority] - PRIO_ORDER[b.priority]
-        : new Date(a.createdAt) - new Date(b.createdAt)
-    )
-
-    // Keep top keepPerDay tasks; suggest pulling the rest EARLIER
-    const toMove = sorted.slice(keepPerDay)
-
-    for (const task of toMove) {
-      const overloadedDate = new Date(day.date + 'T00:00:00')
-      let targetStr = null
-
-      // Search BACKWARDS from (overloaded day - 1) to (today + 1)
-      for (let offset = 1; offset < getDaysUntilDue(day.date); offset++) {
-        const candidate = new Date(overloadedDate)
-        candidate.setDate(candidate.getDate() - offset)
-        const candStr = localDateStr(candidate)
-        if (candStr <= todayStr) break // don't go to today or past
-        const existing = countByDate[candStr] || 0
-        if (existing < keepPerDay) {
-          targetStr = candStr
-          countByDate[candStr] = existing + 1
-          break
-        }
-      }
-
-      if (targetStr) {
-        suggestions.push({ task, from: day.date, to: targetStr })
-      }
-    }
-  }
-
-  return suggestions
-}
 
 // ─── existing UI helpers (unchanged) ─────────────────────────────────────────
 
@@ -475,6 +399,7 @@ function RescheduleModal({ overloadedDays, suggestions, onApply, onClose }) {
 export default function Tasks() {
   const { user } = useAuth()
   const { settings } = useSettings()
+  const dailyLimit = Number(settings.dailyTaskLimit) || DEFAULT_DAILY_TASK_LIMIT
   const [tasks, setTasks] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -487,6 +412,10 @@ export default function Tasks() {
   const [showModal, setShowModal] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [showReschedule, setShowReschedule] = useState(false)
+  const [autoBalanced, setAutoBalanced] = useState(null)
+  // Tasks auto-balance has already relocated this session. Re-proposing them is
+  // what would make the automatic pass shuffle the same task back and forth.
+  const autoMovedIds = useRef(new Set())
 
   useEffect(() => {
     Promise.all([getTasks(user.id), getCategories(user.id)]).then(([t, c]) => {
@@ -495,6 +424,27 @@ export default function Tasks() {
       setLoading(false)
     })
   }, [user.id])
+
+  // Auto-balance: pull overflow off crowded future days without waiting for the
+  // user to open the optimize dialog. Ids are banked in autoMovedIds *before*
+  // the write so a re-render mid-flight cannot queue the same move twice; that
+  // plus the finite task count is what makes this settle instead of looping.
+  useEffect(() => {
+    if (loading || !settings.autoBalance) return undefined
+    const days = detectOverloadedDays(tasks, dailyLimit)
+    if (!days.length) return undefined
+    const moves = suggestReschedule(days, tasks, dailyLimit, undefined, autoMovedIds.current)
+    if (!moves.length) return undefined
+
+    let cancelled = false
+    moves.forEach(move => autoMovedIds.current.add(move.task.id))
+    applyMoves(moves).then(() => {
+      if (!cancelled) {
+        setAutoBalanced(previous => ({ moves: [...(previous?.moves || []), ...moves] }))
+      }
+    })
+    return () => { cancelled = true }
+  }, [tasks, loading, settings.autoBalance, dailyLimit])
 
   const handleToggle = async (id) => {
     const updated = await toggleTask(id)
@@ -526,13 +476,23 @@ export default function Tasks() {
 
   const handleEdit = (task) => { setModalTask(task); setShowModal(true) }
 
-  const handleApplyReschedule = async (acceptedSuggestions) => {
-    const updates = acceptedSuggestions.map(s => ({ id: s.task.id, changes: { dueDate: s.to } }))
+  const applyMoves = async (moves) => {
+    const updates = moves.map(move => ({ id: move.task.id, changes: { dueDate: move.to } }))
     const updatedTasks = await batchUpdateTasks(updates)
-    setTasks(prev => prev.map(t => {
-      const hit = updatedTasks.find(u => u.id === t.id)
-      return hit || t
-    }))
+    setTasks(prev => prev.map(task => updatedTasks.find(u => u.id === task.id) || task))
+    return updatedTasks
+  }
+
+  const handleUndoAutoBalance = async () => {
+    const moves = autoBalanced?.moves || []
+    // Restore the original dates, but leave the ids marked as already moved so
+    // the automatic pass does not immediately undo the undo.
+    await applyMoves(moves.map(move => ({ task: move.task, to: move.from })))
+    setAutoBalanced(null)
+  }
+
+  const handleApplyReschedule = async (acceptedSuggestions) => {
+    await applyMoves(acceptedSuggestions)
     setShowReschedule(false)
   }
 
@@ -555,8 +515,12 @@ export default function Tasks() {
   const overdueCount = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr).length
 
   // ── overload detection (future days only) ──
-  const overloadedDays = statusFilter !== 'completed' ? detectOverloadedDays(tasks) : []
-  const rescheduleSuggestions = overloadedDays.length > 0 ? suggestReschedule(overloadedDays, tasks) : []
+  const overloadedDays = statusFilter !== 'completed' ? detectOverloadedDays(tasks, dailyLimit) : []
+  // No skip set here: the automatic pass avoids re-moving a task, but if the
+  // user opens the optimize dialog themselves they should see every option.
+  const rescheduleSuggestions = overloadedDays.length > 0
+    ? suggestReschedule(overloadedDays, tasks, dailyLimit)
+    : []
 
   const usedCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))]
 
@@ -586,6 +550,32 @@ export default function Tasks() {
       </div>
 
       <div className="page-body">
+        {/* ── Auto-balance result (dismissible, undoable) ── */}
+        {autoBalanced?.moves?.length > 0 && (
+          <div className="auto-balance-notice">
+            <ShieldCheck size={15} className="auto-balance-notice-icon" />
+            <div className="overload-banner-text">
+              <strong>
+                Auto-balanced {autoBalanced.moves.length} task{autoBalanced.moves.length !== 1 ? 's' : ''}
+              </strong>
+              <span>
+                Pulled to earlier free days to stay under {dailyLimit} task{dailyLimit !== 1 ? 's' : ''} a day.
+              </span>
+            </div>
+            <button type="button" className="auto-balance-undo" onClick={handleUndoAutoBalance}>
+              Undo
+            </button>
+            <button
+              type="button"
+              className="auto-balance-dismiss"
+              aria-label="Dismiss auto-balance notice"
+              onClick={() => setAutoBalanced(null)}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         {/* ── Overload banner (future days only) ── */}
         {overloadedDays.length > 0 && (
           <button className="overload-banner" onClick={() => setShowReschedule(true)}>

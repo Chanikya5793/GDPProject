@@ -43,6 +43,19 @@ export async function toggleTask(id) {
 }
 
 export async function batchUpdateTasks(updates) {
-  return Promise.all(updates.map(update => updateRecord('task', update.id, update.changes)))
+  // Snapshot first so each entry carries a real `before` and stays rollbackable
+  // from the activity log — this path previously wrote no log entries at all,
+  // which matters more now that auto-balance can move tasks without a click.
+  const before = await listRecords('task')
+  const updated = await Promise.all(
+    updates.map(update => updateRecord('task', update.id, update.changes))
+  )
+  // Sequential: addLog does a read-modify-write of one log store, so logging
+  // concurrently would drop entries.
+  for (const task of updated) {
+    const prior = before.find(item => String(item.id) === String(task.id))
+    await addLog('updated', 'task', task.title, { entityId: task.id, before: prior, after: task })
+  }
+  return updated
 }
 

@@ -157,10 +157,11 @@ export function AuthProvider({ children }) {
   }
 
   // updateUser closes over `user`, which is already a dependency, so the memo
-  // never hands out a callback bound to a stale user.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // never hands out a callback bound to a stale user. The directive has to sit
+  // on the dependency array itself — that is the line the rule reports.
   const value = useMemo(() => ({
     user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [user, loading])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
