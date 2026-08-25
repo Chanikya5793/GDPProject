@@ -38,6 +38,7 @@ jobs:
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=critical
       - run: npm run typecheck
+      - run: npm run test
 
   backend:
     runs-on: ubuntu-latest

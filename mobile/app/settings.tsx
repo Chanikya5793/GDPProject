@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   Switch, Alert, Platform,
@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { migrateLegacyStorage } from '@/api/storage';
+import { apiConfigured, apiRequest } from '@/api/client';
 
 const ACCENT_COLORS = [
   { id: 'green' as const, label: 'Green', color: '#006A4E' },
@@ -17,6 +18,17 @@ const ACCENT_COLORS = [
   { id: 'amber' as const, label: 'Amber', color: '#D97706' },
 ];
 
+/** Copilot capacity choices. `null` defers to the deployment default. */
+const CAPACITY_CHOICES: { value: number | null; short: string; label: string }[] = [
+  { value: null, short: 'Auto', label: 'Use service default' },
+  { value: 180, short: '3h', label: '3 hours per day' },
+  { value: 240, short: '4h', label: '4 hours per day' },
+  { value: 360, short: '6h', label: '6 hours per day' },
+  { value: 480, short: '8h', label: '8 hours per day' },
+];
+
+type PlannerSettings = { max_daily_minutes: number | null };
+
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuth();
   const { settings, updateSetting, resetSettings } = useSettings();
@@ -24,6 +36,36 @@ export default function SettingsScreen() {
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  // Copilot capacity lives server-side, so it is only offered when a backend is
+  // actually configured. The offline demo build has none.
+  const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({ max_daily_minutes: null });
+  const [plannerStatus, setPlannerStatus] =
+    useState<'loading' | 'ready' | 'saving' | 'error' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    if (!apiConfigured()) { setPlannerStatus('unavailable'); return; }
+    apiRequest<PlannerSettings>('/v1/planner-settings')
+      .then(value => { setPlannerSettings(value); setPlannerStatus('ready'); })
+      .catch(() => setPlannerStatus('error'));
+  }, []);
+
+  const updatePlannerCapacity = useCallback(async (minutes: number | null) => {
+    const previous = plannerSettings;
+    setPlannerSettings({ max_daily_minutes: minutes });
+    setPlannerStatus('saving');
+    try {
+      const saved = await apiRequest<PlannerSettings>('/v1/planner-settings', {
+        method: 'PUT', body: JSON.stringify({ max_daily_minutes: minutes }),
+      });
+      setPlannerSettings(saved);
+      setPlannerStatus('ready');
+    } catch (error) {
+      // Put the old value back so the row never shows a capacity the server rejected.
+      setPlannerSettings(previous);
+      setPlannerStatus('error');
+      Alert.alert('Could not save', (error as Error).message);
+    }
+  }, [plannerSettings]);
 
   const saveProfile = () => {
     if (!name.trim()) return;
@@ -170,6 +212,62 @@ export default function SettingsScreen() {
             thumbColor={Platform.OS === 'android' ? (settings.showCompleted ? accent.light : '#f4f3f4') : undefined}
           />
         </SettingsRow>
+
+        <SettingsRow label="Auto-Balance Busy Days" colors={colors}>
+          <Switch
+            value={settings.autoBalance}
+            onValueChange={v => updateSetting('autoBalance', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.autoBalance ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
+
+        <SettingsRow label="Max Tasks Per Day" colors={colors}>
+          <View style={s.miniSegment}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <TouchableOpacity
+                key={n}
+                style={[s.miniSeg, settings.dailyTaskLimit === n && { backgroundColor: accent.primary }]}
+                onPress={() => updateSetting('dailyTaskLimit', n)}
+                accessibilityRole="button"
+                accessibilityLabel={`Maximum ${n} tasks per day`}
+              >
+                <Text style={[s.miniSegText, settings.dailyTaskLimit === n && { color: '#FFF' }]}>
+                  {n}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SettingsRow>
+
+        {plannerStatus !== 'unavailable' && (
+          <SettingsRow label="Copilot Daily Capacity" colors={colors}>
+            <View style={s.miniSegment}>
+              {CAPACITY_CHOICES.map(choice => (
+                <TouchableOpacity
+                  key={String(choice.value)}
+                  style={[
+                    s.miniSeg,
+                    plannerSettings.max_daily_minutes === choice.value && { backgroundColor: accent.primary },
+                  ]}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onPress={() => updatePlannerCapacity(choice.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={choice.label}
+                >
+                  <Text
+                    style={[
+                      s.miniSegText,
+                      plannerSettings.max_daily_minutes === choice.value && { color: '#FFF' },
+                    ]}
+                  >
+                    {choice.short}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </SettingsRow>
+        )}
 
         <SettingsRow label="Due Date Alerts" colors={colors}>
           <Switch
