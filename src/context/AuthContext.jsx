@@ -19,7 +19,13 @@ const AuthContext = createContext(null)
 const DEMO_USER_KEY = 'nw_user'
 
 function demoUid(email) {
-  const slug = String(email || 'guest').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  const slug = String(email || 'guest')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    // Trim the separators too: an address of only punctuation collapses to "_",
+    // which is truthy, so without this every such user would share one uid.
+    .replace(/^_+|_+$/g, '')
   return `demo_${slug || 'guest'}`
 }
 
