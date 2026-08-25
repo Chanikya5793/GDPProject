@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from google.cloud import firestore
 
-from .ai import GeminiAnswerGenerator, VertexEmbeddingClient
+from .ai import AnswerGenerator, GeminiAnswerGenerator, MuseAnswerGenerator, VertexEmbeddingClient
 from .audit import AuditLogger, AuditSink
 from .config import Settings
 from .crypto import EnvelopeCipher, FirestoreKeyStore, GoogleKmsKeyWrapper
@@ -26,6 +26,22 @@ class FirestoreAuditSink(AuditSink):
     def append(self, event) -> None:
         # No prompts, record text, email addresses, or raw UIDs are logged.
         self.collection.document(event.event_id).create(event.model_dump(mode="json"))
+
+
+def build_answer_generator(settings: Settings, secrets: SecretResolver) -> AnswerGenerator:
+    """Pick the generation backend. Embeddings always stay on Vertex — Meta's
+    API has no embeddings endpoint, so retrieval cannot move with it."""
+    if settings.answer_provider == "muse":
+        api_key = secrets.access(settings.muse_api_key_resource).decode().strip()
+        return MuseAnswerGenerator(
+            api_key=api_key,
+            model=settings.muse_model,
+            base_url=settings.muse_base_url,
+            timeout_seconds=settings.muse_timeout_seconds,
+        )
+    return GeminiAnswerGenerator(
+        settings.google_cloud_project, settings.google_cloud_location, settings.gemini_model
+    )
 
 
 @dataclass
@@ -54,10 +70,9 @@ def build_production_container(settings: Settings) -> Container:
         settings.google_cloud_project, settings.google_cloud_location,
         settings.embedding_model, settings.embedding_dimensions,
     )
-    generator = GeminiAnswerGenerator(
-        settings.google_cloud_project, settings.google_cloud_location, settings.gemini_model
-    )
-    secret = SecretResolver().access(settings.mcp_session_secret_resource)
+    secret_resolver = SecretResolver()
+    generator = build_answer_generator(settings, secret_resolver)
+    secret = secret_resolver.access(settings.mcp_session_secret_resource)
     audit = AuditLogger(FirestoreAuditSink(client), hashlib.sha256(secret + b":audit").digest())
     planner = PlannerEngine(settings.max_daily_minutes)
     retrieval = RetrievalService(repository, vector_store, embeddings, audit, settings.retrieval_limit)

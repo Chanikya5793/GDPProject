@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .planner import DEFAULT_MAX_DAILY_MINUTES
@@ -16,7 +16,12 @@ class Settings(BaseSettings):
     firebase_project_id: str
     kms_key_name: str
     firestore_database: str = "(default)"
+    answer_provider: Literal["vertex", "muse"] = "vertex"
     gemini_model: str = "gemini-2.5-flash"
+    muse_base_url: str = "https://api.meta.ai/v1"
+    muse_model: str = "muse-spark-1.2-contributor"
+    muse_api_key_resource: str = ""
+    muse_timeout_seconds: int = Field(default=60, ge=5, le=300)
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768
     allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
@@ -26,6 +31,15 @@ class Settings(BaseSettings):
     max_daily_minutes: int = Field(default=DEFAULT_MAX_DAILY_MINUTES, ge=15, le=1440)
     chat_rate_limit_requests: int = Field(default=20, ge=1, le=1000)
     chat_rate_limit_window_seconds: int = Field(default=3600, ge=1, le=86400)
+
+    @model_validator(mode="after")
+    def require_muse_key(self) -> "Settings":
+        # Fail at startup rather than on the first user question.
+        if self.answer_provider == "muse" and not self.muse_api_key_resource:
+            raise ValueError(
+                "muse_api_key_resource is required when answer_provider is 'muse'"
+            )
+        return self
 
     @field_validator("kms_key_name")
     @classmethod
