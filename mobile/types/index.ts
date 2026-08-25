@@ -81,8 +81,30 @@ export interface Settings {
 }
 
 export interface TrashItem {
-  _trashId: number;
+  _trashId: string;
   _trashType: 'task' | 'reminder' | 'note';
   _deletedAt: string;
   [key: string]: unknown;
+}
+
+export type LogAction =
+  | 'created' | 'updated' | 'deleted' | 'completed' | 'reopened' | 'reverted';
+
+export type LogEntity = 'task' | 'reminder' | 'note' | 'tag';
+
+export interface LogEntry {
+  id: string;
+  ts: string;
+  sessionId: string;
+  sessionStart: string;
+  action: LogAction;
+  entity: LogEntity;
+  title: string;
+  entityId?: string | number;
+  before?: unknown;
+  after?: unknown;
+  trashId?: number | string;
+  revertOf?: string;
+  reverted?: boolean;
+  revertedAt?: string;
 }

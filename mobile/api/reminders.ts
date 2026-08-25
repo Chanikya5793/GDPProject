@@ -2,6 +2,7 @@ import { PlannerRecordId, Reminder } from '@/types';
 import { getItem, setItem } from './storage';
 import { addToTrash } from './trash';
 import { createPlannerItem, deletePlannerItem, listPlannerItems, updatePlannerItem } from './plannerClient';
+import { addLog } from './logs';
 
 const KEY = 'nw_reminders';
 
@@ -27,18 +28,25 @@ export async function createReminder(rem: Partial<Reminder> & { userId: string; 
     notes: rem.notes || '',
     createdAt: new Date().toISOString(),
   };
-  return createPlannerItem('reminder', newRem);
+  const created = await createPlannerItem('reminder', newRem);
+  await addLog('created', 'reminder', created.title, { entityId: created.id, after: created });
+  return created;
 }
 
 export async function updateReminder(id: PlannerRecordId, updates: Partial<Reminder>): Promise<Reminder> {
-  return updatePlannerItem<Reminder>('reminder', id, updates);
+  const before = (await listPlannerItems<Reminder>('reminder')).find(r => String(r.id) === String(id));
+  const updated = await updatePlannerItem<Reminder>('reminder', id, updates);
+  await addLog('updated', 'reminder', updated.title, { entityId: id, before, after: updated });
+  return updated;
 }
 
 export async function deleteReminder(id: PlannerRecordId): Promise<void> {
   const all = await load();
   const rem = all.find(r => r.id === id);
-  if (rem) await addToTrash(rem, 'reminder');
+  let trashId: string | undefined;
+  if (rem) trashId = await addToTrash(rem, 'reminder');
   await deletePlannerItem('reminder', id);
+  await addLog('deleted', 'reminder', rem?.title || '', { entityId: id, before: rem, trashId });
 }
 
 export async function restoreReminderDirect(rem: Reminder): Promise<void> {
