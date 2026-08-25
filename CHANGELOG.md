@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Settings. This stays measured in minutes, separate from the task-count limit
   that drives the Tasks page.
 
+- **Mobile parity** — the Expo app gains the same auto-balance behaviour,
+  "Auto-Balance Busy Days" switch, and "Max Tasks Per Day" control, plus a
+  "Copilot Daily Capacity" row backed by `/v1/planner-settings`. Its scheduling
+  helpers moved to `mobile/utils/schedule.ts`, mirroring the web module so both
+  clients agree on what an overloaded day is.
+- **Mobile unit tests** — the Expo project had no test runner; vitest now covers
+  the scheduling helpers and runs in CI alongside `tsc --noEmit`.
+
 ### Fixed
 - Bulk task reschedules now write activity-log entries. The Optimize dialog
   wrote none, so those changes could not be rolled back.
