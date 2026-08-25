@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { migrateLegacyStorage } from '@/api/storage';
+import ActivityLogSection from '@/components/ActivityLogSection';
 import { apiConfigured, apiRequest } from '@/api/client';
 
 const ACCENT_COLORS = [
@@ -298,6 +299,8 @@ export default function SettingsScreen() {
           />
         </SettingsRow>
       </View>
+
+      <ActivityLogSection />
 
       {/* Actions */}
       <View style={s.section}>
