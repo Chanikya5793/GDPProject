@@ -13,17 +13,31 @@ from .models import (
     TaskContent,
 )
 
+DEFAULT_MAX_DAILY_MINUTES = 360
+
 
 class PlannerEngine:
-    """Pure rules engine. It returns facts and operations, never prose or mutations."""
+    """Pure rules engine. It returns facts and operations, never prose or mutations.
 
-    def __init__(self, max_daily_minutes: int = 360):
+    `max_daily_minutes` is the deployment default. Callers pass a per-user value
+    to the methods when that user has set their own capacity; the engine itself
+    stays stateless with respect to any single user.
+    """
+
+    def __init__(self, max_daily_minutes: int = DEFAULT_MAX_DAILY_MINUTES):
         self.max_daily_minutes = max_daily_minutes
 
+    def capacity(self, max_daily_minutes: int | None = None) -> int:
+        return max_daily_minutes or self.max_daily_minutes
+
     def analyze(
-        self, records: Iterable[PlannerRecord], today: date | None = None
+        self,
+        records: Iterable[PlannerRecord],
+        today: date | None = None,
+        max_daily_minutes: int | None = None,
     ) -> List[DeterministicRecommendation]:
         today = today or datetime.now(timezone.utc).date()
+        capacity = self.capacity(max_daily_minutes)
         recommendations: List[DeterministicRecommendation] = []
         tasks_by_day = defaultdict(list)
         schedules: List[PlannerRecord] = []
@@ -57,12 +71,12 @@ class PlannerEngine:
 
         for due_day, tasks in tasks_by_day.items():
             total = sum(record.content.estimated_minutes for record in tasks)  # type: ignore[union-attr]
-            if total > self.max_daily_minutes:
+            if total > capacity:
                 recommendations.append(DeterministicRecommendation(
                     kind="overload", record_ids=[r.record_id for r in tasks], severity="critical",
                     rule_id="workload.daily_capacity.v1",
                     facts={"date": due_day.isoformat(), "total_minutes": total,
-                           "capacity_minutes": self.max_daily_minutes},
+                           "capacity_minutes": capacity},
                     suggested_operation=ProposalOperation.reschedule,
                 ))
 
@@ -84,15 +98,20 @@ class PlannerEngine:
         return recommendations
 
     def next_available_day(
-        self, records: Iterable[PlannerRecord], after: date, required_minutes: int
+        self,
+        records: Iterable[PlannerRecord],
+        after: date,
+        required_minutes: int,
+        max_daily_minutes: int | None = None,
     ) -> date:
+        capacity = self.capacity(max_daily_minutes)
         workload = defaultdict(int)
         for record in records:
             if isinstance(record.content, TaskContent) and record.content.due_date:
                 workload[record.content.due_date] += record.content.estimated_minutes
         candidate = after + timedelta(days=1)
         for _ in range(365):
-            if workload[candidate] + required_minutes <= self.max_daily_minutes:
+            if workload[candidate] + required_minutes <= capacity:
                 return candidate
             candidate += timedelta(days=1)
         raise RuntimeError("No capacity found within planning horizon")

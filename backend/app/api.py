@@ -23,6 +23,7 @@ from .models import (
     MigrationRequest,
     MigrationResult,
     PlannerRecord,
+    PlannerSettings,
     PrivacySettings,
     RecordDeleteRequest,
     RecordUpsertRequest,
@@ -168,6 +169,16 @@ def create_app(container: Container | None = None) -> FastAPI:
         return MigrationResult(
             migration_id=body.migration_id, imported=imported, skipped=skipped, record_ids=record_ids
         )
+
+    @app.get("/v1/planner-settings", response_model=PlannerSettings)
+    def get_planner_settings(user: CurrentUser, services: ContainerDep):
+        return services.repository.get_planner_settings(user.uid)
+
+    @app.put("/v1/planner-settings", response_model=PlannerSettings)
+    def set_planner_settings(
+        body: PlannerSettings, user: CurrentUser, services: ContainerDep
+    ):
+        return services.repository.set_planner_settings(user.uid, body)
 
     @app.get("/v1/privacy", response_model=PrivacySettings)
     def get_privacy(user: CurrentUser, services: ContainerDep):

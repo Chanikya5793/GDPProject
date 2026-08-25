@@ -135,7 +135,9 @@ class McpToolService:
             records = []
             for kind in EntityType:
                 records.extend(self.repository.list_records(uid, kind))
-            result = [item.model_dump(mode="json") for item in self.planner.analyze(records)]
+            capacity = self.repository.get_planner_settings(uid).max_daily_minutes
+            result = [item.model_dump(mode="json")
+                      for item in self.planner.analyze(records, max_daily_minutes=capacity)]
         elif name == "planner_search":
             records, citations = self.retrieval.retrieve(uid, str(arguments["query"]))
             result = [{"citation": citation.model_dump(mode="json"),
