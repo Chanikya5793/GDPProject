@@ -2,6 +2,11 @@ import { auth, firebaseConfigured } from '@/lib/firebase';
 
 const API_URL = (process.env.EXPO_PUBLIC_PLANNER_API_URL || '').replace(/\/$/, '');
 
+/** True when a real backend is reachable; the offline demo build has none. */
+export function apiConfigured(): boolean {
+  return firebaseConfigured && Boolean(API_URL);
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;

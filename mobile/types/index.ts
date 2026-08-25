@@ -76,6 +76,8 @@ export interface Settings {
   showCompleted: boolean;
   reminderDefault: number;
   dueDateAlerts: boolean;
+  autoBalance: boolean;
+  dailyTaskLimit: number;
 }
 
 export interface TrashItem {

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Settings } from '@/types';
 import { getItem, setItem } from '@/api/storage';
+import { DEFAULT_DAILY_TASK_LIMIT } from '@/utils/schedule';
 
 const DEFAULTS: Settings = {
   theme: 'system',
@@ -14,6 +15,8 @@ const DEFAULTS: Settings = {
   showCompleted: true,
   reminderDefault: 30,
   dueDateAlerts: true,
+  autoBalance: true,
+  dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 };
 
 interface SettingsContextType {
