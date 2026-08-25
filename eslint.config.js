@@ -6,7 +6,11 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   globalIgnores([
-    'dist', 'coverage', '.vite', 'node_modules', 'mobile/node_modules',
+    'dist', 'coverage', '.vite', 'node_modules',
+    // The Expo app has its own toolchain (tsc + vitest) and its own module
+    // system; linting it with the web app's browser globals flags valid
+    // CommonJS config plugins as no-undef.
+    'mobile',
     'backend/.venv', 'backend/.pytest_cache',
   ]),
   {
