@@ -1,6 +1,7 @@
 import { Note, PlannerRecordId, Tag } from '@/types';
 import { getItem, setItem } from './storage';
 import { addToTrash } from './trash';
+import { addLog } from './logs';
 import { createPlannerItem, deletePlannerItem, listPlannerItems, updatePlannerItem } from './plannerClient';
 
 const NOTES_KEY = 'nw_notes';
@@ -37,18 +38,27 @@ export async function createNote(note: Partial<Note> & { userId: string }): Prom
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  return createPlannerItem('note', newNote);
+  const created = await createPlannerItem('note', newNote);
+  await addLog('created', 'note', created.title, { entityId: created.id, after: created });
+  return created;
 }
 
 export async function updateNote(id: PlannerRecordId, updates: Partial<Note>): Promise<Note> {
-  return updatePlannerItem<Note>('note', id, { ...updates, updatedAt: new Date().toISOString() });
+  const before = (await listPlannerItems<Note>('note')).find(n => String(n.id) === String(id));
+  const updated = await updatePlannerItem<Note>('note', id, {
+    ...updates, updatedAt: new Date().toISOString(),
+  });
+  await addLog('updated', 'note', updated.title, { entityId: id, before, after: updated });
+  return updated;
 }
 
 export async function deleteNote(id: PlannerRecordId): Promise<void> {
   const all = await loadNotes();
   const note = all.find(n => n.id === id);
-  if (note) await addToTrash(note, 'note');
+  let trashId: string | undefined;
+  if (note) trashId = await addToTrash(note, 'note');
   await deletePlannerItem('note', id);
+  await addLog('deleted', 'note', note?.title || '', { entityId: id, before: note, trashId });
 }
 
 export async function restoreNoteDirect(note: Note): Promise<void> {
