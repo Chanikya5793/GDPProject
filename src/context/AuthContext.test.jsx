@@ -38,6 +38,13 @@ describe('AuthContext demo fallback (no Firebase configured)', () => {
     expect(sessionStorage.getItem('nw_authenticated_uid')).toBe('demo_bobby_example_com')
   })
 
+  it('does not collapse punctuation-only emails into one shared uid', async () => {
+    renderAuth()
+    await act(async () => { await ctx.current.login('@@@', 'pw') })
+    // 'demo__' would pool every such account into a single storage namespace.
+    expect(ctx.current.user.uid).toBe('demo_guest')
+  })
+
   it('rejects an empty email instead of creating a uid-less session', async () => {
     renderAuth()
     let result
