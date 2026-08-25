@@ -176,12 +176,16 @@ class CopilotService:
         except Exception as exc:
             self.audit.record(uid, "failure", "failed", {
                 "stage": "generation", "error_type": type(exc).__name__,
+                "provider": getattr(self.generator, "provider", "unknown"),
             })
             raise
         allowed = {citation.citation_id: citation for citation in citations}
         used = [allowed[citation_id] for citation_id in generated.citation_ids if citation_id in allowed]
         if not used:
-            self.audit.record(uid, "generation", "abstained", {"reason": "invalid_citations"})
+            self.audit.record(uid, "generation", "abstained", {
+                "reason": "invalid_citations",
+                "provider": getattr(self.generator, "provider", "unknown"),
+            })
             answer = "I found related records, but I couldn't produce a source-valid answer."
             disclosure = RetrievalDisclosure(
                 attempted=True, result_count=len(citations),
@@ -189,7 +193,11 @@ class CopilotService:
                 abstained=True, reason="The generated answer did not cite a valid retrieved record.",
             )
             return answer, [], disclosure, generated
-        self.audit.record(uid, "generation", metadata={"citations": len(used)})
+        self.audit.record(uid, "generation", metadata={
+            "citations": len(used),
+            "provider": getattr(self.generator, "provider", "unknown"),
+            "trains_on_prompts": bool(getattr(self.generator, "trains_on_prompts", False)),
+        })
         disclosure = RetrievalDisclosure(
             attempted=True, result_count=len(citations),
             entity_types=sorted({c.entity_type for c in citations}, key=lambda item: item.value),

@@ -44,6 +44,10 @@ class FakeEmbeddings:
 
 
 class FakeGenerator:
+    provider = "fake"
+    trains_on_prompts = False
+    model = "fake-model"
+
     def __init__(self):
         self.response = GeneratedAnswer(answer="Grounded answer", citation_ids=["S1"])
         self.prompts = []
