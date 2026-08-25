@@ -62,8 +62,12 @@ The engine holds only the default; the per-user value is passed into `analyze()`
 `next_available_day()` per call, so one process serves users with different capacities
 without any shared mutable state.
 
-Note the unit difference: this capacity is **minutes of estimated work**, while the web
-app's "Maximum Tasks Per Day" counts **tasks**. They are deliberately separate
+Both clients expose this: the web app under Planner Preferences and the Expo app under
+Planner. Each writes to the same `/v1/planner-settings` endpoint, so the value follows the
+user across devices.
+
+Note the unit difference: this capacity is **minutes of estimated work**, while the
+clients' "Max Tasks Per Day" counts **tasks**. They are deliberately separate
 judgements — the copilot reasons about effort, the Tasks page about how crowded a day
 looks. A day can trip one and not the other.
 
