@@ -39,6 +39,12 @@ spec:
               value: ${GDP_MCP_SECRET_RESOURCE}
             - name: PLANNER_ALLOWED_ORIGINS
               value: ${GDP_ALLOWED_ORIGINS}
+            - name: PLANNER_ANSWER_PROVIDER
+              value: muse
+            - name: PLANNER_MUSE_MODEL
+              value: muse-spark-1.2-contributor
+            - name: PLANNER_MUSE_API_KEY_RESOURCE
+              value: ${GDP_MUSE_SECRET_RESOURCE}
             # Default daily task capacity the planner treats as a full day.
             # Users may override it for themselves via /v1/planner-settings.
             - name: PLANNER_MAX_DAILY_MINUTES

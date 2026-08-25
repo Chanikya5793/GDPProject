@@ -147,4 +147,6 @@ def test_generation_failure_is_audited_without_prompt_content(services):
         services.copilot.answer("alice", "chemistry")
     event = services.test_sink.events[-1]
     assert event.event_type == "failure"
-    assert event.metadata == {"stage": "generation", "error_type": "RuntimeError"}
+    assert event.metadata == {
+        "stage": "generation", "error_type": "RuntimeError", "provider": "fake",
+    }

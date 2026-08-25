@@ -122,6 +122,15 @@ class PrivacySettings(StrictModel):
     chat_retention_days: int = Field(default=0, ge=0, le=365)
 
 
+class AiProviderInfo(StrictModel):
+    """Read-only description of who processes approved records, so the client can
+    tell the user accurately instead of hardcoding a provider name."""
+
+    provider: str
+    model: str
+    trains_on_prompts: bool
+
+
 class PlannerSettings(StrictModel):
     """Per-user planner tuning. `max_daily_minutes` of None means "defer to the
     deployment default", so a user who never touches it follows the service."""

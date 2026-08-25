@@ -48,6 +48,53 @@ List known-good revisions with `gcloud run revisions list --service "$GDP_SERVIC
 revision before moving 100% of traffic. Data schema v1 is backward-compatible; do not
 destroy Firestore or wrapped DEKs during rollback.
 
+## Answer generation provider
+
+Generation runs on Meta Muse Spark via the OpenAI-compatible Chat Completions protocol.
+`PLANNER_ANSWER_PROVIDER` selects the backend:
+
+- `muse` (deployed default) — `PLANNER_MUSE_MODEL`, default `muse-spark-1.2-contributor`,
+  against `PLANNER_MUSE_BASE_URL`.
+- `vertex` — the original `gemini-2.5-flash` path, kept so the provider can be rolled
+  back without a code change.
+
+**Embeddings never move.** Meta's API has no embeddings endpoint, so `VertexEmbeddingClient`
+and `gemini-embedding-001` still serve indexing and query embedding regardless of this
+setting. Google Cloud remains a hard dependency; only generation is portable.
+
+### The API key
+
+Supplied through Secret Manager, never through the environment or a file in the repo.
+`PLANNER_MUSE_API_KEY_RESOURCE` must be a version-pinned resource
+(`projects/*/secrets/*/versions/N`) — the same `SecretResolver` guard the MCP session
+secret uses. Startup fails fast if the provider is `muse` and no resource is set, so a
+missing key surfaces on deploy rather than on a user's first question.
+
+```bash
+printf '%s' "$MUSE_KEY" | gcloud secrets create muse-api-key --data-file=- --project "$GDP_GCP_PROJECT"
+gcloud secrets add-iam-policy-binding muse-api-key \
+  --member="serviceAccount:$GDP_SERVICE_ACCOUNT" --role=roles/secretmanager.secretAccessor \
+  --project "$GDP_GCP_PROJECT"
+export GDP_MUSE_SECRET_RESOURCE=projects/$GDP_GCP_PROJECT/secrets/muse-api-key/versions/1
+```
+
+### Contributor tier: prompts are training data
+
+`muse-spark-1.2-contributor` is discounted **in exchange for permission to train on
+prompts and completions**. The standard-tier models (`muse-spark-1.1`, `muse-spark-1.2`)
+carry the opposite guarantee.
+
+A prompt here is not just the user's question. It carries `record_text` for every
+retrieved record — task titles and notes, note bodies, and approved attachment text.
+On the contributor tier that content is available to Meta for training.
+
+This is a deliberate choice. It is disclosed to users in Settings, sourced from
+`GET /v1/ai-info` so the wording cannot drift from the deployed model, and every
+`generation` audit event records `provider` and `trains_on_prompts`. Switching to
+`muse-spark-1.2` flips all three automatically. Note the contributor tier also drops the
+service-wide limit from 3,000 to 100 requests/min, well above the per-user chat budget
+below but worth watching under load.
+
 ## Planner daily capacity
 
 The planner rules engine calls a day overloaded when its tasks' `estimated_minutes`
