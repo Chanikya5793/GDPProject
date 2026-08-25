@@ -15,6 +15,7 @@ from .models import (
     EntityType,
     PlannerContent,
     PlannerRecord,
+    PlannerSettings,
     PrivacySettings,
     RecordUpsertRequest,
 )
@@ -44,6 +45,8 @@ class PlannerRepository(Protocol):
         self, uid: str, entity_type: EntityType, record_id: str, expected_revision: int,
         idempotency_key: str,
     ) -> None: ...
+    def get_planner_settings(self, uid: str) -> PlannerSettings: ...
+    def set_planner_settings(self, uid: str, settings: PlannerSettings) -> PlannerSettings: ...
     def get_privacy(self, uid: str) -> PrivacySettings: ...
     def set_privacy(self, uid: str, settings: PrivacySettings) -> PrivacySettings: ...
     def save_proposal(self, uid: str, proposal: ActionProposal) -> ActionProposal: ...
@@ -66,6 +69,7 @@ class MemoryPlannerRepository:
         self.records: Dict[Tuple[str, EntityType, str], PlannerRecord] = {}
         self.idempotency: Dict[Tuple[str, str], Tuple[str, Optional[PlannerRecord]]] = {}
         self.privacy: Dict[str, PrivacySettings] = {}
+        self.planner_settings: Dict[str, PlannerSettings] = {}
         self.proposals: Dict[Tuple[str, str], ActionProposal] = {}
         self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime]] = {}
         self._lock = RLock()
@@ -145,6 +149,13 @@ class MemoryPlannerRepository:
                 raise RevisionConflict("Record changed since it was read")
             del self.records[key]
             self.idempotency[idem_key] = (request_hash, None)
+
+    def get_planner_settings(self, uid: str) -> PlannerSettings:
+        return deepcopy(self.planner_settings.get(uid, PlannerSettings()))
+
+    def set_planner_settings(self, uid: str, settings: PlannerSettings) -> PlannerSettings:
+        self.planner_settings[uid] = settings
+        return deepcopy(settings)
 
     def get_privacy(self, uid: str) -> PrivacySettings:
         return deepcopy(self.privacy.get(uid, PrivacySettings()))
@@ -370,6 +381,18 @@ class FirestorePlannerRepository:
             })
 
         apply(transaction)
+
+    def get_planner_settings(self, uid: str) -> PlannerSettings:
+        snapshot = self.client.collection("users").document(uid).collection("settings").document(
+            "planner"
+        ).get()
+        return PlannerSettings.model_validate(snapshot.to_dict()) if snapshot.exists else PlannerSettings()
+
+    def set_planner_settings(self, uid: str, settings: PlannerSettings) -> PlannerSettings:
+        self.client.collection("users").document(uid).collection("settings").document(
+            "planner"
+        ).set(settings.model_dump(mode="json"))
+        return settings
 
     def get_privacy(self, uid: str) -> PrivacySettings:
         snapshot = self.client.collection("users").document(uid).collection("settings").document(

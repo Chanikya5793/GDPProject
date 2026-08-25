@@ -7,7 +7,7 @@ import { restoreTaskDirect } from '../api/tasks'
 import { restoreReminderDirect } from '../api/reminders'
 import { restoreNoteDirect } from '../api/notes'
 import ActivityLog from '../components/ActivityLog'
-import { apiFetch } from '../api/client'
+import { apiConfigured, apiFetch } from '../api/client'
 import {
   User, Palette, CalendarDays, Database, Recycle,
   Sun, Moon, Monitor, RotateCcw, Download,
@@ -66,6 +66,11 @@ export default function Settings() {
   })
   const [privacyStatus, setPrivacyStatus] = useState('loading')
   const [privacyError, setPrivacyError] = useState('')
+  // Copilot daily capacity lives server-side, so it is only offered when a
+  // backend is actually configured. The offline demo build has none.
+  const [plannerSettings, setPlannerSettings] = useState({ max_daily_minutes: null })
+  const [plannerStatus, setPlannerStatus] = useState('loading')
+  const [plannerError, setPlannerError] = useState('')
 
   useEffect(() => {
     getTrash(user.id).then(setTrash)
@@ -76,6 +81,30 @@ export default function Settings() {
       .then(value => { setPrivacy(value); setPrivacyStatus('ready') })
       .catch(error => { setPrivacyError(error.message); setPrivacyStatus('error') })
   }, [])
+
+  useEffect(() => {
+    if (!apiConfigured()) { setPlannerStatus('unavailable'); return }
+    apiFetch('/v1/planner-settings')
+      .then(value => { setPlannerSettings(value); setPlannerStatus('ready') })
+      .catch(error => { setPlannerError(error.message); setPlannerStatus('error') })
+  }, [])
+
+  const updatePlannerSettings = async updates => {
+    const next = { ...plannerSettings, ...updates }
+    setPlannerSettings(next)
+    setPlannerStatus('saving')
+    setPlannerError('')
+    try {
+      const saved = await apiFetch('/v1/planner-settings', {
+        method: 'PUT', body: JSON.stringify(next),
+      })
+      setPlannerSettings(saved)
+      setPlannerStatus('ready')
+    } catch (error) {
+      setPlannerStatus('error')
+      setPlannerError(error.message)
+    }
+  }
 
   const updatePrivacy = async updates => {
     const next = { ...privacy, ...updates }
@@ -535,6 +564,36 @@ export default function Settings() {
                 ))}
               </select>
             </div>
+
+            {plannerStatus !== 'unavailable' && (
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <span className="settings-row-label">Copilot Daily Capacity</span>
+                  <span className="settings-row-desc">
+                    How much task work the AI copilot treats as a full day before calling it
+                    overloaded. Measured in minutes from each task&rsquo;s estimate, so it is a
+                    separate judgement from Maximum Tasks Per Day above, which counts tasks.
+                    {plannerStatus === 'saving' && ' Saving…'}
+                  </span>
+                  {plannerError && <span className="settings-row-desc">{plannerError}</span>}
+                </div>
+                <select
+                  className="form-select settings-select"
+                  value={plannerSettings.max_daily_minutes ?? ''}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onChange={e => updatePlannerSettings({
+                    max_daily_minutes: e.target.value === '' ? null : Number(e.target.value),
+                  })}
+                >
+                  <option value="">Use service default</option>
+                  {[120, 180, 240, 300, 360, 420, 480, 600].map(minutes => (
+                    <option key={minutes} value={minutes}>
+                      {minutes % 60 === 0 ? `${minutes / 60} hours` : `${minutes} minutes`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="settings-row">
               <div className="settings-row-info">

@@ -35,3 +35,9 @@ __pycache__/
 # Native build output
 ios/build
 android/app/build
+
+# Local environment files. The .env.example templates are tracked on purpose;
+# a real .env holds Firebase keys and KMS resource names and must never be.
+.env
+.env.*
+!.env.example
