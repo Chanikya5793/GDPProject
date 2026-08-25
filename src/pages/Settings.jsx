@@ -71,6 +71,9 @@ export default function Settings() {
   const [plannerSettings, setPlannerSettings] = useState({ max_daily_minutes: null })
   const [plannerStatus, setPlannerStatus] = useState('loading')
   const [plannerError, setPlannerError] = useState('')
+  // Who actually processes approved records. Read from the server so this copy
+  // cannot drift from the deployed provider.
+  const [aiInfo, setAiInfo] = useState(null)
 
   useEffect(() => {
     getTrash(user.id).then(setTrash)
@@ -80,6 +83,11 @@ export default function Settings() {
     apiFetch('/v1/privacy')
       .then(value => { setPrivacy(value); setPrivacyStatus('ready') })
       .catch(error => { setPrivacyError(error.message); setPrivacyStatus('error') })
+  }, [])
+
+  useEffect(() => {
+    if (!apiConfigured()) return
+    apiFetch('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null))
   }, [])
 
   useEffect(() => {
@@ -397,6 +405,15 @@ export default function Settings() {
                 <Trash2 size={14} /> Delete retained chats
               </button>
               <span className="settings-row-desc"><Brain size={12} /> Record content is never indexed without approval.</span>
+              {aiInfo && (
+                <span className="settings-row-desc">
+                  <Brain size={12} /> Approved records are processed by{' '}
+                  <strong>{aiInfo.provider}</strong> ({aiInfo.model}).{' '}
+                  {aiInfo.trains_on_prompts
+                    ? 'This provider tier permits your questions and the record text sent with them to be used to train its models.'
+                    : 'Your questions and record text are not used to train the provider\u2019s models.'}
+                </span>
+              )}
             </div>
           </section>
 

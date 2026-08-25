@@ -15,6 +15,7 @@ from .auth import CurrentUser
 from .config import get_settings
 from .models import (
     ActionProposal,
+    AiProviderInfo,
     ChatRequest,
     ChatResponse,
     ConfirmProposalRequest,
@@ -168,6 +169,15 @@ def create_app(container: Container | None = None) -> FastAPI:
             imported += 1
         return MigrationResult(
             migration_id=body.migration_id, imported=imported, skipped=skipped, record_ids=record_ids
+        )
+
+    @app.get("/v1/ai-info", response_model=AiProviderInfo)
+    def ai_info(_user: CurrentUser, services: ContainerDep):
+        generator = services.copilot.generator
+        return AiProviderInfo(
+            provider=getattr(generator, "provider", "unknown"),
+            model=getattr(generator, "model", "unknown"),
+            trains_on_prompts=bool(getattr(generator, "trains_on_prompts", False)),
         )
 
     @app.get("/v1/planner-settings", response_model=PlannerSettings)
