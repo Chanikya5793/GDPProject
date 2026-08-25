@@ -148,7 +148,9 @@ class CopilotService:
             )
             empty = GeneratedAnswer(answer="I don't have enough approved planner evidence to answer that.")
             return empty.answer, [], disclosure, empty
-        recommendations = self.planner.analyze(records)
+        # Honour the user's own daily capacity; None falls back to the deployment default.
+        capacity = self.repository.get_planner_settings(uid).max_daily_minutes
+        recommendations = self.planner.analyze(records, max_daily_minutes=capacity)
         source_payload = []
         for record, citation in zip(records, citations):
             text = record_text(record)

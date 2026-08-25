@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sets what counts as overloaded. The limit drives the existing Optimize banner
   too, which previously hardcoded a threshold of 3.
 
+- **Configurable planner capacity** — the copilot's daily workload capacity was
+  hardcoded at 360 minutes. It is now `PLANNER_MAX_DAILY_MINUTES` deployment-wide,
+  and each user can override it for themselves through the new
+  `/v1/planner-settings` endpoints and a "Copilot Daily Capacity" control in
+  Settings. This stays measured in minutes, separate from the task-count limit
+  that drives the Tasks page.
+
 ### Fixed
 - Bulk task reschedules now write activity-log entries. The Optimize dialog
   wrote none, so those changes could not be rolled back.

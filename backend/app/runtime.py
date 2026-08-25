@@ -59,7 +59,7 @@ def build_production_container(settings: Settings) -> Container:
     )
     secret = SecretResolver().access(settings.mcp_session_secret_resource)
     audit = AuditLogger(FirestoreAuditSink(client), hashlib.sha256(secret + b":audit").digest())
-    planner = PlannerEngine()
+    planner = PlannerEngine(settings.max_daily_minutes)
     retrieval = RetrievalService(repository, vector_store, embeddings, audit, settings.retrieval_limit)
     indexing = IndexingService(repository, vector_store, embeddings, audit)
     proposals = ProposalService(repository, audit)
