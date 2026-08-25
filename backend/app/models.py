@@ -122,6 +122,13 @@ class PrivacySettings(StrictModel):
     chat_retention_days: int = Field(default=0, ge=0, le=365)
 
 
+class PlannerSettings(StrictModel):
+    """Per-user planner tuning. `max_daily_minutes` of None means "defer to the
+    deployment default", so a user who never touches it follows the service."""
+
+    max_daily_minutes: Optional[int] = Field(default=None, ge=15, le=1440)
+
+
 class IndexRequest(StrictModel):
     approved: Literal[True]
     expected_revision: int = Field(ge=1)

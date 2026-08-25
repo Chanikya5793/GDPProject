@@ -39,6 +39,10 @@ spec:
               value: ${GDP_MCP_SECRET_RESOURCE}
             - name: PLANNER_ALLOWED_ORIGINS
               value: ${GDP_ALLOWED_ORIGINS}
+            # Default daily task capacity the planner treats as a full day.
+            # Users may override it for themselves via /v1/planner-settings.
+            - name: PLANNER_MAX_DAILY_MINUTES
+              value: "360"
             # Per-user copilot chat budget. Literal values rather than envsubst
             # placeholders: an unset variable would render empty and fail startup.
             - name: PLANNER_CHAT_RATE_LIMIT_REQUESTS

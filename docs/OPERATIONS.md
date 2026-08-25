@@ -48,6 +48,25 @@ List known-good revisions with `gcloud run revisions list --service "$GDP_SERVIC
 revision before moving 100% of traffic. Data schema v1 is backward-compatible; do not
 destroy Firestore or wrapped DEKs during rollback.
 
+## Planner daily capacity
+
+The planner rules engine calls a day overloaded when its tasks' `estimated_minutes`
+exceed a capacity. That capacity resolves in two steps:
+
+1. `PLANNER_MAX_DAILY_MINUTES` (default 360) is the deployment-wide default.
+2. A user may override it for themselves via `GET`/`PUT /v1/planner-settings`, stored
+   at `users/{uid}/settings/planner`. `max_daily_minutes: null` means "no preference",
+   so that user follows the deployment default.
+
+The engine holds only the default; the per-user value is passed into `analyze()` and
+`next_available_day()` per call, so one process serves users with different capacities
+without any shared mutable state.
+
+Note the unit difference: this capacity is **minutes of estimated work**, while the web
+app's "Maximum Tasks Per Day" counts **tasks**. They are deliberately separate
+judgements — the copilot reasons about effort, the Tasks page about how crowded a day
+looks. A day can trip one and not the other.
+
 ## Copilot rate limiting
 
 `POST /v1/copilot/chat` is metered per authenticated UID with a token bucket, so a
