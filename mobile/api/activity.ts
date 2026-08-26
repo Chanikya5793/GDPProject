@@ -8,7 +8,9 @@
 import { LogEntity, LogEntry, PlannerRecordId } from '@/types';
 import { buildRevertUpdate, canRevert } from '@/utils/activityRevert';
 import { addLog, markReverted, suppressLogging } from './logs';
-import { deleteNote, restoreNoteDirect, updateNote } from './notes';
+import {
+  deleteNote, deleteTag, restoreNoteDirect, restoreTagDirect, updateNote, updateTag,
+} from './notes';
 import { deleteReminder, restoreReminderDirect, updateReminder } from './reminders';
 import { deleteTask, restoreTaskDirect, updateTask } from './tasks';
 import { restoreFromTrash } from './trash';
@@ -17,21 +19,21 @@ type Updater = (id: PlannerRecordId, updates: Record<string, unknown>) => Promis
 type Deleter = (id: PlannerRecordId) => Promise<unknown>;
 type Restorer = (item: never) => Promise<unknown>;
 
-// Tags are absent here on purpose: this client has no updateTag/restoreTagDirect,
-// so a tag rollback is reported as unsupported rather than failing as "the item
-// no longer exists", which would read like data loss.
 const UPDATERS: Partial<Record<LogEntity, Updater>> = {
   task: updateTask as Updater,
   reminder: updateReminder as Updater,
   note: updateNote as Updater,
+  tag: updateTag as Updater,
 };
 const DELETERS: Partial<Record<LogEntity, Deleter>> = {
   task: deleteTask, reminder: deleteReminder, note: deleteNote,
+  tag: deleteTag as Deleter,
 };
 const RESTORERS: Partial<Record<LogEntity, Restorer>> = {
   task: restoreTaskDirect as Restorer,
   reminder: restoreReminderDirect as Restorer,
   note: restoreNoteDirect as Restorer,
+  tag: restoreTagDirect as Restorer,
 };
 
 export interface RevertResult {
@@ -67,6 +69,8 @@ export async function revertLog(entry: LogEntry): Promise<RevertResult> {
         const restore = RESTORERS[entity];
         if (!restore) throw new Error(unsupported(entity));
         let restored = false;
+        // Tags are not moved to the trash on delete, so there is no trash entry
+        // to consult; the snapshot below is the only route back.
         if (trashId !== undefined) {
           const fromTrash = await restoreFromTrash(String(trashId));
           if (fromTrash) {
