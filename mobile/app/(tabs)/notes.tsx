@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView,
+  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +9,8 @@ import { useAppTheme } from '@/theme/useAppTheme';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
 import { Note, PlannerRecordId, Tag } from '@/types';
 import { assignedTags, toggleTagId } from '@/utils/noteTags';
+import MarkdownText from '@/components/MarkdownText';
+import { hasMarkdown } from '@/utils/markdown';
 
 export default function NotesScreen() {
   const { user } = useAuth();
@@ -155,6 +157,7 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [tagIds, setTagIds] = useState<number[]>([]);
+  const [preview, setPreview] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -162,6 +165,7 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
       setTitle(note.title);
       setBody(note.body);
       setTagIds(note.tagIds);
+      setPreview(false);
       setDirty(false);
     }
   }, [visible, note?.id]);
@@ -188,6 +192,8 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
     tagsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
     tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
     tagText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+    preview: { flex: 1 },
+    previewContent: { paddingHorizontal: 20, paddingBottom: 24 },
   });
 
   return (
@@ -198,6 +204,17 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
             <Ionicons name="chevron-back" size={24} color={accent.primary} />
           </TouchableOpacity>
           <View style={es.headerActions}>
+            {hasMarkdown(body) && (
+              <TouchableOpacity
+                onPress={() => setPreview(value => !value)}
+                accessibilityRole="button"
+                accessibilityLabel={preview ? 'Edit note' : 'Preview formatted note'}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: accent.primary }}>
+                  {preview ? 'Edit' : 'Preview'}
+                </Text>
+              </TouchableOpacity>
+            )}
             {dirty && (
               <TouchableOpacity onPress={handleSave}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: accent.primary }}>Save</Text>
@@ -250,15 +267,21 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
           </View>
         )}
 
+        {preview ? (
+          <ScrollView style={es.preview} contentContainerStyle={es.previewContent}>
+            <MarkdownText body={body} />
+          </ScrollView>
+        ) : (
         <TextInput
           style={es.bodyInput}
           value={body}
           onChangeText={b => { setBody(b); setDirty(true); }}
-          placeholder="Start writing your note..."
+          placeholder={'Start writing your note...\n\nMarkdown: ## heading, **bold**, *italic*, `code`, > quote, - list'}
           placeholderTextColor={colors.textMuted}
           multiline
           autoFocus={!note?.body}
         />
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
