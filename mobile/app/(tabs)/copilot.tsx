@@ -4,7 +4,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiRequest, idempotencyKey } from '@/api/client';
+import { apiConfigured, apiRequest, idempotencyKey } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
 
 interface Citation {
@@ -74,9 +74,14 @@ export default function CopilotScreen() {
       }]);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
+      // An unconfigured backend means the copilot is unavailable, not that the
+      // request failed; saying "not configured" in red reads like a crash.
+      const code = (error as { code?: string })?.code;
       setMessages(previous => [...previous, {
         id: idempotencyKey('error'), role: 'error',
-        text: error instanceof Error ? error.message : 'The copilot request failed.',
+        text: code === 'not_configured'
+          ? 'The copilot needs the planner backend, which this build is not connected to. Your tasks, reminders, and notes still work — they are stored encrypted on this device.'
+          : error instanceof Error ? error.message : 'The copilot request failed.',
       }]);
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
@@ -150,10 +155,13 @@ export default function CopilotScreen() {
       </ScrollView>
       <View style={styles.inputRow}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
-          placeholder="Ask your planner…" placeholderTextColor={colors.textMuted}
+          editable={apiConfigured()}
+          placeholder={apiConfigured() ? 'Ask your planner…' : 'Copilot unavailable in this build'}
+          placeholderTextColor={colors.textMuted}
           multiline maxLength={8000} />
         <TouchableOpacity style={[styles.send, !loading && !input.trim() && styles.sendDisabled]}
-          onPress={loading ? cancel : send} disabled={!loading && !input.trim()}>
+          onPress={loading ? cancel : send}
+          disabled={!loading && (!apiConfigured() || !input.trim())}>
           <Ionicons name={loading ? 'stop' : 'send'} size={18} color="#FFF" />
         </TouchableOpacity>
       </View>
