@@ -77,7 +77,7 @@ export function ProposalCard({ proposal, onConfirm, onReject }) {
 
 export default function AiSidebar() {
   const {
-    poppedOut, togglePopOut, messages, typing, sendMessage, cancelResponse,
+    poppedOut, togglePopOut, messages, typing, sendMessage, cancelResponse, available,
     clearChat, confirmProposal, rejectProposal,
   } = useAi()
   const location = useLocation()
@@ -187,13 +187,20 @@ export default function AiSidebar() {
             ))}
             {typing && <ThinkingIndicator onCancel={cancelResponse} />}
 
-            {messages.length <= 2 && !typing && (
+            {available && messages.length <= 2 && !typing && (
               <div className="ai-suggestions">
                 {SUGGESTIONS.map((s, i) => (
                   <button key={i} className="ai-suggestion" onClick={() => sendMessage(s)}>
                     {s}
                   </button>
                 ))}
+              </div>
+            )}
+            {!available && (
+              <div className="ai-unavailable">
+                The copilot needs the planner backend, which this build is not connected to.
+                Your tasks, reminders, and notes still work — they are stored encrypted on this
+                device.
               </div>
             )}
             <div ref={bottomRef} />
@@ -206,13 +213,14 @@ export default function AiSidebar() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything..."
+              placeholder={available ? 'Ask anything...' : 'Copilot unavailable in this build'}
               rows={1}
+              disabled={!available}
             />
             <button
               className={`ai-send${input.trim() ? ' ai-send-active' : ''}`}
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={!available || !input.trim()}
             >
               <Send size={16} />
             </button>
