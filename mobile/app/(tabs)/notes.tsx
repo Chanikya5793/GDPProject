@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
 import { Note, PlannerRecordId, Tag } from '@/types';
+import { assignedTags, toggleTagId } from '@/utils/noteTags';
 
 export default function NotesScreen() {
   const { user } = useAuth();
@@ -98,7 +99,7 @@ export default function NotesScreen() {
         }
         renderItem={({ item: note }) => {
           const preview = note.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 80);
-          const noteTags = tags.filter(t => note.tagIds.includes(t.id));
+          const noteTags = assignedTags(tags, note.tagIds);
           return (
             <TouchableOpacity
               style={[s.noteCard, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -153,25 +154,27 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
 }) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [tagIds, setTagIds] = useState<number[]>([]);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (visible && note) {
       setTitle(note.title);
       setBody(note.body);
+      setTagIds(note.tagIds);
       setDirty(false);
     }
   }, [visible, note?.id]);
 
   const handleSave = () => {
     if (!note) return;
-    onSave(note.id, { title, body });
+    onSave(note.id, { title, body, tagIds });
     setDirty(false);
   };
 
   const handleClose = () => {
     if (dirty && note) {
-      onSave(note.id, { title, body });
+      onSave(note.id, { title, body, tagIds });
     }
     onClose();
   };
@@ -182,7 +185,7 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
     headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
     titleInput: { fontSize: 22, fontWeight: '700', color: colors.text, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
     bodyInput: { flex: 1, fontSize: 16, color: colors.text, paddingHorizontal: 20, textAlignVertical: 'top', lineHeight: 24 },
-    tagsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
+    tagsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
     tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
     tagText: { fontSize: 12, fontWeight: '600', color: '#374151' },
   });
@@ -216,13 +219,34 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
           placeholderTextColor={colors.textMuted}
         />
 
-        {note && tags.filter(t => note.tagIds.includes(t.id)).length > 0 && (
+        {note && tags.length > 0 && (
           <View style={es.tagsRow}>
-            {tags.filter(t => note.tagIds.includes(t.id)).map(t => (
-              <View key={t.id} style={[es.tag, { backgroundColor: t.color }]}>
-                <Text style={es.tagText}>#{t.name}</Text>
-              </View>
-            ))}
+            {tags.map(t => {
+              const on = tagIds.includes(t.id);
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[
+                    es.tag,
+                    on
+                      ? { backgroundColor: t.color }
+                      : { borderWidth: 1, borderColor: colors.border },
+                  ]}
+                  onPress={() => {
+                    const next = toggleTagId(tagIds, t.id);
+                    setTagIds(next);
+                    onSave(note.id, { tagIds: next });
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${on ? 'Remove' : 'Add'} tag ${t.name}`}
+                >
+                  <Text style={[es.tagText, !on && { color: colors.textMuted }]}>
+                    #{t.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
