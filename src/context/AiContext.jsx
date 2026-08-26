@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { apiFetch, idempotencyKey } from '../api/client'
+import { apiConfigured, apiFetch, idempotencyKey } from '../api/client'
 import { useAuth } from './AuthContext'
 
 const AiContext = createContext(null)
@@ -66,7 +66,9 @@ export function AiProvider({ children }) {
         setError(requestError.message)
         setMessages(previous => [...previous, {
           id: crypto.randomUUID(), role: 'error',
-          text: requestError.status === 403
+          text: requestError.code === 'not_configured'
+            ? 'The AI copilot needs the planner backend, which this build is not connected to. Everything else works offline.'
+            : requestError.status === 403
             ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
             : requestError.status === 429
               // A budget, not a malfunction — the backend's detail names the wait.
@@ -128,6 +130,9 @@ export function AiProvider({ children }) {
     <AiContext.Provider value={{
       poppedOut, togglePopOut, messages, typing, error, sendMessage, cancelResponse,
       clearChat, confirmProposal, rejectProposal,
+      // Whether a backend exists at all. The sidebar uses this to explain the
+      // copilot is unavailable instead of letting people send doomed requests.
+      available: apiConfigured(),
     }}>
       {children}
     </AiContext.Provider>

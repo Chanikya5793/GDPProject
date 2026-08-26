@@ -445,3 +445,22 @@
     width: 44px;
   }
 }
+
+/* Shown when no planner backend is configured (the offline demo build). The
+   copilot is unavailable rather than broken, so this reads as an explanation
+   and the composer is disabled instead of accepting doomed requests. */
+.ai-unavailable {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.ai-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
