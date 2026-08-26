@@ -1,5 +1,6 @@
 import { apiRequest, idempotencyKey } from './client';
 import { getItem, setItem } from './storage';
+import { preserveAttachments } from '@/utils/attachments';
 import { Note, PlannerRecordId, Reminder, Task } from '@/types';
 import { auth } from '@/lib/firebase';
 
@@ -76,6 +77,22 @@ function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
   };
 }
 
+/**
+ * Carry device-only fields from the copy we hold onto a server-derived record.
+ *
+ * Note attachments never leave the device (toServer sends an empty list), so a
+ * record coming back from the server always has none. Caching it as-is would
+ * destroy every attachment the moment a request succeeded.
+ */
+function withLocalOnlyFields<T extends PlannerItem>(kind: Kind, saved: T, local: T | undefined): T {
+  if (kind !== 'note') return saved;
+  const attachments = preserveAttachments(
+    (local as Note | undefined)?.attachments,
+    (saved as Note).attachments,
+  );
+  return attachments === undefined ? saved : { ...saved, attachments } as T;
+}
+
 async function loadCache(kind: Kind): Promise<PlannerItem[]> {
   return getItem<PlannerItem[]>(cacheKey(kind), []);
 }
@@ -114,7 +131,12 @@ export async function listPlannerItems<T extends PlannerItem>(kind: Kind): Promi
   try {
     await flushOutbox();
     const records = await apiRequest<ServerRecord[]>(`/v1/records/${kind}`);
-    const items = records.map(fromServer) as T[];
+    const cached = kind === 'note' ? await loadCache(kind) as T[] : [];
+    const items = records.map(record => {
+      const saved = fromServer(record) as T;
+      const local = cached.find(item => String(item.id) === String(saved.id));
+      return withLocalOnlyFields(kind, saved, local);
+    });
     await saveCache(kind, items);
     return items;
   } catch {
@@ -132,7 +154,7 @@ export async function createPlannerItem<T extends PlannerItem>(kind: Kind, item:
   };
   try {
     const server = await send(operation);
-    const saved = fromServer(server!) as T;
+    const saved = withLocalOnlyFields(kind, fromServer(server!) as T, item);
     await saveCache(kind, [...await loadCache(kind), saved]);
     return saved;
   } catch (error) {
@@ -156,7 +178,7 @@ export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: P
     },
   };
   try {
-    const saved = fromServer((await send(operation))!) as T;
+    const saved = withLocalOnlyFields(kind, fromServer((await send(operation))!) as T, merged);
     await saveCache(kind, items.map(item => item.id === id ? saved : item));
     return saved;
   } catch (error) {

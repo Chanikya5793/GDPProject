@@ -1,16 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView,
+  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
-import { Note, PlannerRecordId, Tag } from '@/types';
+import { Note, NoteAttachment, PlannerRecordId, Tag } from '@/types';
 import { assignedTags, toggleTagId } from '@/utils/noteTags';
 import MarkdownText from '@/components/MarkdownText';
 import { hasMarkdown } from '@/utils/markdown';
+import {
+  addAttachment, dataUrlBytes, formatBytes, isWithinSizeLimit,
+  MAX_ATTACHMENT_BYTES, removeAttachment,
+} from '@/utils/attachments';
 
 export default function NotesScreen() {
   const { user } = useAuth();
@@ -158,6 +164,7 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
   const [body, setBody] = useState('');
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [preview, setPreview] = useState(false);
+  const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -166,19 +173,70 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
       setBody(note.body);
       setTagIds(note.tagIds);
       setPreview(false);
+      setAttachments(note.attachments || []);
       setDirty(false);
     }
   }, [visible, note?.id]);
 
   const handleSave = () => {
     if (!note) return;
-    onSave(note.id, { title, body, tagIds });
+    onSave(note.id, { title, body, tagIds, attachments });
     setDirty(false);
+  };
+
+  const pickImage = async () => {
+    if (!note) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Photo access needed', 'Allow photo access to attach an image to this note.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      // Attachments live in device storage as base64, so shrink before encoding
+      // rather than rejecting most photos for being over the cap.
+      quality: 0.6,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      Alert.alert('Could not read image', 'That image could not be read.');
+      return;
+    }
+    const dataUrl = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+    const bytes = dataUrlBytes(dataUrl);
+    if (!isWithinSizeLimit(bytes)) {
+      Alert.alert(
+        'Image too large',
+        `That image is ${formatBytes(bytes)}. Attachments are stored on this device, so they are capped at ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
+      );
+      return;
+    }
+
+    const next = addAttachment(attachments, {
+      id: Crypto.randomUUID(),
+      name: asset.fileName || 'image',
+      type: asset.mimeType || 'image/jpeg',
+      size: bytes,
+      dataUrl,
+      approvedForAi: false,
+    });
+    setAttachments(next);
+    onSave(note.id, { attachments: next });
+  };
+
+  const dropAttachment = (id: string) => {
+    if (!note) return;
+    const next = removeAttachment(attachments, id);
+    setAttachments(next);
+    onSave(note.id, { attachments: next });
   };
 
   const handleClose = () => {
     if (dirty && note) {
-      onSave(note.id, { title, body, tagIds });
+      onSave(note.id, { title, body, tagIds, attachments });
     }
     onClose();
   };
@@ -192,6 +250,20 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
     tagsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
     tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
     tagText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+    attachRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingHorizontal: 20, paddingBottom: 6,
+    },
+    attachButton: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    attachButtonText: { fontSize: 13, fontWeight: '600' },
+    attachCount: { fontSize: 11, color: colors.textMuted },
+    thumbStrip: { paddingHorizontal: 20, paddingBottom: 10, flexGrow: 0 },
+    thumbWrap: { marginRight: 10 },
+    thumb: { width: 72, height: 72, borderRadius: 8, backgroundColor: colors.surfaceVariant },
+    thumbRemove: {
+      position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
+      backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center',
+    },
     preview: { flex: 1 },
     previewContent: { paddingHorizontal: 20, paddingBottom: 24 },
   });
@@ -265,6 +337,43 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
               );
             })}
           </View>
+        )}
+
+        <View style={es.attachRow}>
+          <TouchableOpacity
+            style={es.attachButton}
+            onPress={pickImage}
+            accessibilityRole="button"
+            accessibilityLabel="Attach an image"
+          >
+            <Ionicons name="image-outline" size={15} color={accent.primary} />
+            <Text style={[es.attachButtonText, { color: accent.primary }]}>Attach image</Text>
+          </TouchableOpacity>
+          {attachments.length > 0 && (
+            <Text style={es.attachCount}>
+              {attachments.length} attached ·{' '}
+              {formatBytes(attachments.reduce((total, a) => total + a.size, 0))}
+            </Text>
+          )}
+        </View>
+
+        {attachments.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={es.thumbStrip}>
+            {attachments.map(attachment => (
+              <View key={attachment.id} style={es.thumbWrap}>
+                <Image source={{ uri: attachment.dataUrl }} style={es.thumb} />
+                <TouchableOpacity
+                  style={es.thumbRemove}
+                  onPress={() => dropAttachment(attachment.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${attachment.name}`}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="close" size={12} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
         )}
 
         {preview ? (
