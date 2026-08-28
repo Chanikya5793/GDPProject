@@ -6,6 +6,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
 import { getReminders, createReminder, updateReminder, deleteReminder } from '@/api/reminders';
 import { PlannerRecordId, Reminder } from '@/types';
 
@@ -29,7 +31,7 @@ function formatGroupDate(dateStr: string) {
 
 export default function RemindersScreen() {
   const { user } = useAuth();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -91,7 +93,7 @@ export default function RemindersScreen() {
   const totalToday = reminders.filter(r => r.date === todayStr).length;
   const totalUpcoming = reminders.filter(r => r.date > todayStr).length;
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   return (
     <View style={s.container}>
@@ -182,6 +184,7 @@ export default function RemindersScreen() {
         reminder={editingRem}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         onSave={handleSave}
         onClose={() => { setModalVisible(false); setEditingRem(null); }}
       />
@@ -189,11 +192,12 @@ export default function RemindersScreen() {
   );
 }
 
-function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
+function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, onClose }: {
   visible: boolean;
   reminder: Reminder | null;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   onSave: (form: Partial<Reminder>) => void;
   onClose: () => void;
 }) {
@@ -211,7 +215,7 @@ function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
     }
   }, [visible, reminder]);
 
-  const ms = StyleSheet.create({
+  const ms = createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
@@ -221,7 +225,7 @@ function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
   });
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={ms.container}>
         <View style={ms.header}>
           <TouchableOpacity onPress={onClose}>
@@ -247,8 +251,8 @@ function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
     subtitle: { fontSize: 13, color: colors.textSecondary },

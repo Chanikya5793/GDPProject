@@ -8,6 +8,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
 import { Note, NoteAttachment, PlannerRecordId, Tag } from '@/types';
 import { assignedTags, toggleTagId } from '@/utils/noteTags';
@@ -20,7 +22,7 @@ import {
 
 export default function NotesScreen() {
   const { user } = useAuth();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +72,7 @@ export default function NotesScreen() {
     ? notes.filter(n => n.title.toLowerCase().includes(search.toLowerCase()) || n.body.toLowerCase().includes(search.toLowerCase()))
     : notes;
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   return (
     <View style={s.container}>
@@ -142,6 +144,7 @@ export default function NotesScreen() {
         tags={tags}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         onSave={handleSaveNote}
         onDelete={handleDeleteNote}
         onClose={() => setEditorVisible(false)}
@@ -150,12 +153,13 @@ export default function NotesScreen() {
   );
 }
 
-function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onClose }: {
+function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, onDelete, onClose }: {
   visible: boolean;
   note: Note | null;
   tags: Tag[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   onSave: (id: PlannerRecordId, updates: Partial<Note>) => void;
   onDelete: (id: PlannerRecordId) => void;
   onClose: () => void;
@@ -241,7 +245,7 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
     onClose();
   };
 
-  const es = StyleSheet.create({
+  const es = createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
@@ -269,7 +273,7 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
   });
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={handleClose}>
       <KeyboardAvoidingView style={es.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={es.header}>
           <TouchableOpacity onPress={handleClose}>
@@ -396,8 +400,8 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     headerBar: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 10, gap: 10 },
     searchWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceVariant, borderRadius: 10, paddingHorizontal: 12, gap: 8 },

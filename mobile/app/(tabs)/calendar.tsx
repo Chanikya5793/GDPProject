@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
 import { getTasks, toggleTask } from '@/api/tasks';
 import { getReminders } from '@/api/reminders';
 import { PlannerRecordId, Task, Reminder } from '@/types';
@@ -33,7 +35,7 @@ const MIN_COL_WIDTH = 62;
 export default function CalendarScreen() {
   const { user } = useAuth();
   const { settings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const { width: screenWidth } = useWindowDimensions();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -100,7 +102,7 @@ export default function CalendarScreen() {
 
   const navTitle = getNavTitle(view, selectedDate, year, month, settings.weekStartsOn);
   const viewDates = getViewDates(selectedDate, view, settings.weekStartsOn);
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   return (
     <View style={s.container}>
@@ -141,6 +143,7 @@ export default function CalendarScreen() {
           onRefresh={onRefresh}
           colors={colors}
           accent={accent}
+          appearance={appearance}
         />
       ) : (
         <TimeGrid
@@ -155,10 +158,11 @@ export default function CalendarScreen() {
           onRefresh={onRefresh}
           colors={colors}
           accent={accent}
+          appearance={appearance}
         />
       )}
 
-      <Modal visible={viewPickerOpen} transparent animationType="fade" onRequestClose={() => setViewPickerOpen(false)}>
+      <Modal visible={viewPickerOpen} transparent animationType={modalAnimation(appearance.reducedMotion, 'fade')} onRequestClose={() => setViewPickerOpen(false)}>
         <TouchableOpacity style={s.pickerBackdrop} activeOpacity={1} onPress={() => setViewPickerOpen(false)}>
           <View style={[s.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {CALENDAR_VIEWS.map(option => {
@@ -198,18 +202,19 @@ interface ViewProps {
   onRefresh: () => void;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
 }
 
 function MonthView({
   year, month, weekStartsOn, itemsByDate, selectedDate, todayStr, onSelectDay,
-  onToggleTask, refreshing, onRefresh, colors, accent,
+  onToggleTask, refreshing, onRefresh, colors, accent, appearance,
 }: ViewProps & {
   year: number;
   month: number;
   weekStartsOn: 'sunday' | 'monday';
   onSelectDay: (date: string) => void;
 }) {
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
   const cells = monthCells(year, month, weekStartsOn);
   const headers = dayHeaders(weekStartsOn);
   const selectedItems = itemsByDate[selectedDate] || [];
@@ -273,6 +278,7 @@ function MonthView({
               onToggleTask={onToggleTask}
               colors={colors}
               accent={accent}
+              appearance={appearance}
             />
           ))
         )}
@@ -283,13 +289,14 @@ function MonthView({
   );
 }
 
-function DayPanelRow({ item, onToggleTask, colors, accent }: {
+function DayPanelRow({ item, onToggleTask, colors, accent, appearance }: {
   item: CalItem;
   onToggleTask: (id: PlannerRecordId) => void;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
 }) {
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
   if (item._type === 'reminder') {
     return (
       <View style={[s.panelItem, { borderLeftColor: colors.warning }]}>
@@ -334,13 +341,13 @@ function DayPanelRow({ item, onToggleTask, colors, accent }: {
 
 function TimeGrid({
   dates, itemsByDate, todayStr, selectedDate, screenWidth, onSelectDay,
-  onToggleTask, refreshing, onRefresh, colors, accent,
+  onToggleTask, refreshing, onRefresh, colors, accent, appearance,
 }: ViewProps & {
   dates: string[];
   screenWidth: number;
   onSelectDay: (date: string) => void;
 }) {
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
   const scrollRef = useRef<ScrollView>(null);
   const [nowMinutes, setNowMinutes] = useState(() => minutesIntoDay(new Date()));
 
@@ -410,7 +417,7 @@ function TimeGrid({
               {dates.map(date => (
                 <View key={date} style={[s.tgAllDayCell, { width: colWidth }]}>
                   {allDayItems(itemsByDate[date] || []).map(item => (
-                    <Chip key={`${item._type[0]}-${item.id}`} item={item} onToggleTask={onToggleTask} colors={colors} accent={accent} />
+                    <Chip key={`${item._type[0]}-${item.id}`} item={item} onToggleTask={onToggleTask} colors={colors} accent={accent} appearance={appearance} />
                   ))}
                 </View>
               ))}
@@ -437,7 +444,7 @@ function TimeGrid({
                     ]}
                   >
                     {itemsInHour(itemsByDate[date] || [], hour).map(item => (
-                      <Chip key={`${item._type[0]}-${item.id}`} item={item} onToggleTask={onToggleTask} colors={colors} accent={accent} />
+                      <Chip key={`${item._type[0]}-${item.id}`} item={item} onToggleTask={onToggleTask} colors={colors} accent={accent} appearance={appearance} />
                     ))}
                   </View>
                 ))}
@@ -459,13 +466,14 @@ function TimeGrid({
   );
 }
 
-function Chip({ item, onToggleTask, colors, accent }: {
+function Chip({ item, onToggleTask, colors, accent, appearance }: {
   item: CalItem;
   onToggleTask: (id: PlannerRecordId) => void;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
 }) {
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
   const isTask = item._type === 'task';
   const done = isTask && item.completed;
   return (
@@ -488,8 +496,8 @@ function Chip({ item, onToggleTask, colors, accent }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, gap: 6 },
     todayBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
