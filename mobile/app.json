@@ -59,7 +59,12 @@
       "expo-status-bar",
       "expo-web-browser",
       "./plugins/withUISceneLifecycle",
-      "expo-build-properties"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

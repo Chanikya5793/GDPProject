@@ -37,12 +37,23 @@ export interface Reminder {
   _pending?: boolean;
 }
 
+export interface NoteAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  /** data: URI. Stays on the device — never sent to the planner backend. */
+  dataUrl: string;
+  approvedForAi: boolean;
+}
+
 export interface Note {
   id: PlannerRecordId;
   userId: string;
   title: string;
   body: string;
   tagIds: number[];
+  attachments?: NoteAttachment[];
   updatedAt: string;
   createdAt: string;
   _revision?: number;
