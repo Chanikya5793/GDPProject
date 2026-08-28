@@ -10,6 +10,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { migrateLegacyStorage } from '@/api/storage';
 import ActivityLogSection from '@/components/ActivityLogSection';
+import AiPrivacySection from '@/components/AiPrivacySection';
 import RecycleBinSection from '@/components/RecycleBinSection';
 import { apiConfigured, apiRequest } from '@/api/client';
 
@@ -30,7 +31,6 @@ const CAPACITY_CHOICES: { value: number | null; short: string; label: string }[]
 ];
 
 type PlannerSettings = { max_daily_minutes: number | null };
-type AiInfo = { provider: string; model: string; trains_on_prompts: boolean };
 
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuth();
@@ -44,15 +44,6 @@ export default function SettingsScreen() {
   const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({ max_daily_minutes: null });
   const [plannerStatus, setPlannerStatus] =
     useState<'loading' | 'ready' | 'saving' | 'error' | 'unavailable'>('loading');
-  // Who actually processes approved records. Read from the server so this copy
-  // cannot drift from the deployed provider.
-  const [aiInfo, setAiInfo] = useState<AiInfo | null>(null);
-
-  useEffect(() => {
-    if (!apiConfigured()) return;
-    apiRequest<AiInfo>('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null));
-  }, []);
-
   useEffect(() => {
     if (!apiConfigured()) { setPlannerStatus('unavailable'); return; }
     apiRequest<PlannerSettings>('/v1/planner-settings')
@@ -280,17 +271,6 @@ export default function SettingsScreen() {
           </SettingsRow>
         )}
 
-        {aiInfo && (
-          <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 17 }}>
-              Approved records are processed by {aiInfo.provider} ({aiInfo.model}).{' '}
-              {aiInfo.trains_on_prompts
-                ? 'This provider tier permits your questions and the record text sent with them to be used to train its models.'
-                : 'Your questions and record text are not used to train the provider\u2019s models.'}
-            </Text>
-          </View>
-        )}
-
         <SettingsRow label="Due Date Alerts" colors={colors}>
           <Switch
             value={settings.dueDateAlerts}
@@ -300,6 +280,8 @@ export default function SettingsScreen() {
           />
         </SettingsRow>
       </View>
+
+      <AiPrivacySection />
 
       <ActivityLogSection />
 
