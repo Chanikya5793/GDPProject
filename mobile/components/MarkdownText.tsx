@@ -2,13 +2,14 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Block, InlineToken, parseMarkdown } from '@/utils/markdown';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 
 // Renders the note markdown subset as native text. The web app builds an HTML
 // string for this; here the parser hands back blocks and they map onto <Text>,
 // which keeps user content away from anything HTML-shaped.
 
 function Inline({ spans, style }: { spans: InlineToken[]; style?: object }) {
-  const { colors } = useAppTheme();
+  const { colors, appearance } = useAppTheme();
   return (
     <>
       {spans.map((span, index) => {
@@ -42,8 +43,8 @@ function Inline({ spans, style }: { spans: InlineToken[]; style?: object }) {
 const HEADING_SIZE: Record<number, number> = { 1: 24, 2: 20, 3: 17 };
 
 export default function MarkdownText({ body }: { body: string }) {
-  const { colors, accent } = useAppTheme();
-  const s = makeStyles(colors, accent);
+  const { colors, accent, appearance } = useAppTheme();
+  const s = makeStyles(colors, accent, appearance);
   const blocks = parseMarkdown(body);
 
   if (blocks.length === 0) {
@@ -96,8 +97,9 @@ export default function MarkdownText({ body }: { body: string }) {
 function makeStyles(
   colors: ReturnType<typeof useAppTheme>['colors'],
   accent: ReturnType<typeof useAppTheme>['accent'],
+  appearance: ReturnType<typeof useAppTheme>['appearance'],
 ) {
-  return StyleSheet.create({
+  return createStyles(appearance)({
     empty: { color: colors.textMuted, fontSize: 15, fontStyle: 'italic' },
     blank: { height: 10 },
     heading: { color: colors.text, fontWeight: '700', marginBottom: 6, marginTop: 4 },

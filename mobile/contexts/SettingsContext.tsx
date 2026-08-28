@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Settings } from '@/types';
-import { getItem, setItem } from '@/api/storage';
+import { getItem, onStorageScopeChange, setItem } from '@/api/storage';
 import { DEFAULT_DAILY_TASK_LIMIT } from '@/utils/schedule';
 
 const DEFAULTS: Settings = {
@@ -32,11 +32,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const [loaded, setLoaded] = useState(false);
 
+  // Settings are stored per user, but this provider sits above AuthProvider and
+  // so reads once before any uid is known. Re-read whenever the storage scope
+  // changes, or the signed-in user's saved settings would never be loaded and
+  // every launch would come up on the defaults.
   useEffect(() => {
-    getItem<Settings>('nw_settings', DEFAULTS).then(stored => {
-      setSettings({ ...DEFAULTS, ...stored });
-      setLoaded(true);
-    });
+    let cancelled = false;
+    const load = () => {
+      getItem<Settings>('nw_settings', DEFAULTS).then(stored => {
+        if (cancelled) return;
+        setSettings({ ...DEFAULTS, ...stored });
+        setLoaded(true);
+      });
+    };
+    load();
+    const unsubscribe = onStorageScopeChange(load);
+    return () => { cancelled = true; unsubscribe(); };
   }, []);
 
   const updateSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {

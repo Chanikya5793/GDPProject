@@ -8,6 +8,7 @@ import { restoreNoteDirect } from '@/api/notes';
 import { restoreReminderDirect } from '@/api/reminders';
 import { restoreTaskDirect } from '@/api/tasks';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 import {
   countByType, deletedAgo, filterTrash, TRASH_FILTERS, TrashFilter,
 } from '@/utils/trashView';
@@ -24,10 +25,10 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 export default function RecycleBinSection({ userId }: { userId: string }) {
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [trash, setTrash] = useState<TrashItem[]>([]);
   const [filter, setFilter] = useState<TrashFilter>('all');
-  const s = makeStyles(colors);
+  const s = makeStyles(colors, appearance);
 
   const reload = useCallback(() => {
     getTrash(userId).then(setTrash).catch(() => setTrash([]));
@@ -155,8 +156,8 @@ export default function RecycleBinSection({ userId }: { userId: string }) {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     section: {
       backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 16,
     },

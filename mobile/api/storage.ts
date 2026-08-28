@@ -9,9 +9,26 @@ const SENSITIVE_KEYS = [
   'nw_tasks', 'nw_reminders', 'nw_notes', 'nw_tags', 'nw_categories', 'nw_trash', 'nw_settings',
 ];
 let authenticatedUid: string | null = null;
+const scopeListeners = new Set<() => void>();
 
 export function setStorageUid(uid: string | null): void {
+  if (authenticatedUid === uid) return;
   authenticatedUid = uid;
+  // Anything already loaded was read from the previous scope and is now stale.
+  for (const listener of scopeListeners) listener();
+}
+
+/**
+ * Subscribe to scope changes, returning an unsubscribe function.
+ *
+ * Providers that read at mount can sit above the auth provider, in which case
+ * their first read happens against the pre-sign-in scope and finds nothing.
+ * Without this they would keep serving that empty read for the whole session
+ * while their writes went to the signed-in user's scope.
+ */
+export function onStorageScopeChange(listener: () => void): () => void {
+  scopeListeners.add(listener);
+  return () => { scopeListeners.delete(listener); };
 }
 
 function scope(): string {

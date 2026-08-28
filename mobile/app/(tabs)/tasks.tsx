@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
 import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTasks } from '@/api/tasks';
 import {
   DEFAULT_DAILY_TASK_LIMIT,
@@ -90,7 +92,7 @@ function formatTime(t: string) {
 export default function TasksScreen() {
   const { user } = useAuth();
   const { settings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -150,7 +152,7 @@ export default function TasksScreen() {
   const applyMoves = useCallback(async (moves: RescheduleSuggestion[]) => {
     if (moves.length === 0) return;
     await batchUpdateTasks(moves.map(m => ({ id: m.task.id, changes: { dueDate: m.to } })));
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (!appearance.reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setTasks(prev =>
       prev.map(t => {
         const hit = moves.find(m => m.task.id === t.id);
@@ -207,7 +209,7 @@ export default function TasksScreen() {
     ? suggestReschedule(overloadedDays, tasks, dailyLimit)
     : [];
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   // Priority color palette
   const priorityColors = {
@@ -426,6 +428,7 @@ export default function TasksScreen() {
         categories={categories}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         defaultPriority={settings.defaultPriority}
         defaultCategory={settings.defaultCategory}
         onSave={handleSave}
@@ -439,6 +442,7 @@ export default function TasksScreen() {
         suggestions={rescheduleSuggestions}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         onApply={handleApplyReschedule}
         onClose={() => setRescheduleVisible(false)}
       />
@@ -449,13 +453,14 @@ export default function TasksScreen() {
 // ─── Reschedule Modal ────────────────────────────────────────────────────────
 
 function RescheduleModal({
-  visible, overloadedDays, suggestions, colors, accent, onApply, onClose,
+  visible, overloadedDays, suggestions, colors, accent, appearance, onApply, onClose,
 }: {
   visible: boolean;
   overloadedDays: OverloadedDay[];
   suggestions: RescheduleSuggestion[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   onApply: (accepted: RescheduleSuggestion[]) => void;
   onClose: () => void;
 }) {
@@ -475,10 +480,10 @@ function RescheduleModal({
   };
 
   const accepted_list = suggestions.filter(s => accepted.has(s.task.id));
-  const rs = rescheduleStyles(colors, accent);
+  const rs = rescheduleStyles(colors, accent, appearance);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={rs.container}>
         {/* Header */}
         <View style={rs.header}>
@@ -604,13 +609,14 @@ function RescheduleModal({
 // ─── Task create/edit modal ──────────────────────────────────────────────────
 
 function TaskModal({
-  visible, task, categories, colors, accent, defaultPriority, defaultCategory, onSave, onClose,
+  visible, task, categories, colors, accent, appearance, defaultPriority, defaultCategory, onSave, onClose,
 }: {
   visible: boolean;
   task: Task | null;
   categories: Category[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   defaultPriority: string;
   defaultCategory: string;
   onSave: (form: Partial<Task>) => void;
@@ -639,10 +645,10 @@ function TaskModal({
     onSave({ title: title.trim(), dueDate, dueTime, priority, category, notes });
   };
 
-  const ms = modalStyles(colors, accent);
+  const ms = modalStyles(colors, accent, appearance);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={ms.container}>
         <View style={ms.header}>
           <TouchableOpacity onPress={onClose}>
@@ -728,8 +734,8 @@ function TaskModal({
 
 // ─── styles ──────────────────────────────────────────────────────────────────
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
     subtitle: { fontSize: 13, color: colors.textSecondary },
@@ -765,8 +771,8 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
   });
 }
 
-function rescheduleStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function rescheduleStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     title: { fontSize: 17, fontWeight: '600', color: colors.text },
@@ -792,8 +798,8 @@ function rescheduleStyles(colors: ReturnType<typeof useAppTheme>['colors'], acce
   });
 }
 
-function modalStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function modalStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
