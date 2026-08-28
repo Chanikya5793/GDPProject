@@ -9,6 +9,7 @@ import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 import { getTasks, toggleTask, createTask } from '@/api/tasks';
 import { getReminders, createReminder } from '@/api/reminders';
 import { PlannerRecordId, Task, Reminder } from '@/types';
@@ -128,7 +129,8 @@ function ChartLegend({ data }: { data: { label: string; value: number; color: st
 export default function DashboardScreen() {
   const { user } = useAuth();
   const { settings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
+  const styles = makeStyles(appearance);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -160,7 +162,7 @@ export default function DashboardScreen() {
   };
 
   const toggleStatExpand = (key: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (!appearance.reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedStat(prev => prev === key ? null : key);
   };
 
@@ -328,7 +330,7 @@ export default function DashboardScreen() {
                   task={task}
                   onToggle={handleToggle}
                   colors={colors}
-                  accent={accent}
+                  accent={accent} appearance={appearance}
                   showDate
                   isLast={i === Math.min(stat.items.length, 5) - 1}
                 />
@@ -375,7 +377,7 @@ export default function DashboardScreen() {
                 task={item as Task}
                 onToggle={handleToggle}
                 colors={colors}
-                accent={accent}
+                accent={accent} appearance={appearance}
                 showDate
                 isLast={i === Math.min(timeline.length, 6) - 1}
               />
@@ -384,7 +386,7 @@ export default function DashboardScreen() {
                 key={`r-${item.id}`}
                 reminder={item as Reminder}
                 colors={colors}
-                accent={accent}
+                accent={accent} appearance={appearance}
                 showDate
                 isLast={i === Math.min(timeline.length, 6) - 1}
               />
@@ -439,14 +441,16 @@ export default function DashboardScreen() {
   );
 }
 
-function TaskRow({ task, onToggle, colors, accent, showDate = false, isLast = false }: {
+function TaskRow({ task, onToggle, colors, accent, appearance, showDate = false, isLast = false }: {
   task: Task;
   onToggle: (id: PlannerRecordId) => void;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   showDate?: boolean;
   isLast?: boolean;
 }) {
+  const rowStyles = makeRowStyles(appearance);
   const isOverdue = !task.completed && task.dueDate < localDateStr();
   const ep = getEffectivePriority(task);
   const priorityColors = {
@@ -495,13 +499,15 @@ function TaskRow({ task, onToggle, colors, accent, showDate = false, isLast = fa
   );
 }
 
-function ReminderRow({ reminder, colors, accent, showDate = false, isLast = false }: {
+function ReminderRow({ reminder, colors, accent, appearance, showDate = false, isLast = false }: {
   reminder: Reminder;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   showDate?: boolean;
   isLast?: boolean;
 }) {
+  const rowStyles = makeRowStyles(appearance);
   return (
     <View style={[rowStyles.row, !isLast && { borderBottomWidth: 1, borderBottomColor: colors.borderLight }]}>
       <View style={[rowStyles.bellWrap, { backgroundColor: accent.surface }]}>
@@ -518,7 +524,8 @@ function ReminderRow({ reminder, colors, accent, showDate = false, isLast = fals
   );
 }
 
-const rowStyles = StyleSheet.create({
+function makeRowStyles(appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, gap: 12 },
   check: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   bellWrap: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
@@ -528,9 +535,11 @@ const rowStyles = StyleSheet.create({
   metaText: { fontSize: 12 },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   badgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
-});
+  });
+}
 
-const styles = StyleSheet.create({
+function makeStyles(appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
   content: { padding: PADDING, paddingTop: Platform.OS === 'ios' ? 8 : 20 },
@@ -561,4 +570,5 @@ const styles = StyleSheet.create({
   quickStatNum: { fontSize: 20, fontWeight: '700' },
   quickStatLabel: { fontSize: 11, marginTop: 2 },
   quickStatDivider: { width: 1, marginVertical: 4 },
-});
+  });
+}

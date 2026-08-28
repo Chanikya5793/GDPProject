@@ -7,6 +7,7 @@ import { clearLogs, getLogs } from '@/api/logs';
 import { revertLog } from '@/api/activity';
 import { canRevert, describeRevert } from '@/utils/activityRevert';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 import { LogEntry } from '@/types';
 
 // Mirrors the web Activity Log (src/components/ActivityLog.jsx): a session-grouped
@@ -34,10 +35,10 @@ function relativeTime(iso: string): string {
 }
 
 export default function ActivityLogSection() {
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [expanded, setExpanded] = useState(false);
-  const s = makeStyles(colors);
+  const s = makeStyles(colors, appearance);
 
   const reload = useCallback(() => {
     getLogs().then(setLogs).catch(() => setLogs([]));
@@ -142,8 +143,8 @@ export default function ActivityLogSection() {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     section: {
       backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 16,
     },
