@@ -618,6 +618,7 @@ function TaskModal({
 }) {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [category, setCategory] = useState('Homework');
   const [notes, setNotes] = useState('');
@@ -626,6 +627,7 @@ function TaskModal({
     if (visible) {
       setTitle(task?.title || '');
       setDueDate(task?.dueDate || localDateStr());
+      setDueTime(task?.dueTime || '');
       setPriority((task?.priority || defaultPriority) as Task['priority']);
       setCategory(task?.category || defaultCategory);
       setNotes(task?.notes || '');
@@ -634,7 +636,7 @@ function TaskModal({
 
   const handleSubmit = () => {
     if (!title.trim()) return;
-    onSave({ title: title.trim(), dueDate, priority, category, notes });
+    onSave({ title: title.trim(), dueDate, dueTime, priority, category, notes });
   };
 
   const ms = modalStyles(colors, accent);
@@ -669,6 +671,15 @@ function TaskModal({
             value={dueDate}
             onChangeText={setDueDate}
             placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={ms.label}>Due Time</Text>
+          <TextInput
+            style={ms.input}
+            value={dueTime}
+            onChangeText={setDueTime}
+            placeholder="HH:MM (24h), optional"
             placeholderTextColor={colors.textMuted}
           />
 
