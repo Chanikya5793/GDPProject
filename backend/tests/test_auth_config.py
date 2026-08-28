@@ -15,11 +15,30 @@ def test_bearer_token_parsing():
         bearer_token("Basic abc")
 
 
+def settings(**overrides):
+    base = dict(
+        google_cloud_project="p", firebase_project_id="p",
+        kms_key_name="projects/p/locations/us/keyRings/r/cryptoKeys/k",
+        mcp_session_secret_resource="projects/p/secrets/mcp/versions/1",
+    )
+    return Settings(**{**base, **overrides})
+
+
 def test_kms_resource_contract():
     with pytest.raises(ValidationError):
-        Settings(
-            google_cloud_project="p", firebase_project_id="p", kms_key_name="not-a-resource"
-        )
+        settings(kms_key_name="not-a-resource")
+
+
+def test_session_secret_is_required_at_startup():
+    # The production container signs MCP sessions and audit entries with this.
+    # Missing, it cannot be built at all, and every authenticated request
+    # answers 503 while the service still reports healthy — so refuse to boot.
+    with pytest.raises(ValidationError):
+        settings(mcp_session_secret_resource="")
+
+
+def test_a_complete_configuration_validates():
+    assert settings().mcp_session_secret_resource.endswith("/versions/1")
 
 
 class SecretClient:
