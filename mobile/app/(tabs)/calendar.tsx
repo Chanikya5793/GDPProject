@@ -11,14 +11,17 @@ import { createStyles } from '@/theme/createStyles';
 import { modalAnimation } from '@/theme/appearance';
 import { getTasks, toggleTask } from '@/api/tasks';
 import { getReminders } from '@/api/reminders';
-import { PlannerRecordId, Task, Reminder } from '@/types';
+import { PlannerRecordId, Reminder, Task } from '@/types';
+import {
+  ALL_CATEGORIES, buildItemsByDate, CalendarFilter, calendarCategories, CalItem,
+  DEFAULT_FILTER, isFiltered, reconcileCategory,
+} from '@/utils/calendarFilter';
 import { localDateStr } from '@/utils/schedule';
 import {
   allDayItems, CALENDAR_VIEWS, CalendarView, dayHeaders, formatHour, formatTime,
   getNavTitle, getViewDates, HOURS, itemsInHour, minutesIntoDay, monthCells, stepCursor,
 } from '@/utils/calendarView';
 
-type CalItem = (Task & { _type: 'task' }) | (Reminder & { _type: 'reminder' });
 
 const VIEW_ICONS: Record<CalendarView, keyof typeof Ionicons.glyphMap> = {
   day: 'today-outline',
@@ -42,6 +45,8 @@ export default function CalendarScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<CalendarView>('month');
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
+  const [filter, setFilter] = useState<CalendarFilter>(DEFAULT_FILTER);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const todayStr = localDateStr();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -87,18 +92,19 @@ export default function CalendarScreen() {
     setMonth(d.getMonth());
   };
 
-  const itemsByDate = useMemo(() => {
-    const map: Record<string, CalItem[]> = {};
-    for (const t of tasks) {
-      if (!t.dueDate) continue;
-      (map[t.dueDate] ||= []).push({ ...t, _type: 'task' });
-    }
-    for (const r of reminders) {
-      if (!r.date) continue;
-      (map[r.date] ||= []).push({ ...r, _type: 'reminder' });
-    }
-    return map;
-  }, [tasks, reminders]);
+  const categories = useMemo(() => calendarCategories(tasks), [tasks]);
+
+  // A selected category can vanish while it is selected — the last task in it
+  // gets deleted or recategorised. Without this the calendar would sit empty
+  // with no visible cause.
+  useEffect(() => {
+    setFilter(current => reconcileCategory(current, categories));
+  }, [categories]);
+
+  const itemsByDate = useMemo(
+    () => buildItemsByDate(tasks, reminders, filter),
+    [tasks, reminders, filter],
+  );
 
   const navTitle = getNavTitle(view, selectedDate, year, month, settings.weekStartsOn);
   const viewDates = getViewDates(selectedDate, view, settings.weekStartsOn);
@@ -127,6 +133,75 @@ export default function CalendarScreen() {
           <Ionicons name={VIEW_ICONS[view]} size={16} color={colors.text} />
           <Ionicons name="chevron-down" size={12} color={colors.textMuted} />
         </TouchableOpacity>
+      </View>
+
+      <View style={s.filterRow}>
+        <TouchableOpacity
+          style={[s.legend, { backgroundColor: colors.surfaceVariant }]}
+          onPress={() => setFilter(f => ({ ...f, showTasks: !f.showTasks }))}
+          accessibilityRole="button"
+          accessibilityLabel={filter.showTasks ? 'Hide tasks' : 'Show tasks'}
+        >
+          <Ionicons
+            name={filter.showTasks ? 'checkmark-circle' : 'checkmark-circle-outline'}
+            size={13}
+            color={filter.showTasks ? accent.primary : colors.textMuted}
+          />
+          <Text style={[s.legendText, { color: filter.showTasks ? accent.primary : colors.textMuted }]}>
+            Tasks
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.legend, { backgroundColor: colors.surfaceVariant }]}
+          onPress={() => setFilter(f => ({ ...f, showReminders: !f.showReminders }))}
+          accessibilityRole="button"
+          accessibilityLabel={filter.showReminders ? 'Hide reminders' : 'Show reminders'}
+        >
+          <Ionicons
+            name={filter.showReminders ? 'notifications' : 'notifications-outline'}
+            size={13}
+            color={filter.showReminders ? colors.warning : colors.textMuted}
+          />
+          <Text style={[s.legendText, { color: filter.showReminders ? colors.warning : colors.textMuted }]}>
+            Reminders
+          </Text>
+        </TouchableOpacity>
+
+        {categories.length > 0 && (
+          <TouchableOpacity
+            style={[s.legend, {
+              backgroundColor: colors.surfaceVariant,
+              borderWidth: filter.category === ALL_CATEGORIES ? 0 : 1,
+              borderColor: accent.primary,
+            }]}
+            onPress={() => setCategoryPickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Filter tasks by category"
+          >
+            <Text
+              numberOfLines={1}
+              style={[s.legendText, {
+                color: filter.category === ALL_CATEGORIES ? colors.textMuted : accent.primary,
+              }]}
+            >
+              {filter.category === ALL_CATEGORIES ? 'All categories' : filter.category}
+            </Text>
+            <Ionicons name="chevron-down" size={11} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+        {isFiltered(filter) && (
+          <TouchableOpacity
+            style={s.clearFilter}
+            onPress={() => setFilter(DEFAULT_FILTER)}
+            accessibilityRole="button"
+            accessibilityLabel="Clear calendar filters"
+            // The icon alone is well under the 44pt minimum target.
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="close-circle" size={15} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {view === 'month' ? (
@@ -161,6 +236,40 @@ export default function CalendarScreen() {
           appearance={appearance}
         />
       )}
+
+      <Modal
+        visible={categoryPickerOpen}
+        transparent
+        animationType={modalAnimation(appearance.reducedMotion, 'fade')}
+        onRequestClose={() => setCategoryPickerOpen(false)}
+      >
+        <TouchableOpacity style={s.pickerBackdrop} activeOpacity={1} onPress={() => setCategoryPickerOpen(false)}>
+          <View style={[s.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {[ALL_CATEGORIES, ...categories].map(option => {
+              const active = option === filter.category;
+              return (
+                <TouchableOpacity
+                  key={option}
+                  style={s.pickerRow}
+                  onPress={() => {
+                    setFilter(f => ({ ...f, category: option }));
+                    setCategoryPickerOpen(false);
+                  }}
+                >
+                  <Ionicons
+                    name={active ? 'checkmark' : 'pricetag-outline'}
+                    size={16}
+                    color={active ? accent.primary : colors.textMuted}
+                  />
+                  <Text style={[s.pickerText, active && { color: accent.primary, fontWeight: '700' }]}>
+                    {option === ALL_CATEGORIES ? 'All categories' : option}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal visible={viewPickerOpen} transparent animationType={modalAnimation(appearance.reducedMotion, 'fade')} onRequestClose={() => setViewPickerOpen(false)}>
         <TouchableOpacity style={s.pickerBackdrop} activeOpacity={1} onPress={() => setViewPickerOpen(false)}>
@@ -506,6 +615,17 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     navArrow: { padding: 4 },
     navTitle: { fontSize: 15, fontWeight: '600', color: colors.text, flex: 1, textAlign: 'center' },
     viewBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
+
+    filterRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      paddingHorizontal: 12, paddingBottom: 8,
+    },
+    legend: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, flexShrink: 1,
+    },
+    legendText: { fontSize: 12, fontWeight: '600' },
+    clearFilter: { padding: 3 },
 
     pickerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 100, paddingRight: 12 },
     picker: { borderRadius: 12, borderWidth: 1, paddingVertical: 6, minWidth: 176 },
