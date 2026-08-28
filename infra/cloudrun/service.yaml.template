@@ -37,8 +37,10 @@ spec:
               value: ${GDP_KMS_KEY_NAME}
             - name: PLANNER_MCP_SESSION_SECRET_RESOURCE
               value: ${GDP_MCP_SECRET_RESOURCE}
+            # Quoted: the value is a JSON array, which YAML would otherwise
+            # read as a sequence, and Cloud Run rejects a non-string env value.
             - name: PLANNER_ALLOWED_ORIGINS
-              value: ${GDP_ALLOWED_ORIGINS}
+              value: '${GDP_ALLOWED_ORIGINS}'
             - name: PLANNER_ANSWER_PROVIDER
               value: muse
             - name: PLANNER_MUSE_MODEL
