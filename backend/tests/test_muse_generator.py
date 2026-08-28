@@ -225,6 +225,7 @@ def settings(**overrides):
     base = dict(
         google_cloud_project="p", firebase_project_id="f",
         kms_key_name="projects/p/locations/us/keyRings/r/cryptoKeys/k",
+        mcp_session_secret_resource="projects/p/secrets/mcp/versions/1",
     )
     return Settings(**{**base, **overrides})
 

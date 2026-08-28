@@ -41,6 +41,16 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def require_session_secret(self) -> "Settings":
+        # build_production_container signs MCP sessions and audit entries with
+        # this, unconditionally. Left empty, the container cannot be built and
+        # every authenticated request answers 503 with no hint as to why, while
+        # the service itself reports healthy. Fail on boot, as the Muse key does.
+        if not self.mcp_session_secret_resource:
+            raise ValueError("mcp_session_secret_resource is required")
+        return self
+
     @field_validator("kms_key_name")
     @classmethod
     def validate_kms_key(cls, value: str) -> str:
