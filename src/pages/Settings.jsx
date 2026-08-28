@@ -79,7 +79,11 @@ export default function Settings() {
     getTrash(user.id).then(setTrash)
   }, [user.id])
 
+  // These settings live server-side, so with no backend there is nothing to
+  // read and nothing the controls could change. Saying so beats rendering an
+  // error over switches that cannot save and delete buttons that cannot delete.
   useEffect(() => {
+    if (!apiConfigured()) { setPrivacyStatus('unavailable'); return }
     apiFetch('/v1/privacy')
       .then(value => { setPrivacy(value); setPrivacyStatus('ready') })
       .catch(error => { setPrivacyError(error.message); setPrivacyStatus('error') })
@@ -330,6 +334,14 @@ export default function Settings() {
               {privacyStatus === 'saving' && <span className="settings-saved">Saving…</span>}
             </div>
 
+            {privacyStatus === 'unavailable' ? (
+              <p className="settings-row-desc">
+                These settings live with the planner backend, which this build is not
+                connected to. Nothing is indexed and no record text is sent anywhere —
+                your tasks, reminders, and notes stay in this browser.
+              </p>
+            ) : (
+              <>
             <div className="settings-row">
               <div className="settings-row-info">
                 <span className="settings-row-label">AI Copilot</span>
@@ -415,6 +427,8 @@ export default function Settings() {
                 </span>
               )}
             </div>
+              </>
+            )}
           </section>
 
           {/* ═══ Appearance ═══ */}
