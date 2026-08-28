@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from app.ai import GeminiAnswerGenerator, MuseAnswerGenerator
+from app.ai import GeminiAnswerGenerator, MuseAnswerGenerator, strict_json_schema
 from app.config import Settings
 from app.runtime import build_answer_generator
 
@@ -67,6 +67,93 @@ class TestRequestShape:
         assert fmt["json_schema"]["name"] == "GeneratedAnswer"
         # The schema must forbid extra keys, otherwise strict validation is meaningless.
         assert fmt["json_schema"]["schema"]["additionalProperties"] is False
+
+    def test_every_property_is_listed_as_required(self):
+        # Meta refuses a schema whose `required` omits any key in `properties`
+        # ("Missing 'citation_ids'"), and pydantic omits every field that has a
+        # default. Without this the copilot gets HTTP 400 on every question.
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ANSWER)}}]})
+
+        muse(handler).generate("prompt")
+
+        schema = seen["body"]["response_format"]["json_schema"]["schema"]
+        assert set(schema["required"]) == set(schema["properties"])
+        assert "citation_ids" in schema["required"]
+        assert "action" in schema["required"]
+
+    def test_nested_definitions_are_required_too(self):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ANSWER)}}]})
+
+        muse(handler).generate("prompt")
+
+        # GeneratedAction is reached through $defs; strict mode checks it as well.
+        defs = seen["body"]["response_format"]["json_schema"]["schema"].get("$defs", {})
+        for name, definition in defs.items():
+            if definition.get("type") == "object" and "properties" in definition:
+                assert set(definition["required"]) == set(definition["properties"]), name
+
+
+class TestStrictJsonSchema:
+    def test_adds_missing_properties_to_required(self):
+        fixed = strict_json_schema({
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+            "required": ["a"],
+        })
+        assert fixed["required"] == ["a", "b"]
+
+    def test_leaves_a_complete_required_list_alone(self):
+        fixed = strict_json_schema({
+            "type": "object",
+            "properties": {"a": {"type": "string"}},
+            "required": ["a"],
+        })
+        assert fixed["required"] == ["a"]
+
+    def test_adds_required_when_it_is_absent_entirely(self):
+        fixed = strict_json_schema({"type": "object", "properties": {"a": {"type": "string"}}})
+        assert fixed["required"] == ["a"]
+
+    def test_recurses_into_nested_objects_and_lists(self):
+        fixed = strict_json_schema({
+            "type": "object",
+            "properties": {
+                "outer": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string"}, "y": {"type": "string"}},
+                    "required": ["x"],
+                },
+            },
+            "anyOf": [
+                {"type": "object", "properties": {"z": {"type": "string"}}},
+            ],
+        })
+        assert fixed["properties"]["outer"]["required"] == ["x", "y"]
+        assert fixed["anyOf"][0]["required"] == ["z"]
+
+    def test_ignores_objects_without_properties(self):
+        # A bare {"type": "object"} is a legal free-form value; inventing an
+        # empty required list for it would change its meaning.
+        assert strict_json_schema({"type": "object"}) == {"type": "object"}
+
+    def test_leaves_non_object_nodes_untouched(self):
+        assert strict_json_schema({"type": "string", "maxLength": 10}) == {
+            "type": "string", "maxLength": 10,
+        }
+        assert strict_json_schema("plain") == "plain"
+
+    def test_does_not_mutate_the_input(self):
+        original = {"type": "object", "properties": {"a": {}, "b": {}}, "required": ["a"]}
+        strict_json_schema(original)
+        assert original["required"] == ["a"]
 
     def test_sends_the_prompt_as_user_content_under_a_system_instruction(self):
         seen = {}
