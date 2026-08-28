@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { apiConfigured, apiRequest, idempotencyKey } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 
 interface Citation {
   citation_id: string;
@@ -41,8 +42,8 @@ interface Message extends Partial<ChatResponse> {
 }
 
 export default function CopilotScreen() {
-  const { colors, accent } = useAppTheme();
-  const styles = makeStyles(colors, accent);
+  const { colors, accent, appearance } = useAppTheme();
+  const styles = makeStyles(colors, accent, appearance);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([{
@@ -169,8 +170,8 @@ export default function CopilotScreen() {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     messages: { flex: 1 }, messagesContent: { padding: 16, gap: 12 },
     message: { maxWidth: '92%', borderRadius: 14, padding: 12, gap: 8 },

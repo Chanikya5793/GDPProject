@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { apiConfigured, apiRequest } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 import {
   AiInfo, AiPrivacy, defaultPrivacy, INDEXABLE_TYPES, IndexableType, privacySummary,
   providerNotice, RETENTION_CHOICES, setAiEnabled, setRetainChat, setRetentionDays,
@@ -23,12 +24,12 @@ import {
 type Status = 'loading' | 'ready' | 'saving' | 'error' | 'unavailable';
 
 export default function AiPrivacySection() {
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [privacy, setPrivacy] = useState<AiPrivacy>(defaultPrivacy);
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState('');
   const [aiInfo, setAiInfo] = useState<AiInfo | null>(null);
-  const s = makeStyles(colors);
+  const s = makeStyles(colors, appearance);
 
   useEffect(() => {
     if (!apiConfigured()) { setStatus('unavailable'); return; }
@@ -89,7 +90,7 @@ export default function AiPrivacySection() {
   if (status === 'unavailable') {
     return (
       <View style={s.section}>
-        <Header colors={colors} />
+        <Header colors={colors} appearance={appearance} />
         <Text style={s.blurb}>
           These settings live with the planner backend, which this build is not
           connected to. Nothing is indexed and no record text leaves this device —
@@ -101,7 +102,7 @@ export default function AiPrivacySection() {
 
   return (
     <View style={s.section}>
-      <Header colors={colors} trailing={status === 'saving' ? 'Saving…' : undefined} />
+      <Header colors={colors} appearance={appearance} trailing={status === 'saving' ? 'Saving…' : undefined} />
       <Text style={s.blurb}>{privacySummary(privacy)}</Text>
 
       <View style={s.row}>
@@ -233,11 +234,12 @@ export default function AiPrivacySection() {
   );
 }
 
-function Header({ colors, trailing }: {
+function Header({ colors, appearance, trailing }: {
   colors: ReturnType<typeof useAppTheme>['colors'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   trailing?: string;
 }) {
-  const s = makeStyles(colors);
+  const s = makeStyles(colors, appearance);
   return (
     <View style={s.sectionHeader}>
       <Ionicons name="shield-checkmark-outline" size={18} color={colors.text} />
@@ -247,8 +249,8 @@ function Header({ colors, trailing }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     section: {
       backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 16,
     },

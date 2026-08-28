@@ -8,7 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 import { migrateLegacyStorage } from '@/api/storage';
+import { Settings } from '@/types';
 import ActivityLogSection from '@/components/ActivityLogSection';
 import AiPrivacySection from '@/components/AiPrivacySection';
 import RecycleBinSection from '@/components/RecycleBinSection';
@@ -19,6 +21,13 @@ const ACCENT_COLORS = [
   { id: 'blue' as const, label: 'Blue', color: '#3B82F6' },
   { id: 'purple' as const, label: 'Purple', color: '#7C3AED' },
   { id: 'amber' as const, label: 'Amber', color: '#D97706' },
+];
+
+/** Matches web's Font Size select. */
+const FONT_SIZES: { value: Settings['fontSize']; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'large', label: 'Large' },
+  { value: 'larger', label: 'Larger' },
 ];
 
 /** Copilot capacity choices. `null` defers to the deployment default. */
@@ -35,7 +44,7 @@ type PlannerSettings = { max_daily_minutes: number | null };
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuth();
   const { settings, updateSetting, resetSettings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -97,7 +106,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
   const profileChanged = name !== user?.name || email !== user?.email;
 
   const initials = (user?.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -165,6 +174,41 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <Text style={s.rowLabel}>Font Size</Text>
+        <View style={s.segmentRow}>
+          {FONT_SIZES.map(option => (
+            <TouchableOpacity
+              key={option.value}
+              style={[s.segment, settings.fontSize === option.value && { backgroundColor: accent.primary }]}
+              onPress={() => updateSetting('fontSize', option.value)}
+              accessibilityRole="button"
+              accessibilityLabel={`${option.label} text`}
+            >
+              <Text style={[s.segmentText, settings.fontSize === option.value && { color: '#FFF' }]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <SettingsRow label="Compact Mode" colors={colors}>
+          <Switch
+            value={settings.compactMode}
+            onValueChange={v => updateSetting('compactMode', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.compactMode ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
+
+        <SettingsRow label="Reduced Motion" colors={colors}>
+          <Switch
+            value={settings.reducedMotion}
+            onValueChange={v => updateSetting('reducedMotion', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.reducedMotion ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
       </View>
 
       {/* Planner Preferences */}
@@ -324,8 +368,8 @@ function SettingsRow({ label, colors, children }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 20 },
     section: { backgroundColor: colors.card, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border },
