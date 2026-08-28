@@ -106,6 +106,30 @@ class GeminiAnswerGenerator:
 
 
 
+def strict_json_schema(node: Any) -> Any:
+    """Make a pydantic JSON schema acceptable to strict structured output.
+
+    Meta rejects a schema whose ``required`` does not list every key in
+    ``properties``: "'required' is required to be supplied and to be an array
+    including every key in properties." Pydantic leaves out any field that has
+    a default, so GeneratedAnswer's own schema is refused with HTTP 400 and the
+    copilot can never answer.
+
+    Listing every property loses nothing, because optional fields already carry
+    a nullable type in the generated schema, so the model can still return null
+    for them. Applied recursively so nested $defs are covered too.
+    """
+    if isinstance(node, dict):
+        fixed = {key: strict_json_schema(value) for key, value in node.items()}
+        properties = fixed.get("properties")
+        if fixed.get("type") == "object" and isinstance(properties, dict):
+            fixed["required"] = list(properties)
+        return fixed
+    if isinstance(node, list):
+        return [strict_json_schema(item) for item in node]
+    return node
+
+
 class MuseAnswerGenerator:
     """Meta Muse Spark via the OpenAI-compatible Chat Completions protocol.
 
@@ -141,7 +165,7 @@ class MuseAnswerGenerator:
     def _schema() -> Dict[str, Any]:
         return {
             "name": "GeneratedAnswer",
-            "schema": GeneratedAnswer.model_json_schema(),
+            "schema": strict_json_schema(GeneratedAnswer.model_json_schema()),
             "strict": True,
         }
 
