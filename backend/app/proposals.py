@@ -66,18 +66,32 @@ class ProposalService:
         record_id = action.record_id
 
         if action.operation == ProposalOperation.create:
-            if action.entity_type != EntityType.task or not action.title:
+            if not action.title:
                 return None
             record_id = generated_record_id()
             due_date, embedded_time = split_generated_datetime(action.due_date)
-            after = TaskContent(
-                title=action.title,
-                due_date=due_date,
-                # A time inside the date field is still the time they asked for.
-                due_time=clean_generated_time(action.due_time) or embedded_time,
-                priority=action.priority or "medium",
-                notes=action.notes or "",
-            )
+            # A time inside the date field is still the time they asked for.
+            at_time = clean_generated_time(action.due_time) or embedded_time
+            if action.entity_type == EntityType.task:
+                after = TaskContent(
+                    title=action.title, due_date=due_date, due_time=at_time,
+                    priority=action.priority or "medium", notes=action.notes or "",
+                )
+            elif action.entity_type == EntityType.reminder:
+                # A reminder is meaningless without a day to fire on, so refuse
+                # rather than invent one; the model is told to ask instead.
+                if not due_date:
+                    return None
+                after = ReminderContent(
+                    title=action.title, date=due_date, time=at_time,
+                    notes=action.notes or "",
+                )
+            elif action.entity_type == EntityType.note:
+                after = NoteContent(
+                    title=action.title, body=action.body or action.notes or "",
+                )
+            else:
+                return None
         else:
             if not record_id:
                 return None

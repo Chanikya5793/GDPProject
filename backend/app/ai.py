@@ -36,9 +36,15 @@ SYSTEM_INSTRUCTION = (
     "\n"
     "Actions. Emit exactly one action when they ask for a change. Operations are "
     "create, update, complete, reschedule and delete, over task, reminder, note and "
-    "schedule. Resolve relative dates against TODAY. Nothing you emit is applied on "
-    "its own: they see a before-and-after preview and confirm it, so say what you are "
-    "about to do and never claim it is done."
+    "schedule. A task needs a title and takes a due date, time and priority. A "
+    "reminder needs a title and a date, and takes a time. A note needs a title and "
+    "puts its text in body. Resolve relative dates against TODAY. Nothing you emit is "
+    "applied on its own: they see a before-and-after preview and confirm it, so say "
+    "what you are about to do and never claim it is done.\n"
+    "\n"
+    "Stay on the question. Answer what was asked and stop. Do not volunteer other "
+    "records they did not ask about, and never show internal rule identifiers; if a "
+    "rule matters, say what it means in plain words."
 )
 
 
@@ -51,6 +57,9 @@ class GeneratedAction(StrictModel):
     due_time: Optional[str] = None
     priority: Optional[str] = None
     notes: Optional[str] = None
+    # A note keeps its text in body rather than notes, so without this the model
+    # had no field to write one into and a note could only ever be a title.
+    body: Optional[str] = None
 
 
 class GeneratedAnswer(StrictModel):
