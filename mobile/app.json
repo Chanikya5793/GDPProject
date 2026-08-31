@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nwmissouri.studentplanner",
-      "buildNumber": "1",
+      "buildNumber": "3",
       "infoPlist": {
         "CFBundleDisplayName": "NW Planner",
         "ITSAppUsesNonExemptEncryption": false
