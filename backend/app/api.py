@@ -275,7 +275,9 @@ def create_app(container: Container | None = None) -> FastAPI:
             )
             raise
         try:
-            answer, citations, disclosure, generated = services.copilot.answer(user.uid, body.message)
+            answer, citations, disclosure, generated = services.copilot.answer(
+                user.uid, body.message, history=body.history,
+            )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         proposals: list[ActionProposal] = []

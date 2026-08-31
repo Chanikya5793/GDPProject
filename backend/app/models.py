@@ -191,10 +191,21 @@ class ActionProposal(StrictModel):
     expires_at: datetime
 
 
+class ChatTurn(StrictModel):
+    """One earlier message in the same conversation."""
+
+    role: Literal["user", "assistant"]
+    text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
+
+
 class ChatRequest(StrictModel):
     message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
     request_id: IdempotencyKey
     timezone: Annotated[str, StringConstraints(min_length=1, max_length=100)] = "UTC"
+    # Sent by the client rather than kept server-side, so a conversation works
+    # without turning on chat retention. Capped because the whole thing is
+    # replayed into the prompt on every turn.
+    history: List[ChatTurn] = Field(default_factory=list, max_length=20)
 
 
 class ChatResponse(StrictModel):
