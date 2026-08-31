@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
+import { DEFAULT_DAILY_TASK_LIMIT } from '../utils/schedule'
 import { getTrash, restoreFromTrash, permanentDelete, emptyTrash } from '../api/trash'
 import { restoreTaskDirect } from '../api/tasks'
 import { restoreReminderDirect } from '../api/reminders'
 import { restoreNoteDirect } from '../api/notes'
-import { getLogs, clearLogs, SESSION_ID } from '../api/logs'
+import ActivityLog from '../components/ActivityLog'
+import { apiConfigured, apiFetch } from '../api/client'
 import {
   User, Palette, CalendarDays, Database, Recycle,
   Sun, Moon, Monitor, RotateCcw, Download,
-  Trash2, AlertTriangle, CheckSquare, Bell, FileText,
-  ScrollText, Clock, Tag,
+  Trash2, AlertTriangle, CheckSquare, Bell, FileText, ShieldCheck, Brain,
 } from 'lucide-react'
 import '../css/Settings.css'
 
@@ -22,42 +23,6 @@ const ACCENT_COLORS = [
 ]
 
 const CATEGORIES = ['Homework', 'Exam', 'Project', 'Reading', 'Lab', 'Other']
-
-const LOG_ENTITY_META = {
-  task: { icon: CheckSquare, label: 'Task', color: '#D97706' },
-  reminder: { icon: Bell, label: 'Reminder', color: '#3B82F6' },
-  note: { icon: FileText, label: 'Note', color: '#7C3AED' },
-  tag: { icon: Tag, label: 'Tag', color: '#0AA56F' },
-}
-
-const LOG_ACTION_COLORS = {
-  created: '#0AA56F',
-  updated: '#3B82F6',
-  deleted: '#DC2626',
-  completed: '#006A4E',
-  reopened: '#D97706',
-}
-
-function groupLogsBySession(logs) {
-  const groups = []
-  let current = null
-  for (const log of logs) {
-    if (!current || current.sessionId !== log.sessionId) {
-      current = { sessionId: log.sessionId, sessionStart: log.sessionStart, entries: [log] }
-      groups.push(current)
-    } else {
-      current.entries.push(log)
-    }
-  }
-  return groups
-}
-
-function formatSessionLabel(startIso, isCurrent) {
-  const d = new Date(startIso)
-  const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  return `${isCurrent ? 'This session' : 'Session'} · ${dateStr}, ${timeStr}`
-}
 
 /* ─── Toggle Switch ─── */
 
@@ -92,25 +57,115 @@ export default function Settings() {
   const [trash, setTrash] = useState([])
   const [trashFilter, setTrashFilter] = useState('all')
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
-
-  /* Activity log */
-  const [logs, setLogs] = useState([])
-  const [confirmClearLogs, setConfirmClearLogs] = useState(false)
+  const [privacy, setPrivacy] = useState({
+    ai_enabled: false,
+    indexed_entity_types: [],
+    index_attachments: false,
+    retain_chat: false,
+    chat_retention_days: 0,
+  })
+  const [privacyStatus, setPrivacyStatus] = useState('loading')
+  const [privacyError, setPrivacyError] = useState('')
+  // Copilot daily capacity lives server-side, so it is only offered when a
+  // backend is actually configured. The offline demo build has none.
+  const [plannerSettings, setPlannerSettings] = useState({ max_daily_minutes: null })
+  const [plannerStatus, setPlannerStatus] = useState('loading')
+  const [plannerError, setPlannerError] = useState('')
+  // Who actually processes approved records. Read from the server so this copy
+  // cannot drift from the deployed provider.
+  const [aiInfo, setAiInfo] = useState(null)
 
   useEffect(() => {
     getTrash(user.id).then(setTrash)
-    getLogs().then(setLogs)
   }, [user.id])
 
-  const handleClearLogs = () => {
-    if (!confirmClearLogs) {
-      setConfirmClearLogs(true)
-      setTimeout(() => setConfirmClearLogs(false), 3000)
-      return
+  // These settings live server-side, so with no backend there is nothing to
+  // read and nothing the controls could change. Saying so beats rendering an
+  // error over switches that cannot save and delete buttons that cannot delete.
+  useEffect(() => {
+    if (!apiConfigured()) { setPrivacyStatus('unavailable'); return }
+    apiFetch('/v1/privacy')
+      .then(value => { setPrivacy(value); setPrivacyStatus('ready') })
+      .catch(error => { setPrivacyError(error.message); setPrivacyStatus('error') })
+  }, [])
+
+  useEffect(() => {
+    if (!apiConfigured()) return
+    apiFetch('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null))
+  }, [])
+
+  useEffect(() => {
+    if (!apiConfigured()) { setPlannerStatus('unavailable'); return }
+    apiFetch('/v1/planner-settings')
+      .then(value => { setPlannerSettings(value); setPlannerStatus('ready') })
+      .catch(error => { setPlannerError(error.message); setPlannerStatus('error') })
+  }, [])
+
+  const updatePlannerSettings = async updates => {
+    const next = { ...plannerSettings, ...updates }
+    setPlannerSettings(next)
+    setPlannerStatus('saving')
+    setPlannerError('')
+    try {
+      const saved = await apiFetch('/v1/planner-settings', {
+        method: 'PUT', body: JSON.stringify(next),
+      })
+      setPlannerSettings(saved)
+      setPlannerStatus('ready')
+    } catch (error) {
+      setPlannerStatus('error')
+      setPlannerError(error.message)
     }
-    clearLogs()
-    setLogs([])
-    setConfirmClearLogs(false)
+  }
+
+  const updatePrivacy = async updates => {
+    const next = { ...privacy, ...updates }
+    setPrivacy(next)
+    setPrivacyStatus('saving')
+    setPrivacyError('')
+    try {
+      const saved = await apiFetch('/v1/privacy', {
+        method: 'PUT', body: JSON.stringify(next),
+      })
+      setPrivacy(saved)
+      setPrivacyStatus('ready')
+    } catch (error) {
+      setPrivacyStatus('error')
+      setPrivacyError(error.message)
+    }
+  }
+
+  const toggleIndexedType = type => {
+    const selected = privacy.indexed_entity_types.includes(type)
+    updatePrivacy({
+      indexed_entity_types: selected
+        ? privacy.indexed_entity_types.filter(value => value !== type)
+        : [...privacy.indexed_entity_types, type],
+    })
+  }
+
+  const deleteAiIndex = async () => {
+    setPrivacyStatus('saving')
+    setPrivacyError('')
+    try {
+      await apiFetch('/v1/index', { method: 'DELETE' })
+      setPrivacyStatus('ready')
+    } catch (error) {
+      setPrivacyStatus('error')
+      setPrivacyError(error.message)
+    }
+  }
+
+  const deleteCopilotChats = async () => {
+    setPrivacyStatus('saving')
+    setPrivacyError('')
+    try {
+      await apiFetch('/v1/chats', { method: 'DELETE' })
+      setPrivacyStatus('ready')
+    } catch (error) {
+      setPrivacyStatus('error')
+      setPrivacyError(error.message)
+    }
   }
 
   const handleRestore = async (trashId) => {
@@ -271,6 +326,111 @@ export default function Settings() {
             </div>
           </section>
 
+          {/* ═══ AI Privacy ═══ */}
+          <section className="settings-section">
+            <div className="settings-section-header">
+              <ShieldCheck size={18} />
+              <h2>AI Privacy & Indexing</h2>
+              {privacyStatus === 'saving' && <span className="settings-saved">Saving…</span>}
+            </div>
+
+            {privacyStatus === 'unavailable' ? (
+              <p className="settings-row-desc">
+                These settings live with the planner backend, which this build is not
+                connected to. Nothing is indexed and no record text is sent anywhere —
+                your tasks, reminders, and notes stay in this browser.
+              </p>
+            ) : (
+              <>
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">AI Copilot</span>
+                <span className="settings-row-desc">Complete opt-out. Turning this off also deletes your vector index.</span>
+              </div>
+              <Toggle checked={privacy.ai_enabled}
+                onChange={value => updatePrivacy(value ? { ai_enabled: true } : {
+                  ai_enabled: false, indexed_entity_types: [], index_attachments: false,
+                  retain_chat: false, chat_retention_days: 0,
+                })}
+                label="Enable AI Copilot" />
+            </div>
+
+            <div className="settings-row settings-row-stack">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Indexed record types</span>
+                <span className="settings-row-desc">Only individually approved records from these types can be indexed.</span>
+              </div>
+              <div className="settings-theme-picker">
+                {['task', 'reminder', 'note', 'schedule'].map(type => (
+                  <button key={type}
+                    className={`settings-theme-btn${privacy.indexed_entity_types.includes(type) ? ' active' : ''}`}
+                    onClick={() => toggleIndexedType(type)} disabled={!privacy.ai_enabled}>
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Attachment text</span>
+                <span className="settings-row-desc">Index text only from attachments you approve on the record.</span>
+              </div>
+              <Toggle checked={privacy.index_attachments}
+                onChange={value => updatePrivacy({ index_attachments: value })}
+                label="Index approved attachment text" />
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Retain copilot chats</span>
+                <span className="settings-row-desc">Off by default. Current chats remain in memory only.</span>
+              </div>
+              <Toggle checked={privacy.retain_chat}
+                onChange={value => updatePrivacy({
+                  retain_chat: value, chat_retention_days: value ? 30 : 0,
+                })}
+                label="Retain copilot chats" />
+            </div>
+
+            {privacy.retain_chat && (
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <span className="settings-row-label">Chat retention</span>
+                  <span className="settings-row-desc">Automatically expire server-side chat data.</span>
+                </div>
+                <select className="form-select settings-select" value={privacy.chat_retention_days}
+                  onChange={event => updatePrivacy({ chat_retention_days: Number(event.target.value) })}>
+                  <option value={7}>7 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </div>
+            )}
+
+            {privacyError && <p className="login-error">{privacyError}</p>}
+            <div className="settings-profile-actions">
+              <button className="btn-danger" onClick={deleteAiIndex} disabled={privacyStatus === 'saving'}>
+                <Trash2 size={14} /> Delete my AI index
+              </button>
+              <button className="btn-danger" onClick={deleteCopilotChats} disabled={privacyStatus === 'saving'}>
+                <Trash2 size={14} /> Delete retained chats
+              </button>
+              <span className="settings-row-desc"><Brain size={12} /> Record content is never indexed without approval.</span>
+              {aiInfo && (
+                <span className="settings-row-desc">
+                  <Brain size={12} /> Approved records are processed by{' '}
+                  <strong>{aiInfo.provider}</strong> ({aiInfo.model}).{' '}
+                  {aiInfo.trains_on_prompts
+                    ? 'This provider tier permits your questions and the record text sent with them to be used to train its models.'
+                    : 'Your questions and record text are not used to train the provider\u2019s models.'}
+                </span>
+              )}
+            </div>
+              </>
+            )}
+          </section>
+
           {/* ═══ Appearance ═══ */}
           <section className="settings-section">
             <div className="settings-section-header">
@@ -414,6 +574,60 @@ export default function Settings() {
 
             <div className="settings-row">
               <div className="settings-row-info">
+                <span className="settings-row-label">Auto-Balance Busy Days</span>
+                <span className="settings-row-desc">Automatically pull lower-priority tasks off overloaded days onto earlier free days. Turn this off to review the suggestions yourself instead.</span>
+              </div>
+              <Toggle checked={settings.autoBalance !== false} onChange={v => updateSetting('autoBalance', v)} />
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-label">Maximum Tasks Per Day</span>
+                <span className="settings-row-desc">A day counts as overloaded once it holds more than this many unfinished tasks. Also sets how many stay put when rebalancing.</span>
+              </div>
+              <select
+                className="form-select settings-select"
+                value={settings.dailyTaskLimit ?? DEFAULT_DAILY_TASK_LIMIT}
+                onChange={e => updateSetting('dailyTaskLimit', Number(e.target.value))}
+              >
+                {[1, 2, 3, 4, 5, 6, 8].map(n => (
+                  <option key={n} value={n}>{n} task{n !== 1 ? 's' : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            {plannerStatus !== 'unavailable' && (
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <span className="settings-row-label">Copilot Daily Capacity</span>
+                  <span className="settings-row-desc">
+                    How much task work the AI copilot treats as a full day before calling it
+                    overloaded. Measured in minutes from each task&rsquo;s estimate, so it is a
+                    separate judgement from Maximum Tasks Per Day above, which counts tasks.
+                    {plannerStatus === 'saving' && ' Saving…'}
+                  </span>
+                  {plannerError && <span className="settings-row-desc">{plannerError}</span>}
+                </div>
+                <select
+                  className="form-select settings-select"
+                  value={plannerSettings.max_daily_minutes ?? ''}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onChange={e => updatePlannerSettings({
+                    max_daily_minutes: e.target.value === '' ? null : Number(e.target.value),
+                  })}
+                >
+                  <option value="">Use service default</option>
+                  {[120, 180, 240, 300, 360, 420, 480, 600].map(minutes => (
+                    <option key={minutes} value={minutes}>
+                      {minutes % 60 === 0 ? `${minutes / 60} hours` : `${minutes} minutes`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="settings-row">
+              <div className="settings-row-info">
                 <span className="settings-row-label">Due Date Alerts</span>
                 <span className="settings-row-desc">Flash borders on tasks due today, tomorrow, or overdue — and auto-escalate tasks due within 4 days to urgent styling</span>
               </div>
@@ -508,68 +722,7 @@ export default function Settings() {
           </section>
 
           {/* ═══ Activity Log ═══ */}
-          <section className="settings-section">
-            <div className="settings-section-header">
-              <ScrollText size={18} />
-              <h2>Activity Log</h2>
-              {logs.length > 0 && (
-                <span className="settings-trash-badge">{logs.length}</span>
-              )}
-              {logs.length > 0 && (
-                <button
-                  className={`btn-ghost${confirmClearLogs ? ' confirming' : ''}`}
-                  style={{ marginLeft: 'auto' }}
-                  onClick={handleClearLogs}
-                >
-                  <Trash2 size={13} /> {confirmClearLogs ? 'Confirm clear?' : 'Clear log'}
-                </button>
-              )}
-            </div>
-
-            <div className="settings-info-box" style={{ marginBottom: '16px' }}>
-              <p>A record of changes you make — created, updated, and deleted tasks, reminders, notes, and tags — grouped by session.</p>
-            </div>
-
-            {logs.length === 0 ? (
-              <div className="trash-empty">
-                <ScrollText size={30} />
-                <p>No activity recorded yet</p>
-              </div>
-            ) : (
-              <div className="log-sessions">
-                {groupLogsBySession(logs).map(group => (
-                  <div key={group.sessionId} className="log-session">
-                    <div className="log-session-head">
-                      <Clock size={12} />
-                      <span>{formatSessionLabel(group.sessionStart, group.sessionId === SESSION_ID)}</span>
-                      <span className="log-session-count">{group.entries.length}</span>
-                    </div>
-                    <div className="log-entries">
-                      {group.entries.map(entry => {
-                        const meta = LOG_ENTITY_META[entry.entity] || LOG_ENTITY_META.task
-                        const Icon = meta.icon
-                        return (
-                          <div key={entry.id} className="log-entry">
-                            <span className="log-entry-icon" style={{ color: meta.color }}>
-                              <Icon size={14} />
-                            </span>
-                            <span className="log-entry-action" style={{ color: LOG_ACTION_COLORS[entry.action] || 'var(--muted)' }}>
-                              {entry.action}
-                            </span>
-                            <span className="log-entry-entity">{meta.label.toLowerCase()}</span>
-                            {entry.title && <span className="log-entry-title">"{entry.title}"</span>}
-                            <span className="log-entry-time">
-                              {new Date(entry.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          <ActivityLog />
 
           {/* ═══ Data & Privacy ═══ */}
           <section className="settings-section">
@@ -579,7 +732,7 @@ export default function Settings() {
             </div>
 
             <div className="settings-info-box">
-              <p>All your data is stored locally in your browser. Nothing is sent to any server.</p>
+              <p>Planner data is cached locally with AES-GCM encryption and synchronized through the authenticated planner API. AI indexing remains opt-in.</p>
             </div>
 
             <div className="settings-row">

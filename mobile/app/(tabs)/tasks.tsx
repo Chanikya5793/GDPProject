@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   Modal, RefreshControl, Alert, LayoutAnimation,
@@ -7,9 +7,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
 import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTasks } from '@/api/tasks';
+import {
+  DEFAULT_DAILY_TASK_LIMIT,
+  OverloadedDay as ScheduleOverloadedDay,
+  RescheduleSuggestion as ScheduleSuggestion,
+  detectOverloadedDays,
+  suggestReschedule,
+} from '@/utils/schedule';
 import { getCategories } from '@/api/categories';
-import { Task, Category } from '@/types';
+import { Category, PlannerRecordId, Task } from '@/types';
 
 // ─── priority escalation (inlined so Metro always picks up changes) ──────────
 
@@ -20,8 +29,8 @@ type EscalatedPriority = {
   daysUntilDue: number;
 };
 
-type OverloadedDay = { date: string; tasks: Task[] };
-type RescheduleSuggestion = { task: Task; from: string; to: string };
+type OverloadedDay = ScheduleOverloadedDay<Task>;
+type RescheduleSuggestion = ScheduleSuggestion<Task>;
 
 function getDaysUntilDue(dueDateStr: string): number {
   if (!dueDateStr) return Infinity;
@@ -46,82 +55,6 @@ function getEffectivePriority(task: Task): EscalatedPriority {
     }
   }
   return { effective, original, wasEscalated: effective !== original, daysUntilDue };
-}
-
-/** Returns FUTURE days (> today) with >= threshold incomplete tasks (default 3).
- *  Today and overdue dates are excluded — you can't pull those any earlier. */
-function detectOverloadedDays(tasks: Task[], threshold = 3): OverloadedDay[] {
-  const todayStr = localDateStr();
-  const active = tasks.filter(t => !t.completed && t.dueDate && t.dueDate > todayStr);
-  const byDate: Record<string, Task[]> = {};
-  for (const t of active) {
-    if (!byDate[t.dueDate]) byDate[t.dueDate] = [];
-    byDate[t.dueDate].push(t);
-  }
-  return Object.entries(byDate)
-    .filter(([, ts]) => ts.length >= threshold)
-    .map(([date, ts]) => ({ date, tasks: ts }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-const PRIO_ORDER: Record<Task['priority'], number> = { high: 0, medium: 1, low: 2 };
-
-/**
- * For each overloaded future day, suggests PULLING lower-priority tasks
- * FORWARD to earlier available dates (between today+1 and the overloaded day-1).
- * Never pushes tasks to a later date.
- *
- * Strategy: keep the `keepPerDay` highest-priority tasks on the original date;
- * suggest the rest be moved to the earliest available slot BEFORE that date.
- */
-function suggestReschedule(
-  overloadedDays: OverloadedDay[],
-  allTasks: Task[],
-  keepPerDay = 2,
-): RescheduleSuggestion[] {
-  const todayStr = localDateStr();
-
-  // Mutable count map so we can reserve slots as we assign them
-  const countByDate: Record<string, number> = {};
-  for (const t of allTasks.filter(t => !t.completed && t.dueDate)) {
-    countByDate[t.dueDate] = (countByDate[t.dueDate] || 0) + 1;
-  }
-
-  const suggestions: RescheduleSuggestion[] = [];
-
-  for (const day of overloadedDays) {
-    // Sort: highest stored priority first, then oldest creation date first
-    const sorted = [...day.tasks].sort((a, b) =>
-      PRIO_ORDER[a.priority] !== PRIO_ORDER[b.priority]
-        ? PRIO_ORDER[a.priority] - PRIO_ORDER[b.priority]
-        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    );
-
-    // Keep top keepPerDay tasks; suggest pulling the rest EARLIER
-    for (const task of sorted.slice(keepPerDay)) {
-      const overloadedDate = new Date(day.date + 'T00:00:00');
-      const daysAway = getDaysUntilDue(day.date);
-      let targetStr: string | null = null;
-
-      // Search BACKWARDS from (overloaded day - 1) toward (today + 1)
-      for (let offset = 1; offset < daysAway; offset++) {
-        const candidate = new Date(overloadedDate);
-        candidate.setDate(candidate.getDate() - offset);
-        const candStr = localDateStr(candidate);
-        if (candStr <= todayStr) break; // don't go to today or past
-        const existing = countByDate[candStr] || 0;
-        if (existing < keepPerDay) {
-          targetStr = candStr;
-          countByDate[candStr] = existing + 1;
-          break;
-        }
-      }
-
-      if (targetStr) suggestions.push({ task, from: day.date, to: targetStr });
-    }
-  }
-
-  return suggestions;
 }
 
 /** Friendly date label relative to today. */
@@ -159,7 +92,7 @@ function formatTime(t: string) {
 export default function TasksScreen() {
   const { user } = useAuth();
   const { settings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -169,6 +102,11 @@ export default function TasksScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
+  const [autoBalanced, setAutoBalanced] = useState<RescheduleSuggestion[] | null>(null);
+  // Tasks auto-balance has already relocated this session. Re-proposing them is
+  // what would make the automatic pass shuffle the same task back and forth.
+  const autoMovedIds = useRef<Set<PlannerRecordId>>(new Set());
+  const dailyLimit = Number(settings.dailyTaskLimit) || DEFAULT_DAILY_TASK_LIMIT;
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -182,12 +120,12 @@ export default function TasksScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
-  const handleToggle = async (id: number) => {
+  const handleToggle = async (id: PlannerRecordId) => {
     const updated = await toggleTask(id);
     setTasks(prev => prev.map(t => t.id === id ? updated : t));
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: PlannerRecordId) => {
     Alert.alert('Delete Task', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -211,19 +149,49 @@ export default function TasksScreen() {
     setEditingTask(null);
   };
 
-  const handleApplyReschedule = async (accepted: RescheduleSuggestion[]) => {
-    if (accepted.length === 0) return;
-    const updates = accepted.map(s => ({ id: s.task.id, changes: { dueDate: s.to } }));
-    await batchUpdateTasks(updates);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  const applyMoves = useCallback(async (moves: RescheduleSuggestion[]) => {
+    if (moves.length === 0) return;
+    await batchUpdateTasks(moves.map(m => ({ id: m.task.id, changes: { dueDate: m.to } })));
+    if (!appearance.reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setTasks(prev =>
       prev.map(t => {
-        const hit = accepted.find(s => s.task.id === t.id);
+        const hit = moves.find(m => m.task.id === t.id);
         return hit ? { ...t, dueDate: hit.to } : t;
       }),
     );
+  }, []);
+
+  const handleApplyReschedule = async (accepted: RescheduleSuggestion[]) => {
+    await applyMoves(accepted);
     setRescheduleVisible(false);
   };
+
+  const handleUndoAutoBalance = async () => {
+    const moves = autoBalanced || [];
+    // Restore the original dates, but leave the ids marked as already moved so
+    // the automatic pass does not immediately undo the undo.
+    await applyMoves(moves.map(m => ({ task: m.task, from: m.to, to: m.from })));
+    setAutoBalanced(null);
+  };
+
+  // Auto-balance: pull overflow off crowded future days without waiting for the
+  // user to open the optimize sheet. Ids are banked before the write so a
+  // re-render mid-flight cannot queue the same move twice; that plus the finite
+  // task count is what makes this settle instead of looping.
+  useEffect(() => {
+    if (loading || !settings.autoBalance) return;
+    const days = detectOverloadedDays(tasks, dailyLimit);
+    if (days.length === 0) return;
+    const moves = suggestReschedule(days, tasks, dailyLimit, undefined, autoMovedIds.current);
+    if (moves.length === 0) return;
+
+    let cancelled = false;
+    moves.forEach(m => autoMovedIds.current.add(m.task.id));
+    applyMoves(moves).then(() => {
+      if (!cancelled) setAutoBalanced(prev => [...(prev || []), ...moves]);
+    });
+    return () => { cancelled = true; };
+  }, [tasks, loading, settings.autoBalance, dailyLimit, applyMoves]);
 
   const todayStr = localDateStr();
   let filtered = [...tasks];
@@ -236,12 +204,12 @@ export default function TasksScreen() {
   const overdueCount = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr).length;
 
   // Overload detection – only show banner when viewing active tasks
-  const overloadedDays = filter !== 'completed' ? detectOverloadedDays(tasks) : [];
+  const overloadedDays = filter !== 'completed' ? detectOverloadedDays(tasks, dailyLimit) : [];
   const rescheduleSuggestions = overloadedDays.length > 0
-    ? suggestReschedule(overloadedDays, tasks)
+    ? suggestReschedule(overloadedDays, tasks, dailyLimit)
     : [];
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   // Priority color palette
   const priorityColors = {
@@ -283,6 +251,38 @@ export default function TasksScreen() {
       </View>
 
       {/* Overload warning banner */}
+      {autoBalanced && autoBalanced.length > 0 && (
+        <View style={[s.overloadBanner, { backgroundColor: '#ECFDF5', borderColor: '#10B981' }]}>
+          <Ionicons name="checkmark-circle-outline" size={18} color="#047857" />
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <Text style={[s.overloadTitle, { color: '#065F46' }]}>
+              Auto-balanced {autoBalanced.length} task{autoBalanced.length !== 1 ? 's' : ''}
+            </Text>
+            <Text style={[s.overloadSub, { color: '#047857' }]}>
+              Pulled to earlier free days to stay under {dailyLimit} task
+              {dailyLimit !== 1 ? 's' : ''} a day.
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={handleUndoAutoBalance}
+            accessibilityRole="button"
+            accessibilityLabel="Undo auto-balance"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[s.overloadTitle, { color: '#047857' }]}>Undo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setAutoBalanced(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss auto-balance notice"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ marginLeft: 12 }}
+          >
+            <Ionicons name="close" size={16} color="#047857" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {overloadedDays.length > 0 && (
         <TouchableOpacity
           style={[s.overloadBanner, { backgroundColor: '#FFF3CD', borderColor: '#FBBF24' }]}
@@ -428,6 +428,7 @@ export default function TasksScreen() {
         categories={categories}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         defaultPriority={settings.defaultPriority}
         defaultCategory={settings.defaultCategory}
         onSave={handleSave}
@@ -441,6 +442,7 @@ export default function TasksScreen() {
         suggestions={rescheduleSuggestions}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         onApply={handleApplyReschedule}
         onClose={() => setRescheduleVisible(false)}
       />
@@ -451,24 +453,25 @@ export default function TasksScreen() {
 // ─── Reschedule Modal ────────────────────────────────────────────────────────
 
 function RescheduleModal({
-  visible, overloadedDays, suggestions, colors, accent, onApply, onClose,
+  visible, overloadedDays, suggestions, colors, accent, appearance, onApply, onClose,
 }: {
   visible: boolean;
   overloadedDays: OverloadedDay[];
   suggestions: RescheduleSuggestion[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   onApply: (accepted: RescheduleSuggestion[]) => void;
   onClose: () => void;
 }) {
-  const [accepted, setAccepted] = useState<Set<number>>(new Set());
+  const [accepted, setAccepted] = useState<Set<PlannerRecordId>>(new Set());
 
   // Pre-select all on open
   useEffect(() => {
     if (visible) setAccepted(new Set(suggestions.map(s => s.task.id)));
   }, [visible, suggestions]);
 
-  const toggle = (id: number) => {
+  const toggle = (id: PlannerRecordId) => {
     setAccepted(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -477,10 +480,10 @@ function RescheduleModal({
   };
 
   const accepted_list = suggestions.filter(s => accepted.has(s.task.id));
-  const rs = rescheduleStyles(colors, accent);
+  const rs = rescheduleStyles(colors, accent, appearance);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={rs.container}>
         {/* Header */}
         <View style={rs.header}>
@@ -606,13 +609,14 @@ function RescheduleModal({
 // ─── Task create/edit modal ──────────────────────────────────────────────────
 
 function TaskModal({
-  visible, task, categories, colors, accent, defaultPriority, defaultCategory, onSave, onClose,
+  visible, task, categories, colors, accent, appearance, defaultPriority, defaultCategory, onSave, onClose,
 }: {
   visible: boolean;
   task: Task | null;
   categories: Category[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   defaultPriority: string;
   defaultCategory: string;
   onSave: (form: Partial<Task>) => void;
@@ -620,6 +624,7 @@ function TaskModal({
 }) {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [category, setCategory] = useState('Homework');
   const [notes, setNotes] = useState('');
@@ -628,6 +633,7 @@ function TaskModal({
     if (visible) {
       setTitle(task?.title || '');
       setDueDate(task?.dueDate || localDateStr());
+      setDueTime(task?.dueTime || '');
       setPriority((task?.priority || defaultPriority) as Task['priority']);
       setCategory(task?.category || defaultCategory);
       setNotes(task?.notes || '');
@@ -636,13 +642,13 @@ function TaskModal({
 
   const handleSubmit = () => {
     if (!title.trim()) return;
-    onSave({ title: title.trim(), dueDate, priority, category, notes });
+    onSave({ title: title.trim(), dueDate, dueTime, priority, category, notes });
   };
 
-  const ms = modalStyles(colors, accent);
+  const ms = modalStyles(colors, accent, appearance);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={ms.container}>
         <View style={ms.header}>
           <TouchableOpacity onPress={onClose}>
@@ -671,6 +677,15 @@ function TaskModal({
             value={dueDate}
             onChangeText={setDueDate}
             placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={ms.label}>Due Time</Text>
+          <TextInput
+            style={ms.input}
+            value={dueTime}
+            onChangeText={setDueTime}
+            placeholder="HH:MM (24h), optional"
             placeholderTextColor={colors.textMuted}
           />
 
@@ -719,8 +734,8 @@ function TaskModal({
 
 // ─── styles ──────────────────────────────────────────────────────────────────
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
     subtitle: { fontSize: 13, color: colors.textSecondary },
@@ -756,8 +771,8 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
   });
 }
 
-function rescheduleStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function rescheduleStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     title: { fontSize: 17, fontWeight: '600', color: colors.text },
@@ -783,8 +798,8 @@ function rescheduleStyles(colors: ReturnType<typeof useAppTheme>['colors'], acce
   });
 }
 
-function modalStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function modalStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerTitle: { fontSize: 17, fontWeight: '600', color: colors.text },

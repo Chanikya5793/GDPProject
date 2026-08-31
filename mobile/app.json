@@ -32,13 +32,37 @@
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ],
       "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-font",
+      "expo-status-bar",
+      "expo-web-browser",
+      "./plugins/withUISceneLifecycle",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device."
         }
       ]
     ],

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getReminders, createReminder, updateReminder, deleteReminder } from '../api/reminders'
-import { Bell, Pencil, Trash2, List, LayoutGrid, X } from 'lucide-react'
+import { Bell, Pencil, Trash2, List, LayoutGrid, X, ShieldCheck } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Reminders.css'
 
@@ -36,6 +36,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
     date: reminder?.date || today(),
     time: reminder?.time || '',
     notes: reminder?.notes || '',
+    _approvedForAi: reminder?._approvedForAi || false,
   })
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
@@ -73,6 +74,12 @@ function ReminderModal({ reminder, onSave, onClose }) {
               <label className="form-label">Notes</label>
               <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />
             </div>
+            <label className="form-checkbox">
+              <input type="checkbox" checked={form._approvedForAi}
+                onChange={e => set('_approvedForAi', e.target.checked)} />
+              <ShieldCheck size={14} />
+              <span>Approve this reminder for AI retrieval</span>
+            </label>
           </div>
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>

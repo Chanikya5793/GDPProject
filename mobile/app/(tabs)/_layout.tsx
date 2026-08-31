@@ -81,6 +81,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="copilot"
+        options={{
+          title: 'Copilot',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="sparkles" size={size} color={color as string} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
