@@ -10,6 +10,7 @@ import { createStyles } from '@/theme/createStyles';
 import { getItem, setItem } from '@/api/storage';
 import { AiInfo } from '@/utils/aiPrivacy';
 import { AI_NOTICE_KEY, AI_NOTICE_TITLE, noticeParagraphs } from '@/utils/aiNotice';
+import { toHistory } from '@/utils/chatHistory';
 
 interface Citation {
   citation_id: string;
@@ -87,6 +88,9 @@ export default function CopilotScreen() {
         body: JSON.stringify({
           message: text, request_id: idempotencyKey('mobile-chat'),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          // Everything said before this message, so a clarifying question can be
+          // answered and picked up from.
+          history: toHistory(messages),
         }),
       });
       setMessages(previous => [...previous, {
