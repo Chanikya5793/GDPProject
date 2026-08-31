@@ -25,10 +25,26 @@ def enable_ai(services, uid="alice", kinds=None):
     ))
 
 
-def test_index_requires_ai_opt_in(services):
+def test_index_is_refused_once_ai_is_switched_off(services):
+    # The assistant is on by default now, so the gate has to be proven by turning
+    # it off: a user who opts out must not have records indexed regardless.
+    services.repository.set_privacy("alice", PrivacySettings(
+        ai_enabled=False, indexed_entity_types=[EntityType.task],
+    ))
     record = add_task(services)
     with pytest.raises(PermissionError):
         services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+
+
+def test_a_new_planner_has_the_assistant_enabled(services):
+    # Pins the product decision: a planner works without being configured first.
+    # Record text reaches the provider from the start, which is why the Settings
+    # screen names the provider and every record keeps its own opt-out.
+    privacy = services.repository.get_privacy("brand-new-user")
+    assert privacy.ai_enabled is True
+    assert set(privacy.indexed_entity_types) == {
+        EntityType.task, EntityType.reminder, EntityType.note, EntityType.schedule,
+    }
 
 
 def test_index_requires_record_approval(services):
