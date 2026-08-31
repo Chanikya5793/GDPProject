@@ -93,6 +93,25 @@ function withLocalOnlyFields<T extends PlannerItem>(kind: Kind, saved: T, local:
   return attachments === undefined ? saved : { ...saved, attachments } as T;
 }
 
+/**
+ * Keep the AI index in step with a record's approval.
+ *
+ * Approval alone does nothing: a record is only reachable by the copilot once it
+ * is indexed. Mobile never called this, so every record created on the phone was
+ * invisible to the assistant no matter how it was flagged.
+ */
+async function synchronizeIndex(kind: Kind, item: PlannerItem): Promise<void> {
+  const path = `/v1/index/${kind}/${encodeURIComponent(String(item.id))}`;
+  if (item._approvedForAi ?? true) {
+    await apiRequest(path, {
+      method: 'POST',
+      body: JSON.stringify({ approved: true, expected_revision: item._revision }),
+    });
+  } else {
+    await apiRequest(path, { method: 'DELETE' });
+  }
+}
+
 async function loadCache(kind: Kind): Promise<PlannerItem[]> {
   return getItem<PlannerItem[]>(cacheKey(kind), []);
 }
@@ -149,13 +168,18 @@ export async function createPlannerItem<T extends PlannerItem>(kind: Kind, item:
     method: 'PUT', kind, recordId: item.id,
     body: {
       content: toServer(kind, item), expected_revision: null,
-      idempotency_key: idempotencyKey(`mobile-create-${kind}`), approved_for_ai: Boolean(item._approvedForAi),
+      idempotency_key: idempotencyKey(`mobile-create-${kind}`),
+      // Visible to the assistant unless the record says otherwise, matching web.
+      approved_for_ai: item._approvedForAi ?? true,
     },
   };
   try {
     const server = await send(operation);
     const saved = withLocalOnlyFields(kind, fromServer(server!) as T, item);
     await saveCache(kind, [...await loadCache(kind), saved]);
+    // The record is already saved; privacy settings may legitimately refuse the
+    // index, and that must not turn a successful write into a failure.
+    try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
     return saved;
   } catch (error) {
     if (error instanceof Error && 'status' in error && (error as { status: number }).status < 500) throw error;
@@ -174,12 +198,14 @@ export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: P
     method: 'PUT', kind, recordId: id,
     body: {
       content: toServer(kind, merged), expected_revision: current._revision,
-      idempotency_key: idempotencyKey(`mobile-update-${kind}`), approved_for_ai: Boolean(merged._approvedForAi),
+      idempotency_key: idempotencyKey(`mobile-update-${kind}`),
+      approved_for_ai: merged._approvedForAi ?? true,
     },
   };
   try {
     const saved = withLocalOnlyFields(kind, fromServer((await send(operation))!) as T, merged);
     await saveCache(kind, items.map(item => item.id === id ? saved : item));
+    try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
     return saved;
   } catch (error) {
     if (error instanceof Error && 'status' in error && (error as { status: number }).status < 500) throw error;
