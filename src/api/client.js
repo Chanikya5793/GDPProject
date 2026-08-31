@@ -16,6 +16,19 @@ export function apiConfigured() {
   return firebaseConfigured && Boolean(API_URL)
 }
 
+/**
+ * Read the sign-up policy without a token.
+ *
+ * apiFetch cannot serve this: it demands a signed-in user, and the whole point
+ * is to check the address before an account exists.
+ */
+export async function fetchSignupPolicy() {
+  if (!apiConfigured()) return null
+  const response = await fetch(`${API_URL}/v1/signup-policy`)
+  if (!response.ok) throw new ApiError('Could not read the sign-up policy.', response.status)
+  return response.json()
+}
+
 export async function apiFetch(path, options = {}) {
   await persistenceReady
   if (!apiConfigured()) {

@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import CurrentUser
+from .signup_policy import get_signup_policy
 from .config import get_settings
 from .models import (
     ActionProposal,
@@ -106,6 +107,18 @@ def create_app(container: Container | None = None) -> FastAPI:
     @app.exception_handler(InvalidProposal)
     async def invalid_proposal(_request: Request, exc: InvalidProposal):
         return JSONResponse(status_code=409, content={"detail": str(exc), "code": "invalid_proposal"})
+
+    @app.get("/v1/signup-policy")
+    def signup_policy() -> Dict[str, Any]:
+        # Public on purpose: the sign-up form needs it before anyone has a token,
+        # and it discloses nothing beyond which domains may register. Advisory
+        # only — the binding check runs on every authenticated request.
+        policy = get_signup_policy()
+        return {
+            "enforce": policy.enforce,
+            "allowed_domains": policy.allowed_domains,
+            "message": policy.describe(),
+        }
 
     @app.get("/healthz")
     def health(_services: ContainerDep) -> Dict[str, Any]:
