@@ -202,7 +202,10 @@ class MemoryPlannerRepository:
                     uid, proposal.entity_type, proposal.record_id,
                     RecordUpsertRequest(
                         content=proposal.after, expected_revision=None,
-                        idempotency_key=idempotency_key, approved_for_ai=False,
+                        # Visible to the assistant, like any other new record: the
+                        # user asked it to create this one, so hiding it would leave
+                        # the assistant blind to its own work a moment later.
+                        idempotency_key=idempotency_key, approved_for_ai=True,
                     ),
                 )
             elif proposal.operation.value == "delete":
@@ -487,7 +490,10 @@ class FirestorePlannerRepository:
                 assert proposal.after is not None
                 revision = 1
                 created_at = now
-                approved_for_ai = False
+                # Visible to the assistant, like any other new record: the user
+                # asked it to create this one, so hiding it would leave the
+                # assistant blind to its own work a moment later.
+                approved_for_ai = True
             elif proposal.operation.value == "delete":
                 if not current.exists or current.to_dict()["revision"] != proposal.base_revision:
                     raise RevisionConflict("Record changed after the preview was created")
