@@ -26,7 +26,19 @@ jobs:
           cache: npm
 
       - run: npm install
+
+      # Vite inlines these at build time, so the Pages build needs them or the
+      # app falls back to its offline demo mode. They are repository variables
+      # rather than secrets: every one of them ships in the client bundle and is
+      # public by design. Keeping them out of this file means pointing the site
+      # at a different backend is a variable change, not a code change.
       - run: npm run build
+        env:
+          VITE_PLANNER_API_URL: ${{ vars.VITE_PLANNER_API_URL }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
