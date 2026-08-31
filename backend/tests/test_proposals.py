@@ -104,6 +104,20 @@ def test_create_proposal_does_not_create_until_confirmed(services):
     assert len(services.repository.list_records("alice", EntityType.task)) == 1
 
 
+def test_a_confirmed_creation_is_visible_to_the_assistant(services):
+    # The user asked the assistant to create it, so hiding it from the assistant
+    # would leave it unable to answer about its own work a moment later.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="Lab report", due_date="2026-09-01",
+        ), "Create",
+    )
+    services.proposals.confirm("alice", proposal.proposal_id, "confirm-vis-1", None)
+    created = services.repository.list_records("alice", EntityType.task)[0]
+    assert created.approved_for_ai is True
+
+
 @pytest.mark.parametrize("action", [
     GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.note),
     GeneratedAction(operation=ProposalOperation.complete, entity_type=EntityType.task),
