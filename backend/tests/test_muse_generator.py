@@ -5,7 +5,12 @@ import json
 import httpx
 import pytest
 
-from app.ai import GeminiAnswerGenerator, MuseAnswerGenerator, strict_json_schema
+from app.ai import (
+    GeminiAnswerGenerator,
+    GenerationTimeout,
+    MuseAnswerGenerator,
+    strict_json_schema,
+)
 from app.config import Settings
 from app.runtime import build_answer_generator
 
@@ -270,3 +275,21 @@ class TestProviderSelection:
         generator.client = httpx.Client(transport=httpx.MockTransport(handler))
         generator.generate("prompt")
         assert seen["auth"] == "Bearer padded-key"
+
+
+class TestTimeout:
+    def test_a_slow_model_raises_a_named_timeout(self):
+        # Surfaced as its own type so the endpoint can answer 504 with something
+        # a student can act on, rather than a bare 500.
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("too slow", request=request)
+
+        with pytest.raises(GenerationTimeout):
+            muse(handler).generate("prompt")
+
+    def test_other_transport_errors_are_not_mistaken_for_a_timeout(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        with pytest.raises(httpx.ConnectError):
+            muse(handler).generate("prompt")

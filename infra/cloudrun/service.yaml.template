@@ -14,7 +14,11 @@ spec:
     spec:
       serviceAccountName: ${GDP_SERVICE_ACCOUNT}
       containerConcurrency: 40
-      timeoutSeconds: 60
+      # Must stay above PLANNER_MUSE_TIMEOUT_SECONDS. When they were both 60 the
+      # platform killed the request at the same instant the model client would
+      # have given up, so a slow generation surfaced as a bare 500 instead of the
+      # app's own explained timeout.
+      timeoutSeconds: 120
       containers:
         - image: ${GDP_IMAGE}
           ports:

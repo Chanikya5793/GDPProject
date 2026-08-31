@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from .ai import GenerationTimeout
 from .auth import CurrentUser
 from .config import get_settings
 from .models import (
@@ -280,6 +281,13 @@ def create_app(container: Container | None = None) -> FastAPI:
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except GenerationTimeout as exc:
+            # Expected under load rather than a fault: say so and let them retry,
+            # instead of a bare 500.
+            raise HTTPException(
+                status_code=504,
+                detail="The assistant took too long to answer. Please try again.",
+            ) from exc
         proposals: list[ActionProposal] = []
         if generated.action:
             proposal = services.proposals.from_generated_action(user.uid, generated.action, answer)
