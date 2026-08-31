@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -16,6 +17,34 @@ from .models import (
     TaskContent,
 )
 from .repository import NotFound, PlannerRepository, generated_record_id
+
+# The model fills these fields, so they are untrusted input like any other. It
+# answers "next Friday at 5pm" with a full datetime in due_date, which
+# date.fromisoformat rejects outright, and an unhandled ValueError there is a 500
+# in the student's face. Parse defensively and treat anything unreadable as
+# absent, which the callers already know how to refuse.
+_TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)")
+
+
+def split_generated_datetime(value: Optional[str]) -> tuple[Optional[date], Optional[str]]:
+    """Split whatever the model put in a date field into a date and maybe a time."""
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    date_part, _, time_part = text.partition("T")
+    try:
+        parsed_date = date.fromisoformat(date_part)
+    except ValueError:
+        return None, None
+    match = _TIME_PATTERN.match(time_part)
+    return parsed_date, f"{match.group(1)}:{match.group(2)}" if match else None
+
+
+def clean_generated_time(value: Optional[str]) -> Optional[str]:
+    """A time the record models will accept, or None. They pin HH:MM and reject
+    anything else with a validation error the caller cannot catch usefully."""
+    match = _TIME_PATTERN.match((value or "").strip())
+    return f"{match.group(1)}:{match.group(2)}" if match else None
 
 
 class InvalidProposal(ValueError):
@@ -40,10 +69,12 @@ class ProposalService:
             if action.entity_type != EntityType.task or not action.title:
                 return None
             record_id = generated_record_id()
+            due_date, embedded_time = split_generated_datetime(action.due_date)
             after = TaskContent(
                 title=action.title,
-                due_date=date.fromisoformat(action.due_date) if action.due_date else None,
-                due_time=action.due_time,
+                due_date=due_date,
+                # A time inside the date field is still the time they asked for.
+                due_time=clean_generated_time(action.due_time) or embedded_time,
                 priority=action.priority or "medium",
                 notes=action.notes or "",
             )
@@ -64,13 +95,14 @@ class ProposalService:
                 else:
                     return None
             elif action.operation == ProposalOperation.reschedule:
-                if not action.due_date:
+                new_date, embedded_time = split_generated_datetime(action.due_date)
+                if not new_date:
                     return None
-                new_date = date.fromisoformat(action.due_date)
+                new_time = clean_generated_time(action.due_time) or embedded_time
                 if isinstance(before, TaskContent):
-                    after = before.model_copy(update={"due_date": new_date, "due_time": action.due_time})
+                    after = before.model_copy(update={"due_date": new_date, "due_time": new_time})
                 elif isinstance(before, ReminderContent):
-                    after = before.model_copy(update={"date": new_date, "time": action.due_time})
+                    after = before.model_copy(update={"date": new_date, "time": new_time})
                 else:
                     return None
             elif action.operation == ProposalOperation.update:
