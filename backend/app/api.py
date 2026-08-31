@@ -12,7 +12,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import CurrentUser
-from .signup_policy import get_signup_policy
 from .config import get_settings
 from .models import (
     ActionProposal,
@@ -35,6 +34,7 @@ from .proposals import InvalidProposal
 from .ratelimit import RateLimitExceeded
 from .repository import IdempotencyConflict, NotFound, RevisionConflict
 from .runtime import Container, build_production_container
+from .signup_policy import get_signup_policy
 
 
 class McpRequest(BaseModel):
