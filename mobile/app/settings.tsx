@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   Switch, Alert, Platform,
@@ -8,6 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { migrateLegacyStorage } from '@/api/storage';
+import { Settings } from '@/types';
+import ActivityLogSection from '@/components/ActivityLogSection';
+import AiPrivacySection from '@/components/AiPrivacySection';
+import RecycleBinSection from '@/components/RecycleBinSection';
+import { apiConfigured, apiRequest } from '@/api/client';
 
 const ACCENT_COLORS = [
   { id: 'green' as const, label: 'Green', color: '#006A4E' },
@@ -16,13 +23,60 @@ const ACCENT_COLORS = [
   { id: 'amber' as const, label: 'Amber', color: '#D97706' },
 ];
 
+/** Matches web's Font Size select. */
+const FONT_SIZES: { value: Settings['fontSize']; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'large', label: 'Large' },
+  { value: 'larger', label: 'Larger' },
+];
+
+/** Copilot capacity choices. `null` defers to the deployment default. */
+const CAPACITY_CHOICES: { value: number | null; short: string; label: string }[] = [
+  { value: null, short: 'Auto', label: 'Use service default' },
+  { value: 180, short: '3h', label: '3 hours per day' },
+  { value: 240, short: '4h', label: '4 hours per day' },
+  { value: 360, short: '6h', label: '6 hours per day' },
+  { value: 480, short: '8h', label: '8 hours per day' },
+];
+
+type PlannerSettings = { max_daily_minutes: number | null };
+
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuth();
   const { settings, updateSetting, resetSettings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  // Copilot capacity lives server-side, so it is only offered when a backend is
+  // actually configured. The offline demo build has none.
+  const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({ max_daily_minutes: null });
+  const [plannerStatus, setPlannerStatus] =
+    useState<'loading' | 'ready' | 'saving' | 'error' | 'unavailable'>('loading');
+  useEffect(() => {
+    if (!apiConfigured()) { setPlannerStatus('unavailable'); return; }
+    apiRequest<PlannerSettings>('/v1/planner-settings')
+      .then(value => { setPlannerSettings(value); setPlannerStatus('ready'); })
+      .catch(() => setPlannerStatus('error'));
+  }, []);
+
+  const updatePlannerCapacity = useCallback(async (minutes: number | null) => {
+    const previous = plannerSettings;
+    setPlannerSettings({ max_daily_minutes: minutes });
+    setPlannerStatus('saving');
+    try {
+      const saved = await apiRequest<PlannerSettings>('/v1/planner-settings', {
+        method: 'PUT', body: JSON.stringify({ max_daily_minutes: minutes }),
+      });
+      setPlannerSettings(saved);
+      setPlannerStatus('ready');
+    } catch (error) {
+      // Put the old value back so the row never shows a capacity the server rejected.
+      setPlannerSettings(previous);
+      setPlannerStatus('error');
+      Alert.alert('Could not save', (error as Error).message);
+    }
+  }, [plannerSettings]);
 
   const saveProfile = () => {
     if (!name.trim()) return;
@@ -40,7 +94,19 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const s = makeStyles(colors, accent);
+  const handleLegacyMigration = async () => {
+    if (!user) return;
+    try {
+      const count = await migrateLegacyStorage(user.uid);
+      Alert.alert('Migration complete', count
+        ? `Encrypted and moved ${count} legacy local data stores.`
+        : 'No legacy plaintext planner data was found.');
+    } catch (error) {
+      Alert.alert('Migration failed', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const s = makeStyles(colors, accent, appearance);
   const profileChanged = name !== user?.name || email !== user?.email;
 
   const initials = (user?.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -108,6 +174,41 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <Text style={s.rowLabel}>Font Size</Text>
+        <View style={s.segmentRow}>
+          {FONT_SIZES.map(option => (
+            <TouchableOpacity
+              key={option.value}
+              style={[s.segment, settings.fontSize === option.value && { backgroundColor: accent.primary }]}
+              onPress={() => updateSetting('fontSize', option.value)}
+              accessibilityRole="button"
+              accessibilityLabel={`${option.label} text`}
+            >
+              <Text style={[s.segmentText, settings.fontSize === option.value && { color: '#FFF' }]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <SettingsRow label="Compact Mode" colors={colors}>
+          <Switch
+            value={settings.compactMode}
+            onValueChange={v => updateSetting('compactMode', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.compactMode ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
+
+        <SettingsRow label="Reduced Motion" colors={colors}>
+          <Switch
+            value={settings.reducedMotion}
+            onValueChange={v => updateSetting('reducedMotion', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.reducedMotion ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
       </View>
 
       {/* Planner Preferences */}
@@ -158,6 +259,62 @@ export default function SettingsScreen() {
           />
         </SettingsRow>
 
+        <SettingsRow label="Auto-Balance Busy Days" colors={colors}>
+          <Switch
+            value={settings.autoBalance}
+            onValueChange={v => updateSetting('autoBalance', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.autoBalance ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
+
+        <SettingsRow label="Max Tasks Per Day" colors={colors}>
+          <View style={s.miniSegment}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <TouchableOpacity
+                key={n}
+                style={[s.miniSeg, settings.dailyTaskLimit === n && { backgroundColor: accent.primary }]}
+                onPress={() => updateSetting('dailyTaskLimit', n)}
+                accessibilityRole="button"
+                accessibilityLabel={`Maximum ${n} tasks per day`}
+              >
+                <Text style={[s.miniSegText, settings.dailyTaskLimit === n && { color: '#FFF' }]}>
+                  {n}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SettingsRow>
+
+        {plannerStatus !== 'unavailable' && (
+          <SettingsRow label="Copilot Daily Capacity" colors={colors}>
+            <View style={s.miniSegment}>
+              {CAPACITY_CHOICES.map(choice => (
+                <TouchableOpacity
+                  key={String(choice.value)}
+                  style={[
+                    s.miniSeg,
+                    plannerSettings.max_daily_minutes === choice.value && { backgroundColor: accent.primary },
+                  ]}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onPress={() => updatePlannerCapacity(choice.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={choice.label}
+                >
+                  <Text
+                    style={[
+                      s.miniSegText,
+                      plannerSettings.max_daily_minutes === choice.value && { color: '#FFF' },
+                    ]}
+                  >
+                    {choice.short}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </SettingsRow>
+        )}
+
         <SettingsRow label="Due Date Alerts" colors={colors}>
           <Switch
             value={settings.dueDateAlerts}
@@ -168,8 +325,18 @@ export default function SettingsScreen() {
         </SettingsRow>
       </View>
 
+      <AiPrivacySection />
+
+      <ActivityLogSection />
+
+      {user && <RecycleBinSection userId={user.id} />}
+
       {/* Actions */}
       <View style={s.section}>
+        <TouchableOpacity style={s.actionRow} onPress={handleLegacyMigration}>
+          <Ionicons name="shield-checkmark" size={18} color={accent.primary} />
+          <Text style={[s.actionText, { color: colors.text }]}>Migrate legacy data securely</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={s.actionRow} onPress={resetSettings}>
           <Ionicons name="refresh" size={18} color={colors.textSecondary} />
           <Text style={[s.actionText, { color: colors.text }]}>Reset All Settings</Text>
@@ -181,7 +348,7 @@ export default function SettingsScreen() {
       </View>
 
       <Text style={s.footer}>
-        Northwest Student Planner{'\n'}Data stored locally on device.
+        Northwest Student Planner{'\n'}Encrypted offline data · Firebase account identity
       </Text>
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -201,8 +368,8 @@ function SettingsRow({ label, colors, children }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 20 },
     section: { backgroundColor: colors.card, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border },

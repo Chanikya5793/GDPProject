@@ -151,6 +151,23 @@
   align-self: flex-start;
 }
 
+.ai-msg-error {
+  align-self: flex-start;
+}
+
+.ai-msg-error .ai-msg-bubble {
+  background: #FEF2F2;
+  color: var(--red);
+  border: 1px solid #FECACA;
+}
+
+.ai-msg-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
 .ai-msg-avatar {
   width: 26px;
   height: 26px;
@@ -185,29 +202,146 @@
   border-bottom-right-radius: 4px;
 }
 
-/* ─── Typing indicator ─── */
-.ai-typing {
+/* ─── Active retrieval ─── */
+.ai-thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.ai-thinking span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ai-thinking button {
+  border: 0;
+  background: transparent;
+  color: var(--red);
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 12px 18px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.ai-typing span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  opacity: .4;
-  animation: aiDot 1.2s ease infinite;
+.ai-citations {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.ai-typing span:nth-child(2) { animation-delay: .15s; }
-.ai-typing span:nth-child(3) { animation-delay: .3s; }
+.ai-citations a {
+  color: var(--green);
+  font-size: 11px;
+  line-height: 1.35;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
-@keyframes aiDot {
-  0%, 60%, 100% { opacity: .4; transform: scale(1); }
-  30% { opacity: 1; transform: scale(1.2); }
+.ai-retrieval-disclosure {
+  font-size: 10px;
+  color: var(--muted);
+  border-left: 2px solid var(--green-mid);
+  padding-left: 7px;
+}
+
+.ai-proposal {
+  background: var(--white);
+  border: 1px solid var(--green-mid);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-proposal-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.ai-proposal-title span {
+  margin-left: auto;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ai-proposal p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ai-proposal-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.ai-proposal-preview > div > span {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.ai-proposal-preview pre {
+  max-height: 110px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--off);
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 9px;
+}
+
+.ai-proposal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ai-proposal-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ai-proposal-actions .confirm {
+  background: var(--green);
+  color: var(--white);
+  border-color: var(--green);
+}
+
+.ai-proposal-confirmed {
+  border-color: #86EFAC;
+  background: #F0FDF4;
+}
+
+.ai-proposal-rejected,
+.ai-proposal-cancelled {
+  opacity: .7;
+  border-color: var(--border);
+}
+
+.ai-proposal-error {
+  color: var(--red);
+  font-size: 10px;
 }
 
 /* ─── Suggestions ─── */
@@ -310,4 +444,23 @@
   .ai-collapsed {
     width: 44px;
   }
+}
+
+/* Shown when no planner backend is configured (the offline demo build). The
+   copilot is unavailable rather than broken, so this reads as an explanation
+   and the composer is disabled instead of accepting doomed requests. */
+.ai-unavailable {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.ai-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }

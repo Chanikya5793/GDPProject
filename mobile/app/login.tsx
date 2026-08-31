@@ -6,10 +6,11 @@ import {
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
 
 export default function LoginScreen() {
   const { login, register } = useAuth();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -33,10 +34,12 @@ export default function LoginScreen() {
 
     if (result.success) {
       router.replace('/(tabs)');
+    } else {
+      setError(result.error || 'Authentication failed.');
     }
   };
 
-  const styles = makeStyles(colors, accent);
+  const styles = makeStyles(colors, accent, appearance);
 
   return (
     <KeyboardAvoidingView
@@ -123,15 +126,15 @@ export default function LoginScreen() {
         </View>
 
         <Text style={styles.disclaimer}>
-          Demo version — data is stored locally on your device.
+          Planner data is encrypted on this device and scoped to your authenticated account.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: {
       flex: 1,
       backgroundColor: colors.background,

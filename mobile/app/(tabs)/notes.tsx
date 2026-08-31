@@ -1,17 +1,28 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView,
+  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
-import { Note, Tag } from '@/types';
+import { Note, NoteAttachment, PlannerRecordId, Tag } from '@/types';
+import { assignedTags, toggleTagId } from '@/utils/noteTags';
+import MarkdownText from '@/components/MarkdownText';
+import { hasMarkdown } from '@/utils/markdown';
+import {
+  addAttachment, dataUrlBytes, formatBytes, isWithinSizeLimit,
+  MAX_ATTACHMENT_BYTES, removeAttachment,
+} from '@/utils/attachments';
 
 export default function NotesScreen() {
   const { user } = useAuth();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,13 +50,13 @@ export default function NotesScreen() {
     setEditorVisible(true);
   };
 
-  const handleSaveNote = async (id: number, updates: Partial<Note>) => {
+  const handleSaveNote = async (id: PlannerRecordId, updates: Partial<Note>) => {
     const updated = await updateNote(id, updates);
     setNotes(prev => prev.map(n => n.id === id ? updated : n));
     setSelectedNote(updated);
   };
 
-  const handleDeleteNote = (id: number) => {
+  const handleDeleteNote = (id: PlannerRecordId) => {
     Alert.alert('Delete Note', 'This note will be moved to trash.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -61,7 +72,7 @@ export default function NotesScreen() {
     ? notes.filter(n => n.title.toLowerCase().includes(search.toLowerCase()) || n.body.toLowerCase().includes(search.toLowerCase()))
     : notes;
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   return (
     <View style={s.container}>
@@ -98,7 +109,7 @@ export default function NotesScreen() {
         }
         renderItem={({ item: note }) => {
           const preview = note.body.replace(/[#*_`>\-\[\]]/g, '').slice(0, 80);
-          const noteTags = tags.filter(t => note.tagIds.includes(t.id));
+          const noteTags = assignedTags(tags, note.tagIds);
           return (
             <TouchableOpacity
               style={[s.noteCard, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -133,6 +144,7 @@ export default function NotesScreen() {
         tags={tags}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         onSave={handleSaveNote}
         onDelete={handleDeleteNote}
         onClose={() => setEditorVisible(false)}
@@ -141,60 +153,144 @@ export default function NotesScreen() {
   );
 }
 
-function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onClose }: {
+function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, onDelete, onClose }: {
   visible: boolean;
   note: Note | null;
   tags: Tag[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
-  onSave: (id: number, updates: Partial<Note>) => void;
-  onDelete: (id: number) => void;
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
+  onSave: (id: PlannerRecordId, updates: Partial<Note>) => void;
+  onDelete: (id: PlannerRecordId) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [tagIds, setTagIds] = useState<number[]>([]);
+  const [preview, setPreview] = useState(false);
+  const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (visible && note) {
       setTitle(note.title);
       setBody(note.body);
+      setTagIds(note.tagIds);
+      setPreview(false);
+      setAttachments(note.attachments || []);
       setDirty(false);
     }
   }, [visible, note?.id]);
 
   const handleSave = () => {
     if (!note) return;
-    onSave(note.id, { title, body });
+    onSave(note.id, { title, body, tagIds, attachments });
     setDirty(false);
+  };
+
+  const pickImage = async () => {
+    if (!note) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Photo access needed', 'Allow photo access to attach an image to this note.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      // Attachments live in device storage as base64, so shrink before encoding
+      // rather than rejecting most photos for being over the cap.
+      quality: 0.6,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      Alert.alert('Could not read image', 'That image could not be read.');
+      return;
+    }
+    const dataUrl = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+    const bytes = dataUrlBytes(dataUrl);
+    if (!isWithinSizeLimit(bytes)) {
+      Alert.alert(
+        'Image too large',
+        `That image is ${formatBytes(bytes)}. Attachments are stored on this device, so they are capped at ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
+      );
+      return;
+    }
+
+    const next = addAttachment(attachments, {
+      id: Crypto.randomUUID(),
+      name: asset.fileName || 'image',
+      type: asset.mimeType || 'image/jpeg',
+      size: bytes,
+      dataUrl,
+      approvedForAi: false,
+    });
+    setAttachments(next);
+    onSave(note.id, { attachments: next });
+  };
+
+  const dropAttachment = (id: string) => {
+    if (!note) return;
+    const next = removeAttachment(attachments, id);
+    setAttachments(next);
+    onSave(note.id, { attachments: next });
   };
 
   const handleClose = () => {
     if (dirty && note) {
-      onSave(note.id, { title, body });
+      onSave(note.id, { title, body, tagIds, attachments });
     }
     onClose();
   };
 
-  const es = StyleSheet.create({
+  const es = createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
     titleInput: { fontSize: 22, fontWeight: '700', color: colors.text, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
     bodyInput: { flex: 1, fontSize: 16, color: colors.text, paddingHorizontal: 20, textAlignVertical: 'top', lineHeight: 24 },
-    tagsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
+    tagsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
     tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
     tagText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+    attachRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingHorizontal: 20, paddingBottom: 6,
+    },
+    attachButton: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    attachButtonText: { fontSize: 13, fontWeight: '600' },
+    attachCount: { fontSize: 11, color: colors.textMuted },
+    thumbStrip: { paddingHorizontal: 20, paddingBottom: 10, flexGrow: 0 },
+    thumbWrap: { marginRight: 10 },
+    thumb: { width: 72, height: 72, borderRadius: 8, backgroundColor: colors.surfaceVariant },
+    thumbRemove: {
+      position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
+      backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center',
+    },
+    preview: { flex: 1 },
+    previewContent: { paddingHorizontal: 20, paddingBottom: 24 },
   });
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={handleClose}>
       <KeyboardAvoidingView style={es.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={es.header}>
           <TouchableOpacity onPress={handleClose}>
             <Ionicons name="chevron-back" size={24} color={accent.primary} />
           </TouchableOpacity>
           <View style={es.headerActions}>
+            {hasMarkdown(body) && (
+              <TouchableOpacity
+                onPress={() => setPreview(value => !value)}
+                accessibilityRole="button"
+                accessibilityLabel={preview ? 'Edit note' : 'Preview formatted note'}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: accent.primary }}>
+                  {preview ? 'Edit' : 'Preview'}
+                </Text>
+              </TouchableOpacity>
+            )}
             {dirty && (
               <TouchableOpacity onPress={handleSave}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: accent.primary }}>Save</Text>
@@ -216,32 +312,96 @@ function NoteEditor({ visible, note, tags, colors, accent, onSave, onDelete, onC
           placeholderTextColor={colors.textMuted}
         />
 
-        {note && tags.filter(t => note.tagIds.includes(t.id)).length > 0 && (
+        {note && tags.length > 0 && (
           <View style={es.tagsRow}>
-            {tags.filter(t => note.tagIds.includes(t.id)).map(t => (
-              <View key={t.id} style={[es.tag, { backgroundColor: t.color }]}>
-                <Text style={es.tagText}>#{t.name}</Text>
-              </View>
-            ))}
+            {tags.map(t => {
+              const on = tagIds.includes(t.id);
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[
+                    es.tag,
+                    on
+                      ? { backgroundColor: t.color }
+                      : { borderWidth: 1, borderColor: colors.border },
+                  ]}
+                  onPress={() => {
+                    const next = toggleTagId(tagIds, t.id);
+                    setTagIds(next);
+                    onSave(note.id, { tagIds: next });
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`${on ? 'Remove' : 'Add'} tag ${t.name}`}
+                >
+                  <Text style={[es.tagText, !on && { color: colors.textMuted }]}>
+                    #{t.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
+        <View style={es.attachRow}>
+          <TouchableOpacity
+            style={es.attachButton}
+            onPress={pickImage}
+            accessibilityRole="button"
+            accessibilityLabel="Attach an image"
+          >
+            <Ionicons name="image-outline" size={15} color={accent.primary} />
+            <Text style={[es.attachButtonText, { color: accent.primary }]}>Attach image</Text>
+          </TouchableOpacity>
+          {attachments.length > 0 && (
+            <Text style={es.attachCount}>
+              {attachments.length} attached ·{' '}
+              {formatBytes(attachments.reduce((total, a) => total + a.size, 0))}
+            </Text>
+          )}
+        </View>
+
+        {attachments.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={es.thumbStrip}>
+            {attachments.map(attachment => (
+              <View key={attachment.id} style={es.thumbWrap}>
+                <Image source={{ uri: attachment.dataUrl }} style={es.thumb} />
+                <TouchableOpacity
+                  style={es.thumbRemove}
+                  onPress={() => dropAttachment(attachment.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${attachment.name}`}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="close" size={12} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        {preview ? (
+          <ScrollView style={es.preview} contentContainerStyle={es.previewContent}>
+            <MarkdownText body={body} />
+          </ScrollView>
+        ) : (
         <TextInput
           style={es.bodyInput}
           value={body}
           onChangeText={b => { setBody(b); setDirty(true); }}
-          placeholder="Start writing your note..."
+          placeholder={'Start writing your note...\n\nMarkdown: ## heading, **bold**, *italic*, `code`, > quote, - list'}
           placeholderTextColor={colors.textMuted}
           multiline
           autoFocus={!note?.body}
         />
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     headerBar: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 10, gap: 10 },
     searchWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceVariant, borderRadius: 10, paddingHorizontal: 12, gap: 8 },

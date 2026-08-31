@@ -302,6 +302,42 @@ button { font-family: inherit; cursor: pointer; }
               margin-right .3s cubic-bezier(.4,0,.2,1);
 }
 
+.auth-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.migration-banner {
+  margin: 14px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--green-mid);
+  border-radius: 10px;
+  background: var(--green-lt);
+  color: var(--green-dk);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.migration-banner > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.migration-banner span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.migration-banner .migration-error {
+  color: var(--red);
+}
+
 [data-sidebar="collapsed"] .main-content {
   margin-left: 64px;
 }

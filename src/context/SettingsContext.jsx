@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { DEFAULT_DAILY_TASK_LIMIT } from '../utils/schedule'
 
 const SettingsContext = createContext()
 
@@ -14,6 +15,8 @@ const DEFAULTS = {
   showCompleted: true,
   reminderDefault: 30,
   dueDateAlerts: true,
+  autoBalance: true,
+  dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 }
 
 function loadSettings() {

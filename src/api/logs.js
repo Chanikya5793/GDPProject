@@ -1,65 +1,87 @@
-/* Lightweight session activity log.
-   Records create/update/delete actions across tasks, reminders, notes and
-   tags so the Settings page can show what changed in each session. */
+import { getSecureCollection, setSecureCollection } from './secureCollections'
 
-const LOGS_KEY = 'nw_logs'
+const NAMESPACE = 'audit:activity'
 const MAX_LOGS = 300
 const DEDUPE_WINDOW_MS = 5000
 
-// A fresh session id is generated on every page load.
-export const SESSION_ID = `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+export const SESSION_ID = `s_${Date.now()}_${crypto.randomUUID().slice(0, 7)}`
 const SESSION_START = new Date().toISOString()
+let suppressDepth = 0
 
-function load() {
+export async function suppressLogging(callback) {
+  suppressDepth += 1
   try {
-    const raw = localStorage.getItem(LOGS_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    localStorage.removeItem(LOGS_KEY)
-    return []
+    return await callback()
+  } finally {
+    suppressDepth -= 1
   }
 }
 
-function save(logs) {
-  // Activity logging must never block or fail the user action that triggered
-  // it — localStorage can throw when full (note attachments also live here).
-  try {
-    localStorage.setItem(LOGS_KEY, JSON.stringify(logs))
-  } catch { /* out of storage — drop the log entry silently */ }
+async function load() {
+  return getSecureCollection(NAMESPACE, [])
 }
 
-/* Append an entry. action: 'created'|'updated'|'deleted'|'completed'|...
-   entity: 'task'|'reminder'|'note'|'tag'. title: the item's label. */
-export function addLog(action, entity, title = '') {
-  const logs = load()
+async function save(logs) {
+  return setSecureCollection(NAMESPACE, logs.slice(0, MAX_LOGS))
+}
+
+function sanitizeSnapshot(value) {
+  if (!value || typeof value !== 'object') return value
+  const clone = { ...value }
+  if (Array.isArray(clone.attachments)) {
+    clone.attachments = clone.attachments.map(attachment => ({
+      name: attachment?.name, size: attachment?.size, type: attachment?.type,
+    }))
+  }
+  return clone
+}
+
+export async function addLog(action, entity, title = '', payload = {}) {
+  if (suppressDepth > 0) return null
+  const logs = await load()
   const now = Date.now()
-  // Collapse repeated identical actions within a short window (e.g. note
-  // autosave) — but only within the same session, so reloading the page never
-  // folds a new entry into a previous session's grouping.
   const last = logs[0]
-  if (last && last.sessionId === SESSION_ID && last.action === action
-      && last.entity === entity && last.title === title
-      && now - new Date(last.ts).getTime() < DEDUPE_WINDOW_MS) {
+  if (last && last.sessionId === SESSION_ID && last.action === action &&
+      last.entity === entity && last.title === title && !last.reverted &&
+      now - new Date(last.ts).getTime() < DEDUPE_WINDOW_MS) {
     last.ts = new Date(now).toISOString()
-    save(logs.slice(0, MAX_LOGS))
-    return
+    if (payload.after !== undefined) last.after = sanitizeSnapshot(payload.after)
+    await save(logs)
+    return last.id
   }
-  logs.unshift({
-    id: `${now}_${Math.random().toString(36).slice(2, 7)}`,
-    ts: new Date(now).toISOString(),
-    sessionId: SESSION_ID,
-    sessionStart: SESSION_START,
-    action,
-    entity,
-    title,
-  })
-  save(logs.slice(0, MAX_LOGS))
+  const entry = {
+    id: crypto.randomUUID(), ts: new Date(now).toISOString(), sessionId: SESSION_ID,
+    sessionStart: SESSION_START, action, entity, title,
+    ...(payload.entityId !== undefined ? { entityId: payload.entityId } : {}),
+    ...(payload.before !== undefined ? { before: sanitizeSnapshot(payload.before) } : {}),
+    ...(payload.after !== undefined ? { after: sanitizeSnapshot(payload.after) } : {}),
+    ...(payload.trashId ? { trashId: payload.trashId } : {}),
+    ...(payload.revertOf ? { revertOf: payload.revertOf } : {}),
+  }
+  await save([entry, ...logs])
+  return entry.id
 }
 
 export async function getLogs() {
   return load()
 }
 
-export function clearLogs() {
-  save([])
+export async function clearLogs() {
+  await save([])
 }
+
+export async function deleteLogs(ids) {
+  const selected = new Set(ids)
+  await save((await load()).filter(log => !selected.has(log.id)))
+}
+
+export async function markReverted(id) {
+  const logs = await load()
+  const entry = logs.find(log => log.id === id)
+  if (entry) {
+    entry.reverted = true
+    entry.revertedAt = new Date().toISOString()
+    await save(logs)
+  }
+}
+

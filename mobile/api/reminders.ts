@@ -1,48 +1,24 @@
-import { Reminder } from '@/types';
+import { PlannerRecordId, Reminder } from '@/types';
 import { getItem, setItem } from './storage';
 import { addToTrash } from './trash';
+import { createPlannerItem, deletePlannerItem, listPlannerItems, updatePlannerItem } from './plannerClient';
+import { addLog } from './logs';
 
 const KEY = 'nw_reminders';
 
-function defaultReminders(): Reminder[] {
-  const now = Date.now();
-  return [
-    {
-      id: 1, userId: 1, title: 'Advisor Meeting',
-      date: new Date(now + 86400000).toISOString().split('T')[0],
-      time: '10:00', notes: 'Discuss spring course schedule',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 2, userId: 1, title: 'Study Group - Library room 204',
-      date: new Date(now + 172800000).toISOString().split('T')[0],
-      time: '14:00', notes: 'Bring organic chemistry notes',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 3, userId: 1, title: 'Office Hours - Prof. Fellah',
-      date: new Date(now + 259200000).toISOString().split('T')[0],
-      time: '09:30', notes: 'Ask about assignment formatting',
-      createdAt: new Date().toISOString(),
-    },
-  ];
-}
-
 async function load(): Promise<Reminder[]> {
-  return getItem<Reminder[]>(KEY, defaultReminders());
+  return getItem<Reminder[]>(KEY, []);
 }
 
 async function save(reminders: Reminder[]): Promise<void> {
   await setItem(KEY, reminders);
 }
 
-export async function getReminders(userId: number): Promise<Reminder[]> {
-  const all = await load();
-  return all.filter(r => r.userId === userId);
+export async function getReminders(userId: string): Promise<Reminder[]> {
+  return (await listPlannerItems<Reminder>('reminder')).filter(r => r.userId === userId);
 }
 
-export async function createReminder(rem: Partial<Reminder> & { userId: number; title: string }): Promise<Reminder> {
-  const all = await load();
+export async function createReminder(rem: Partial<Reminder> & { userId: string; title: string }): Promise<Reminder> {
   const newRem: Reminder = {
     id: Date.now(),
     userId: rem.userId,
@@ -52,26 +28,27 @@ export async function createReminder(rem: Partial<Reminder> & { userId: number; 
     notes: rem.notes || '',
     createdAt: new Date().toISOString(),
   };
-  await save([...all, newRem]);
-  return newRem;
+  const created = await createPlannerItem('reminder', newRem);
+  await addLog('created', 'reminder', created.title, { entityId: created.id, after: created });
+  return created;
 }
 
-export async function updateReminder(id: number, updates: Partial<Reminder>): Promise<Reminder> {
-  const all = await load();
-  const updated = all.map(r => r.id === id ? { ...r, ...updates } : r);
-  await save(updated);
-  return updated.find(r => r.id === id)!;
+export async function updateReminder(id: PlannerRecordId, updates: Partial<Reminder>): Promise<Reminder> {
+  const before = (await listPlannerItems<Reminder>('reminder')).find(r => String(r.id) === String(id));
+  const updated = await updatePlannerItem<Reminder>('reminder', id, updates);
+  await addLog('updated', 'reminder', updated.title, { entityId: id, before, after: updated });
+  return updated;
 }
 
-export async function deleteReminder(id: number): Promise<void> {
+export async function deleteReminder(id: PlannerRecordId): Promise<void> {
   const all = await load();
   const rem = all.find(r => r.id === id);
-  if (rem) await addToTrash(rem, 'reminder');
-  await save(all.filter(r => r.id !== id));
+  let trashId: string | undefined;
+  if (rem) trashId = await addToTrash(rem, 'reminder');
+  await deletePlannerItem('reminder', id);
+  await addLog('deleted', 'reminder', rem?.title || '', { entityId: id, before: rem, trashId });
 }
 
 export async function restoreReminderDirect(rem: Reminder): Promise<void> {
-  const all = await load();
-  all.push(rem);
-  await save(all);
+  await createPlannerItem('reminder', rem);
 }

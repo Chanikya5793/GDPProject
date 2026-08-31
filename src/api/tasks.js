@@ -1,104 +1,35 @@
 import { addToTrash } from './trash'
 import { addLog } from './logs'
+import { createRecord, deleteRecord, listRecords, updateRecord } from './plannerStore'
 
-const STORAGE_KEY = 'nw_tasks'
-
-function load() {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : defaultTasks()
-}
-
-function save(tasks) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
-}
-
-function defaultTasks() {
-    return [
-        {
-            id: 1,
-            userId: 1,
-            title: 'Read Chapter 5 - Organic Chemistry',
-            dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-            dueTime: '23:59',
-            priority: 'high',
-            category: 'Reading',
-            notes: 'Focus on the different compounds',
-            completed: false,
-            createdAt: new Date().toISOString(),
-        },
-        {
-            id: 2,
-            userId: 1,
-            title: 'Complete Lab Report',
-            dueDate: new Date(Date.now() + 172800000).toISOString().split('T')[0],
-            dueTime: '17:00',
-            priority: 'high',
-            category: 'Lab',
-            notes: 'Include all data tables',
-            completed: false,
-            createdAt: new Date().toISOString(),
-        },
-        {
-            id: 3,
-            userId: 1,
-            title: 'Study for CS Midterm',
-            dueDate: new Date(Date.now() + 432000000).toISOString().split('T')[0],
-            dueTime: '',
-            priority: 'medium',
-            category: 'Exam',
-            notes: 'Chapters 1-6',
-            completed: false,
-            createdAt: new Date().toISOString(),
-        },
-        {
-            id: 4,
-            userId: 1,
-            title: 'Submit History Essay',
-            dueDate: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-            dueTime: '23:59',
-            priority: 'high',
-            category: 'Homework',
-            notes: '',
-            completed: true,
-            createdAt: new Date().toISOString(),
-        },
-    ]
-}
-
-// TODO: API functions
-export async function getTasks(userId) {
-    return load().filter(t => t.userId === userId)
+export async function getTasks() {
+  return listRecords('task')
 }
 
 export async function createTask(task) {
-    const tasks = load()
-    const newTask = {
-        ...task,
-        id: Date.now(),
-        completed: false,
-        createdAt: new Date().toISOString(),
-    }
-    save([...tasks, newTask])
-    addLog('created', 'task', newTask.title)
-    return newTask
+  const created = await createRecord('task', task)
+  void addLog('created', 'task', created.title, { entityId: created.id, after: created })
+  return created
 }
 
 export async function updateTask(id, updates) {
-    const tasks = load()
-    const updated = tasks.map(t => t.id === id ? { ...t, ...updates } : t)
-    save(updated)
-    const task = updated.find(t => t.id === id)
-    addLog('updated', 'task', task?.title)
-    return task
+  const before = (await listRecords('task')).find(task => String(task.id) === String(id))
+  const updated = await updateRecord('task', id, updates)
+  void addLog('updated', 'task', updated.title, { entityId: id, before, after: updated })
+  return updated
 }
 
 export async function deleteTask(id) {
-    const tasks = load()
-    const task = tasks.find(t => t.id === id)
-    if (task) await addToTrash(task, 'task')
-    save(tasks.filter(t => t.id !== id))
-    addLog('deleted', 'task', task?.title)
-    return { success: true }
+  const task = (await listRecords('task')).find(item => String(item.id) === String(id))
+  let trashId
+  if (task) trashId = await addToTrash(task, 'task')
+  await deleteRecord('task', id)
+  void addLog('deleted', 'task', task?.title, { entityId: id, before: task, trashId })
+  return { success: true }
+}
+
+export async function restoreTaskDirect(task) {
+  return createRecord('task', { ...task, _revision: undefined })
 }
 
 export function restoreTaskDirect(task) {
@@ -108,19 +39,29 @@ export function restoreTaskDirect(task) {
 }
 
 export async function toggleTask(id) {
-    const tasks = load()
-    const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t)
-    save(updated)
-    const task = updated.find(t => t.id === id)
-    addLog(task?.completed ? 'completed' : 'reopened', 'task', task?.title)
-    return task
+  const before = (await listRecords('task')).find(task => String(task.id) === String(id))
+  if (!before) throw new Error('Task not found')
+  const updated = await updateRecord('task', id, { completed: !before.completed })
+  void addLog(updated.completed ? 'completed' : 'reopened', 'task', updated.title, {
+    entityId: id, before, after: updated,
+  })
+  return updated
 }
 
 export async function batchUpdateTasks(updates) {
-    // updates: [{ id, changes }]
-    const tasks = load()
-    const map = new Map(updates.map(u => [u.id, u.changes]))
-    const updated = tasks.map(t => map.has(t.id) ? { ...t, ...map.get(t.id) } : t)
-    save(updated)
-    return updated.filter(t => map.has(t.id))
+  // Snapshot first so each entry carries a real `before` and stays rollbackable
+  // from the activity log — this path previously wrote no log entries at all,
+  // which matters more now that auto-balance can move tasks without a click.
+  const before = await listRecords('task')
+  const updated = await Promise.all(
+    updates.map(update => updateRecord('task', update.id, update.changes))
+  )
+  // Sequential: addLog does a read-modify-write of one log store, so logging
+  // concurrently would drop entries.
+  for (const task of updated) {
+    const prior = before.find(item => String(item.id) === String(task.id))
+    await addLog('updated', 'task', task.title, { entityId: task.id, before: prior, after: task })
+  }
+  return updated
 }
+
