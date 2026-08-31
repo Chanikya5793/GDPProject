@@ -115,8 +115,16 @@ class MigrationResult(StrictModel):
 
 
 class PrivacySettings(StrictModel):
+    # ai_enabled stays off until the user turns it on: nothing reaches the model
+    # provider without that one deliberate choice. The record types default to all
+    # of them so that switching it on actually works, rather than leaving the
+    # assistant silently blind to a planner it has been granted access to.
     ai_enabled: bool = False
-    indexed_entity_types: List[EntityType] = Field(default_factory=list)
+    indexed_entity_types: List[EntityType] = Field(
+        default_factory=lambda: [
+            EntityType.task, EntityType.reminder, EntityType.note, EntityType.schedule,
+        ]
+    )
     index_attachments: bool = False
     retain_chat: bool = False
     chat_retention_days: int = Field(default=0, ge=0, le=365)
