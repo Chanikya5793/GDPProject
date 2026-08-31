@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { apiConfigured, apiFetch, idempotencyKey } from '../api/client'
+import { toHistory } from '../utils/chatHistory'
 import { useAuth } from './AuthContext'
 
 const AiContext = createContext(null)
@@ -22,6 +23,11 @@ export function AiProvider({ children }) {
   const [typing, setTyping] = useState(false)
   const [error, setError] = useState('')
   const controllerRef = useRef(null)
+  // sendMessage is memoised on `typing` alone, so reading `messages` from its
+  // closure would replay a stale conversation. The ref always holds the current
+  // one.
+  const messagesRef = useRef(messages)
+  useEffect(() => { messagesRef.current = messages }, [messages])
   // Who processes approved records, read from the server so this copy cannot
   // drift from whatever provider is actually deployed.
   const [aiInfo, setAiInfo] = useState(null)
@@ -77,6 +83,9 @@ export function AiProvider({ children }) {
           message: trimmed,
           request_id: idempotencyKey('chat'),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          // Everything said before this message, so a clarifying question can be
+          // answered and picked up from.
+          history: toHistory(messagesRef.current),
         }),
       })
       setMessages(previous => [...previous, {

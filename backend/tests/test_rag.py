@@ -120,6 +120,29 @@ def test_copilot_reaches_the_generator_with_no_records(services):
     assert services.test_generator.prompts
 
 
+def test_conversation_history_reaches_the_prompt(services):
+    # Without this a clarifying question is useless: the assistant asks, the
+    # student answers, and the next turn has no idea what was asked.
+    from app.models import ChatTurn
+
+    enable_ai(services)
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    services.copilot.answer("alice", "tomorrow at 3", history=[
+        ChatTurn(role="assistant", text="What should I call it?"),
+        ChatTurn(role="user", text="Lab report"),
+    ])
+    prompt = services.test_generator.prompts[-1]
+    assert "What should I call it?" in prompt
+    assert "Lab report" in prompt
+
+
+def test_history_is_optional(services):
+    enable_ai(services)
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    services.copilot.answer("alice", "hello")
+    assert "CONVERSATION=[]" in services.test_generator.prompts[-1]
+
+
 def test_copilot_passes_today_so_relative_dates_resolve(services):
     enable_ai(services)
     services.test_generator.response = GeneratedAnswer(answer="ok")
