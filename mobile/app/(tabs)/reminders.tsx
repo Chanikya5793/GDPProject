@@ -10,6 +10,7 @@ import { createStyles } from '@/theme/createStyles';
 import { modalAnimation } from '@/theme/appearance';
 import { getReminders, createReminder, updateReminder, deleteReminder } from '@/api/reminders';
 import { PlannerRecordId, Reminder } from '@/types';
+import { parseTimeInput } from '@/utils/timeInput';
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -215,6 +216,9 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
     }
   }, [visible, reminder]);
 
+  // Normalise on save so "9:30" becomes "09:30" rather than a 422 from the API.
+  const parsedTime = parseTimeInput(time);
+
   const ms = createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -232,8 +236,17 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
             <Text style={{ fontSize: 16, color: colors.textSecondary }}>Cancel</Text>
           </TouchableOpacity>
           <Text style={ms.headerTitle}>{reminder ? 'Edit Reminder' : 'New Reminder'}</Text>
-          <TouchableOpacity onPress={() => { if (title.trim()) onSave({ title, date, time, notes }); }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: accent.primary }}>{reminder ? 'Save' : 'Add'}</Text>
+          <TouchableOpacity
+            disabled={Boolean(parsedTime.error)}
+            onPress={() => {
+              if (!title.trim() || parsedTime.error) return;
+              onSave({ title, date, time: parsedTime.value ?? '', notes });
+            }}
+          >
+            <Text style={{
+              fontSize: 16, fontWeight: '600',
+              color: parsedTime.error ? colors.textMuted : accent.primary,
+            }}>{reminder ? 'Save' : 'Add'}</Text>
           </TouchableOpacity>
         </View>
         <ScrollView style={ms.form} keyboardShouldPersistTaps="handled">
@@ -242,7 +255,18 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
           <Text style={ms.label}>Date</Text>
           <TextInput style={ms.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted} />
           <Text style={ms.label}>Time</Text>
-          <TextInput style={ms.input} value={time} onChangeText={setTime} placeholder="HH:MM (24h)" placeholderTextColor={colors.textMuted} />
+          <TextInput
+            style={[ms.input, parsedTime.error ? { borderColor: colors.error } : null]}
+            value={time}
+            onChangeText={setTime}
+            placeholder="HH:MM (24h), optional"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numbers-and-punctuation"
+            accessibilityLabel="Reminder time, 24-hour HH:MM"
+          />
+          {parsedTime.error ? (
+            <Text style={{ fontSize: 12, marginTop: 6, color: colors.error }}>{parsedTime.error}</Text>
+          ) : null}
           <Text style={ms.label}>Notes</Text>
           <TextInput style={[ms.input, { height: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Details..." placeholderTextColor={colors.textMuted} multiline />
         </ScrollView>
