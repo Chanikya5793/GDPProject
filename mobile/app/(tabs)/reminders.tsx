@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform,
+  Modal, RefreshControl, Alert, Platform, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -205,6 +205,7 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [approvedForAi, setApprovedForAi] = useState(true);
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
@@ -212,6 +213,7 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
       setTitle(reminder?.title || '');
       setDate(reminder?.date || localDateStr());
       setTime(reminder?.time || '');
+      setApprovedForAi(reminder?._approvedForAi ?? true);
       setNotes(reminder?.notes || '');
     }
   }, [visible, reminder]);
@@ -240,7 +242,7 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
             disabled={Boolean(parsedTime.error)}
             onPress={() => {
               if (!title.trim() || parsedTime.error) return;
-              onSave({ title, date, time: parsedTime.value ?? '', notes });
+              onSave({ title, date, time: parsedTime.value ?? '', notes, _approvedForAi: approvedForAi });
             }}
           >
             <Text style={{
@@ -267,6 +269,21 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
           {parsedTime.error ? (
             <Text style={{ fontSize: 12, marginTop: 6, color: colors.error }}>{parsedTime.error}</Text>
           ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={ms.label}>Visible to the assistant</Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 }}>
+                Lets the copilot read this reminder when you ask about it.
+              </Text>
+            </View>
+            <Switch
+              value={approvedForAi}
+              onValueChange={setApprovedForAi}
+              trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+              accessibilityLabel="Visible to the assistant"
+            />
+          </View>
+
           <Text style={ms.label}>Notes</Text>
           <TextInput style={[ms.input, { height: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Details..." placeholderTextColor={colors.textMuted} multiline />
         </ScrollView>
