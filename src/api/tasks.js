@@ -32,12 +32,6 @@ export async function restoreTaskDirect(task) {
   return createRecord('task', { ...task, _revision: undefined })
 }
 
-export function restoreTaskDirect(task) {
-    const tasks = load()
-    tasks.push(task)
-    save(tasks)
-}
-
 export async function toggleTask(id) {
   const before = (await listRecords('task')).find(task => String(task.id) === String(id))
   if (!before) throw new Error('Task not found')
