@@ -83,12 +83,54 @@ def test_stale_vector_is_not_cited(services):
     assert citations == []
 
 
-def test_copilot_abstains_without_sources(services):
+def test_copilot_still_answers_when_nothing_is_retrieved(services):
+    # Refusing before the model ran made every request for a change impossible:
+    # "add a task for tomorrow" has nothing to retrieve.
     enable_ai(services)
-    answer, citations, disclosure, _ = services.copilot.answer("alice", "unknown")
-    assert disclosure.abstained
+    services.test_generator.response = GeneratedAnswer(answer="Here is a general plan.")
+    answer, citations, disclosure, _ = services.copilot.answer("alice", "how do I plan a week?")
+    assert answer == "Here is a general plan."
     assert citations == []
-    assert "enough" in answer
+    assert not disclosure.abstained
+    assert disclosure.result_count == 0
+    assert "no planner records" in (disclosure.reason or "").lower()
+
+
+def test_copilot_reaches_the_generator_with_no_records(services):
+    # The model must actually be called; the old path returned a canned string.
+    enable_ai(services)
+    services.test_generator.response = GeneratedAnswer(answer="called")
+    services.copilot.answer("alice", "anything")
+    assert services.test_generator.prompts
+
+
+def test_copilot_passes_today_so_relative_dates_resolve(services):
+    enable_ai(services)
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    services.copilot.answer("alice", "add something tomorrow", today=date(2026, 8, 20))
+    assert "2026-08-20" in services.test_generator.prompts[-1]
+
+
+def test_copilot_keeps_an_action_even_when_it_cites_nothing(services):
+    # An action proposal has no record to misquote, so the citation guard must not
+    # discard it. Without this a change request dies on the way out.
+    from app.ai import GeneratedAction
+    from app.models import ProposalOperation
+
+    enable_ai(services)
+    record = add_task(services)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+    services.test_generator.response = GeneratedAnswer(
+        answer="I can add that for you once you confirm.",
+        citation_ids=[],
+        action=GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task, title="New task",
+        ),
+    )
+    answer, _, disclosure, generated = services.copilot.answer("alice", "add a task")
+    assert not disclosure.abstained
+    assert generated.action is not None
+    assert "confirm" in answer
 
 
 def test_copilot_rejects_generator_citations_not_retrieved(services):
