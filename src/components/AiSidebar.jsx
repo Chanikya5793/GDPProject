@@ -23,6 +23,38 @@ export function ThinkingIndicator({ onCancel }) {
   )
 }
 
+export function FirstRunNotice({ info, onAcknowledge }) {
+  // Named plainly rather than hedged: the assistant is on by default, so this is
+  // the first and possibly only place a student learns where their planner text
+  // goes. The provider comes from the server, so it cannot drift from what is
+  // actually deployed; if it is unavailable the notice still states the shape of
+  // what happens rather than silently saying nothing.
+  return (
+    <section className="ai-first-run" aria-label="How the assistant uses your planner">
+      <div className="ai-first-run-title">
+        <ShieldCheck size={14} />
+        <strong>Before you start</strong>
+      </div>
+      <p>
+        The assistant reads the planner records you have not excluded, and sends
+        them {info ? <>to <strong>{info.provider}</strong> ({info.model})</> : 'to the configured AI provider'} to
+        answer you.
+      </p>
+      {info?.trains_on_prompts && (
+        <p className="ai-first-run-warn">
+          That provider tier permits your questions and the record text sent with
+          them to be used to train its models.
+        </p>
+      )}
+      <p>
+        You can turn the assistant off entirely in Settings, or keep an individual
+        task, reminder or note out of it with its own visibility switch.
+      </p>
+      <button onClick={onAcknowledge}>Got it</button>
+    </section>
+  )
+}
+
 export function CitationList({ citations }) {
   if (!citations?.length) return null
   return (
@@ -79,6 +111,7 @@ export default function AiSidebar() {
   const {
     poppedOut, togglePopOut, messages, typing, sendMessage, cancelResponse, available,
     clearChat, confirmProposal, rejectProposal,
+    aiInfo, noticeAcknowledged, acknowledgeNotice,
   } = useAi()
   const location = useLocation()
   // The pop-out lives in the dashboard grid, so it only applies on the
@@ -163,6 +196,9 @@ export default function AiSidebar() {
           </div>
 
           <div className="ai-messages">
+            {available && !noticeAcknowledged && (
+              <FirstRunNotice info={aiInfo} onAcknowledge={acknowledgeNotice} />
+            )}
             {messages.map(msg => (
               <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
                 {msg.role === 'bot' && (
