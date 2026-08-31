@@ -1,0 +1,6 @@
+{
+  "enforce": true,
+  "allowed_domains": ["nwmissouri.edu"],
+  "allowed_emails": [],
+  "blocked_emails": []
+}
