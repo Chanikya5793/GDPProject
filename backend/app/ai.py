@@ -155,6 +155,14 @@ def strict_json_schema(node: Any) -> Any:
     return node
 
 
+class GenerationTimeout(RuntimeError):
+    """The model did not answer in time.
+
+    Distinguished from other failures because it is expected under load and the
+    student should be told to try again, not shown a server error.
+    """
+
+
 class MuseAnswerGenerator:
     """Meta Muse Spark via the OpenAI-compatible Chat Completions protocol.
 
@@ -195,19 +203,22 @@ class MuseAnswerGenerator:
         }
 
     def generate(self, prompt: str) -> GeneratedAnswer:
-        response = self.client.post(
-            f"{self.base_url}/chat/completions",
-            headers=self._headers,
-            json={
-                "model": self.model,
-                "temperature": 0.1,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_INSTRUCTION},
-                    {"role": "user", "content": prompt},
-                ],
-                "response_format": {"type": "json_schema", "json_schema": self._schema()},
-            },
-        )
+        try:
+            response = self.client.post(
+                f"{self.base_url}/chat/completions",
+                headers=self._headers,
+                json={
+                    "model": self.model,
+                    "temperature": 0.1,
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "response_format": {"type": "json_schema", "json_schema": self._schema()},
+                },
+            )
+        except httpx.TimeoutException as exc:
+            raise GenerationTimeout("The model did not answer in time") from exc
         if response.status_code >= 400:
             # Deliberately does not echo the body: it quotes the prompt back, and
             # the prompt carries the user's planner records.
