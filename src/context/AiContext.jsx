@@ -22,6 +22,29 @@ export function AiProvider({ children }) {
   const [typing, setTyping] = useState(false)
   const [error, setError] = useState('')
   const controllerRef = useRef(null)
+  // Who processes approved records, read from the server so this copy cannot
+  // drift from whatever provider is actually deployed.
+  const [aiInfo, setAiInfo] = useState(null)
+  // The assistant is on by default, so the first thing a student sees has to say
+  // where their planner text goes. Acknowledged per uid: a different account on
+  // the same browser has not been told anything.
+  const noticeKey = user?.uid ? `nw_ai_notice_${user.uid}` : null
+  const [noticeAcknowledged, setNoticeAcknowledged] = useState(true)
+
+  useEffect(() => {
+    if (!noticeKey) { setNoticeAcknowledged(true); return }
+    setNoticeAcknowledged(localStorage.getItem(noticeKey) === 'seen')
+  }, [noticeKey])
+
+  const acknowledgeNotice = useCallback(() => {
+    if (noticeKey) localStorage.setItem(noticeKey, 'seen')
+    setNoticeAcknowledged(true)
+  }, [noticeKey])
+
+  useEffect(() => {
+    if (!apiConfigured()) return
+    apiFetch('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null))
+  }, [user?.uid])
 
   useEffect(() => {
     setMessages([WELCOME])
@@ -130,6 +153,7 @@ export function AiProvider({ children }) {
     <AiContext.Provider value={{
       poppedOut, togglePopOut, messages, typing, error, sendMessage, cancelResponse,
       clearChat, confirmProposal, rejectProposal,
+      aiInfo, noticeAcknowledged, acknowledgeNotice,
       // Whether a backend exists at all. The sidebar uses this to explain the
       // copilot is unavailable instead of letting people send doomed requests.
       available: apiConfigured(),

@@ -464,3 +464,41 @@
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+/* ═══ First-run disclosure ═══
+   Shown once per account, above the conversation. It carries the only
+   unprompted statement of where planner text goes, so it is styled to read as
+   a notice rather than another chat bubble. */
+.ai-first-run {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--surface);
+}
+.ai-first-run-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.ai-first-run p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.ai-first-run-warn { color: var(--text); }
+.ai-first-run button {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  background: var(--green);
+  color: #fff;
+}
