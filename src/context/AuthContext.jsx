@@ -9,6 +9,8 @@ import {
   verifyBeforeUpdateEmail,
 } from 'firebase/auth'
 import { auth, firebaseConfigured, persistenceReady } from '../lib/firebase'
+import { fetchSignupPolicy } from '../api/client'
+import { refusalFor } from '../utils/signupPolicy'
 
 const AuthContext = createContext(null)
 
@@ -115,12 +117,28 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Returns a message when the address may not register, else null. Any failure
+  // to read the policy returns null: the server is the authority, and a network
+  // hiccup here should not block an eligible student from signing up.
+  const signupRefusal = async email => {
+    try {
+      return refusalFor(email, await fetchSignupPolicy())
+    } catch {
+      return null
+    }
+  }
+
   const register = async (name, email, password) => {
     if (!firebaseConfigured || !auth) {
       if (!email?.trim()) return { success: false, error: 'Enter an email address.' }
       setUser(persistDemoUser(demoUser(name, email)))
       return { success: true }
     }
+    // Advisory pre-check so an ineligible address is refused before an account
+    // exists, rather than creating one that every API call would then reject.
+    // The binding check is server-side; this only spares the user the dead end.
+    const refusal = await signupRefusal(email)
+    if (refusal) return { success: false, error: refusal }
     try {
       await persistenceReady
       const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
