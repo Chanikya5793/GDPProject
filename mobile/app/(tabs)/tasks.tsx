@@ -19,6 +19,7 @@ import {
 } from '@/utils/schedule';
 import { getCategories } from '@/api/categories';
 import { Category, PlannerRecordId, Task } from '@/types';
+import { parseTimeInput } from '@/utils/timeInput';
 
 // ─── priority escalation (inlined so Metro always picks up changes) ──────────
 
@@ -640,9 +641,15 @@ function TaskModal({
     }
   }, [visible, task]);
 
+  // Normalise on save so "9:30" becomes "09:30" instead of a 422 from the API.
+  const parsedTime = parseTimeInput(dueTime);
+
   const handleSubmit = () => {
-    if (!title.trim()) return;
-    onSave({ title: title.trim(), dueDate, dueTime, priority, category, notes });
+    if (!title.trim() || parsedTime.error) return;
+    onSave({
+      title: title.trim(), dueDate, dueTime: parsedTime.value ?? '',
+      priority, category, notes,
+    });
   };
 
   const ms = modalStyles(colors, accent, appearance);
@@ -655,8 +662,11 @@ function TaskModal({
             <Text style={[ms.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
           </TouchableOpacity>
           <Text style={ms.headerTitle}>{task ? 'Edit Task' : 'New Task'}</Text>
-          <TouchableOpacity onPress={handleSubmit}>
-            <Text style={[ms.saveText, { color: accent.primary }]}>{task ? 'Save' : 'Add'}</Text>
+          <TouchableOpacity onPress={handleSubmit} disabled={Boolean(parsedTime.error)}>
+            <Text style={[
+              ms.saveText,
+              { color: parsedTime.error ? colors.textMuted : accent.primary },
+            ]}>{task ? 'Save' : 'Add'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -682,12 +692,17 @@ function TaskModal({
 
           <Text style={ms.label}>Due Time</Text>
           <TextInput
-            style={ms.input}
+            style={[ms.input, parsedTime.error ? { borderColor: colors.error } : null]}
             value={dueTime}
             onChangeText={setDueTime}
             placeholder="HH:MM (24h), optional"
             placeholderTextColor={colors.textMuted}
+            keyboardType="numbers-and-punctuation"
+            accessibilityLabel="Due time, 24-hour HH:MM"
           />
+          {parsedTime.error ? (
+            <Text style={[ms.fieldError, { color: colors.error }]}>{parsedTime.error}</Text>
+          ) : null}
 
           <Text style={ms.label}>Priority</Text>
           <View style={ms.segmentRow}>
@@ -808,6 +823,7 @@ function modalStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: R
     form: { padding: 20 },
     label: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, marginBottom: 6, marginTop: 16 },
     input: { backgroundColor: colors.surfaceVariant, borderRadius: 10, padding: 14, fontSize: 16, color: colors.text, borderWidth: 1, borderColor: colors.border },
+    fieldError: { fontSize: 12, marginTop: 6 },
     segmentRow: { flexDirection: 'row', gap: 8 },
     segment: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: colors.surfaceVariant },
     segmentText: { fontSize: 14, fontWeight: '500', color: colors.text },
