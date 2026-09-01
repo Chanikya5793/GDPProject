@@ -170,3 +170,26 @@ def test_retained_chat_is_encrypted_repository_backed_idempotent_and_deletable(
     assert first.json() == second.json()
     assert len(services.test_generator.prompts) == 1
     assert client.delete("/v1/chats", headers=auth).json() == {"deleted": 1}
+
+
+def test_a_change_it_cannot_prepare_is_admitted_not_implied(client, services, auth):
+    # It described creating a reminder with no day, which cannot become a
+    # proposal. Without this the student is told to confirm a preview that will
+    # never appear.
+    from app.ai import GeneratedAction, GeneratedAnswer
+    from app.models import EntityType, ProposalOperation
+
+    services.test_generator.response = GeneratedAnswer(
+        answer="I'm setting up that reminder now.",
+        action=GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.reminder,
+            title="Email advisor",
+        ),
+    )
+    response = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "remind me to email my advisor", "request_id": "nodate-0001",
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["proposals"] == []
+    assert "nothing to confirm" in body["answer"]
