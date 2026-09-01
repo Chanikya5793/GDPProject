@@ -8,7 +8,7 @@ from typing import Annotated, Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .ai import GenerationTimeout
@@ -44,6 +44,49 @@ class McpRequest(BaseModel):
     id: Optional[Any] = None
     method: str
     params: Dict[str, Any] = Field(default_factory=dict)
+
+
+# A streamed response is committed as HTTP 200 the moment the body starts, so
+# anything that must surface as a status code has to be settled before then.
+SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    # Without this an intermediary is free to buffer the whole body and hand it
+    # over at the end, which would deliver the wait it exists to remove.
+    "X-Accel-Buffering": "no",
+}
+
+
+def sse_event(event: str, payload: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def build_chat_response(services: Container, uid: str, answer, citations, disclosure, generated):
+    proposals: list[ActionProposal] = []
+    if generated.action:
+        proposal = services.proposals.from_generated_action(uid, generated.action, answer)
+        if proposal:
+            proposals.append(proposal)
+        else:
+            # It described a change it could not express: a reminder with no
+            # day, a record that does not exist. Staying silent leaves the
+            # student waiting to confirm a preview that will never arrive.
+            answer = (
+                f"{answer}\n\nI could not prepare that change, so there is "
+                "nothing to confirm yet. Tell me the missing detail and I will "
+                "try again."
+            )
+    return ChatResponse(
+        answer=answer, citations=citations, retrieval=disclosure, proposals=proposals
+    )
+
+
+def retain_chat_response(services: Container, uid: str, privacy, body, response) -> None:
+    if privacy.retain_chat and privacy.chat_retention_days > 0:
+        services.repository.save_chat_response(
+            uid, body.request_id, body.message, response,
+            datetime.now(timezone.utc) + timedelta(days=privacy.chat_retention_days),
+        )
 
 
 def get_container(request: Request) -> Container:
@@ -288,29 +331,95 @@ def create_app(container: Container | None = None) -> FastAPI:
                 status_code=504,
                 detail="The assistant took too long to answer. Please try again.",
             ) from exc
-        proposals: list[ActionProposal] = []
-        if generated.action:
-            proposal = services.proposals.from_generated_action(user.uid, generated.action, answer)
-            if proposal:
-                proposals.append(proposal)
-            else:
-                # It described a change it could not express: a reminder with no
-                # day, a record that does not exist. Staying silent leaves the
-                # student waiting to confirm a preview that will never arrive.
-                answer = (
-                    f"{answer}\n\nI could not prepare that change, so there is "
-                    "nothing to confirm yet. Tell me the missing detail and I will "
-                    "try again."
-                )
-        response = ChatResponse(
-            answer=answer, citations=citations, retrieval=disclosure, proposals=proposals
+        response = build_chat_response(
+            services, user.uid, answer, citations, disclosure, generated
         )
-        if privacy.retain_chat and privacy.chat_retention_days > 0:
-            services.repository.save_chat_response(
-                user.uid, body.request_id, body.message, response,
-                datetime.now(timezone.utc) + timedelta(days=privacy.chat_retention_days),
-            )
+        retain_chat_response(services, user.uid, privacy, body, response)
         return response
+
+    @app.post("/v1/copilot/chat/stream")
+    def chat_stream(body: ChatRequest, user: CurrentUser, services: ContainerDep):
+        """The same answer as /v1/copilot/chat, delivered as it is written.
+
+        Emits `delta` events carrying answer text, then one `final` event with
+        the complete ChatResponse. The final event is authoritative: the
+        citation guard can replace the answer after generation, so a client
+        must render `final.answer` rather than the text it accumulated.
+        """
+        privacy = services.repository.get_privacy(user.uid)
+        if privacy.retain_chat:
+            retained = services.repository.get_chat_response(user.uid, body.request_id)
+            if retained:
+                # Already answered. There is nothing left to stream, so send the
+                # stored reply as the final event and close.
+                return StreamingResponse(
+                    iter([sse_event("final", retained.model_dump(mode="json"))]),
+                    media_type="text/event-stream", headers=SSE_HEADERS,
+                )
+        try:
+            services.rate_limiter.check(user.uid)
+        except RateLimitExceeded as exc:
+            services.audit.record(
+                user.uid, "rate_limited", outcome="denied",
+                metadata={
+                    "endpoint": "copilot_chat_stream",
+                    "retry_after_seconds": exc.retry_after_seconds,
+                },
+            )
+            raise
+        stream = services.copilot.answer_stream(
+            user.uid, body.message, history=body.history,
+        )
+        # Pull the first item here rather than inside the response body. Once a
+        # streaming body starts the status line is already 200, so retrieval
+        # being denied or the model timing out could only be reported in-band;
+        # priming keeps them as real status codes.
+        try:
+            first = next(stream)
+        except StopIteration as exc:
+            raise HTTPException(status_code=500, detail="The assistant produced no answer.") from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except GenerationTimeout as exc:
+            raise HTTPException(
+                status_code=504,
+                detail="The assistant took too long to answer. Please try again.",
+            ) from exc
+
+        def events():
+            item = first
+            while True:
+                if isinstance(item, tuple):
+                    answer, citations, disclosure, generated = item
+                    response = build_chat_response(
+                        services, user.uid, answer, citations, disclosure, generated
+                    )
+                    retain_chat_response(services, user.uid, privacy, body, response)
+                    yield sse_event("final", response.model_dump(mode="json"))
+                    return
+                yield sse_event("delta", {"text": item})
+                try:
+                    item = next(stream)
+                except StopIteration:
+                    return
+                except GenerationTimeout:
+                    yield sse_event("error", {
+                        "code": "timeout",
+                        "detail": "The assistant took too long to answer. Please try again.",
+                    })
+                    return
+                except Exception:
+                    # The detail is withheld on purpose: it can quote the prompt,
+                    # and the prompt carries the student's planner records.
+                    yield sse_event("error", {
+                        "code": "generation_failed",
+                        "detail": "The assistant could not finish that answer.",
+                    })
+                    return
+
+        return StreamingResponse(
+            events(), media_type="text/event-stream", headers=SSE_HEADERS,
+        )
 
     @app.delete("/v1/chats", status_code=200)
     def delete_chats(user: CurrentUser, services: ContainerDep):
