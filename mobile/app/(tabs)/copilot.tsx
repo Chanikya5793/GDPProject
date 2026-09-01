@@ -4,7 +4,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiConfigured, apiRequest, idempotencyKey } from '@/api/client';
+import { apiConfigured, apiRequest, apiStream, idempotencyKey } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
 import { getItem, setItem } from '@/api/storage';
@@ -43,6 +43,8 @@ interface Message extends Partial<ChatResponse> {
   id: string;
   role: 'user' | 'assistant' | 'error';
   text: string;
+  /** True while the answer is still arriving, so a pause does not read as the end. */
+  streaming?: boolean;
 }
 
 export default function CopilotScreen() {
@@ -77,27 +79,63 @@ export default function CopilotScreen() {
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
+    // Read before the new message is appended: history is the earlier turns, so
+    // a clarifying question can be answered and picked up from.
+    const history = toHistory(messages);
     setMessages(previous => [...previous, { id: idempotencyKey('message'), role: 'user', text }]);
     setLoading(true);
     const controller = new AbortController();
     controllerRef.current = controller;
+    const answerId = idempotencyKey('answer');
+    let streamed = '';
+    let settled = false;
+    let streamFailure: { code?: string; detail?: string } | null = null;
+
+    // Creates the reply on the first delta and patches it in place after that,
+    // so no empty bubble appears before there is anything to read.
+    const upsertAnswer = (patch: Partial<Message>) => setMessages(previous => {
+      const index = previous.findIndex(message => message.id === answerId);
+      if (index === -1) return [...previous, { id: answerId, role: 'assistant', text: '', ...patch }];
+      const next = [...previous];
+      next[index] = { ...next[index], ...patch };
+      return next;
+    });
+
     try {
-      const response = await apiRequest<ChatResponse>('/v1/copilot/chat', {
-        method: 'POST',
+      await apiStream('/v1/copilot/chat/stream', {
         signal: controller.signal,
         body: JSON.stringify({
           message: text, request_id: idempotencyKey('mobile-chat'),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-          // Everything said before this message, so a clarifying question can be
-          // answered and picked up from.
-          history: toHistory(messages),
+          history,
         }),
+      }, ({ event, data }) => {
+        if (event === 'delta') {
+          streamed += (data as { text?: string }).text || '';
+          upsertAnswer({ text: streamed, streaming: true });
+        } else if (event === 'final') {
+          // Authoritative. The citation guard can replace the whole answer once
+          // the structured result is parsed, and a change that could not be
+          // prepared appends to it, so this replaces the streamed text.
+          settled = true;
+          const response = data as ChatResponse;
+          upsertAnswer({ ...response, text: response.answer, streaming: false });
+        } else if (event === 'error') {
+          streamFailure = data as { code?: string; detail?: string };
+        }
       });
-      setMessages(previous => [...previous, {
-        id: idempotencyKey('answer'), role: 'assistant', text: response.answer, ...response,
-      }]);
+      if (!settled && !controller.signal.aborted) {
+        // The model failed mid-answer or the connection dropped. Keep whatever
+        // text arrived, but stop it looking complete.
+        upsertAnswer({ streaming: false });
+        setMessages(previous => [...previous, {
+          id: idempotencyKey('error'), role: 'error',
+          text: streamFailure?.detail || 'The connection ended before the answer was finished.',
+        }]);
+      }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
+      upsertAnswer({ streaming: false });
       // An unconfigured backend means the copilot is unavailable, not that the
       // request failed; saying "not configured" in red reads like a crash.
       const code = (error as { code?: string })?.code;
@@ -193,7 +231,9 @@ export default function CopilotScreen() {
             ))}
           </View>
         ))}
-        {loading && <View style={styles.loading}><ActivityIndicator color={accent.primary} /><Text style={styles.disclosure}>Retrieving approved records…</Text></View>}
+        {loading && !messages.some(message => message.streaming) && (
+          <View style={styles.loading}><ActivityIndicator color={accent.primary} /><Text style={styles.disclosure}>Retrieving approved records…</Text></View>
+        )}
       </ScrollView>
       <View style={styles.inputRow}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
