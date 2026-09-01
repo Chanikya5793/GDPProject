@@ -293,6 +293,15 @@ def create_app(container: Container | None = None) -> FastAPI:
             proposal = services.proposals.from_generated_action(user.uid, generated.action, answer)
             if proposal:
                 proposals.append(proposal)
+            else:
+                # It described a change it could not express: a reminder with no
+                # day, a record that does not exist. Staying silent leaves the
+                # student waiting to confirm a preview that will never arrive.
+                answer = (
+                    f"{answer}\n\nI could not prepare that change, so there is "
+                    "nothing to confirm yet. Tell me the missing detail and I will "
+                    "try again."
+                )
         response = ChatResponse(
             answer=answer, citations=citations, retrieval=disclosure, proposals=proposals
         )
