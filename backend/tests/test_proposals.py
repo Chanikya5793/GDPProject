@@ -118,6 +118,54 @@ def test_a_confirmed_creation_is_visible_to_the_assistant(services):
     assert created.approved_for_ai is True
 
 
+def test_a_reminder_can_be_created(services):
+    # create used to accept tasks only, so the assistant could not make a
+    # reminder at all however clearly it was asked.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.reminder,
+            title="Call the advisor", due_date="2026-09-04", due_time="09:15",
+        ), "Create",
+    )
+    assert proposal is not None
+    assert proposal.after.date == date(2026, 9, 4)
+    assert proposal.after.time == "09:15"
+
+
+def test_a_reminder_without_a_day_is_refused(services):
+    # A reminder with no date has nothing to fire on; inventing one would be
+    # worse than asking.
+    assert services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.reminder,
+            title="Call the advisor",
+        ), "Create",
+    ) is None
+
+
+def test_a_note_can_be_created_with_its_text(services):
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="Lecture 4", body="Recursion, trees, Big-O.",
+        ), "Create",
+    )
+    assert proposal is not None
+    assert proposal.after.title == "Lecture 4"
+    assert proposal.after.body == "Recursion, trees, Big-O."
+
+
+def test_a_note_falls_back_to_notes_when_the_model_uses_the_wrong_field(services):
+    # body is the note's own field, but the model reaches for notes by habit.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="Lecture 5", notes="Graphs.",
+        ), "Create",
+    )
+    assert proposal.after.body == "Graphs."
+
+
 @pytest.mark.parametrize("action", [
     GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.note),
     GeneratedAction(operation=ProposalOperation.complete, entity_type=EntityType.task),
