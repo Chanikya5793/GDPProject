@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { apiConfigured, apiFetch, idempotencyKey } from '../api/client'
+import { apiConfigured, apiFetch, apiStream, idempotencyKey } from '../api/client'
 import { toHistory } from '../utils/chatHistory'
 import { useAuth } from './AuthContext'
 
@@ -66,6 +66,16 @@ export function AiProvider({ children }) {
     })
   }, [])
 
+  const failureText = requestError =>
+    requestError.code === 'not_configured'
+      ? 'The AI copilot needs the planner backend, which this build is not connected to. Everything else works offline.'
+      : requestError.status === 403
+      ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
+      : requestError.status === 429
+        // A budget, not a malfunction — the backend's detail names the wait.
+        ? `You have reached the copilot request limit. ${requestError.message}`
+        : `The copilot could not answer: ${requestError.message}`
+
   const sendMessage = useCallback(async text => {
     const trimmed = text.trim()
     if (!trimmed || typing) return
@@ -75,8 +85,25 @@ export function AiProvider({ children }) {
     setError('')
     const controller = new AbortController()
     controllerRef.current = controller
+    const botId = crypto.randomUUID()
+    let streamed = ''
+    let settled = false
+    let streamFailure = null
+    // Creates the reply on the first delta and patches it in place afterwards,
+    // so the bubble is not added until there is something to put in it.
+    const upsertReply = patch => setMessages(previous => {
+      const index = previous.findIndex(message => message.id === botId)
+      if (index === -1) {
+        return [...previous, {
+          id: botId, role: 'bot', text: '', citations: [], proposals: [], ...patch,
+        }]
+      }
+      const next = [...previous]
+      next[index] = { ...next[index], ...patch }
+      return next
+    })
     try {
-      const response = await apiFetch('/v1/copilot/chat', {
+      await apiStream('/v1/copilot/chat/stream', {
         method: 'POST',
         signal: controller.signal,
         body: JSON.stringify({
@@ -87,25 +114,46 @@ export function AiProvider({ children }) {
           // answered and picked up from.
           history: toHistory(messagesRef.current),
         }),
+      }, ({ event, data }) => {
+        if (event === 'delta') {
+          streamed += data.text || ''
+          upsertReply({ text: streamed, streaming: true })
+        } else if (event === 'final') {
+          // Authoritative. The citation guard can replace the whole answer once
+          // the structured result is parsed, and a change that could not be
+          // prepared appends to it, so this replaces the streamed text rather
+          // than adding to it.
+          settled = true
+          upsertReply({
+            text: data.answer,
+            citations: data.citations || [],
+            retrieval: data.retrieval,
+            proposals: data.proposals || [],
+            streaming: false,
+          })
+        } else if (event === 'error') {
+          streamFailure = data
+        }
       })
-      setMessages(previous => [...previous, {
-        id: crypto.randomUUID(), role: 'bot', text: response.answer,
-        citations: response.citations || [], retrieval: response.retrieval,
-        proposals: response.proposals || [],
-      }])
-    } catch (requestError) {
-      if (requestError.name !== 'AbortError') {
-        setError(requestError.message)
+      if (!settled) {
+        // Either the model failed mid-answer or the connection dropped. Keep
+        // whatever text arrived, but do not leave it looking complete.
+        upsertReply({ streaming: false })
+        const detail = streamFailure?.detail || 'The connection ended before the answer was finished.'
+        setError(detail)
         setMessages(previous => [...previous, {
-          id: crypto.randomUUID(), role: 'error',
-          text: requestError.code === 'not_configured'
-            ? 'The AI copilot needs the planner backend, which this build is not connected to. Everything else works offline.'
-            : requestError.status === 403
-            ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
-            : requestError.status === 429
-              // A budget, not a malfunction — the backend's detail names the wait.
-              ? `You have reached the copilot request limit. ${requestError.message}`
-              : `The copilot could not answer: ${requestError.message}`,
+          id: crypto.randomUUID(), role: 'error', text: detail,
+          citations: [], proposals: [],
+        }])
+      }
+    } catch (requestError) {
+      if (requestError.name === 'AbortError') {
+        upsertReply({ streaming: false })
+      } else {
+        setError(requestError.message)
+        upsertReply({ streaming: false })
+        setMessages(previous => [...previous, {
+          id: crypto.randomUUID(), role: 'error', text: failureText(requestError),
           citations: [], proposals: [],
         }])
       }

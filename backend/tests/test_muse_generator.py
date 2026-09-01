@@ -319,3 +319,108 @@ class TestReasoningEffort:
 
         muse(handler, reasoning_effort="high").generate("prompt")
         assert seen["body"]["reasoning_effort"] == "high"
+
+
+def sse_body(pieces, done=True):
+    """Build an OpenAI-style streaming body out of content pieces."""
+    lines = []
+    for piece in pieces:
+        lines.append("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}))
+        lines.append("")
+    if done:
+        lines.append("data: [DONE]")
+        lines.append("")
+    return "\n".join(lines).encode()
+
+
+def split_json(document: str, size: int):
+    return [document[i:i + size] for i in range(0, len(document), size)]
+
+
+class TestStreaming:
+    def test_yields_answer_text_then_the_validated_answer(self):
+        document = json.dumps(ANSWER)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert json.loads(request.content)["stream"] is True
+            return httpx.Response(200, content=sse_body(split_json(document, 7)))
+
+        items = list(muse(handler).generate_stream("prompt"))
+        text = "".join(item for item in items if isinstance(item, str))
+        assert text == ANSWER["answer"]
+        assert items[-1].answer == ANSWER["answer"]
+        assert items[-1].citation_ids == ["S1"]
+
+    def test_keeps_the_structured_output_contract_while_streaming(self):
+        # Streaming must not silently drop the schema: without it the answer
+        # comes back as prose and every downstream action disappears.
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, content=sse_body([json.dumps(ANSWER)]))
+
+        list(muse(handler).generate_stream("prompt"))
+        assert seen["body"]["response_format"]["type"] == "json_schema"
+        assert seen["body"]["response_format"]["json_schema"]["strict"] is True
+        assert seen["body"]["stream"] is True
+
+    def test_an_action_still_arrives_after_the_streamed_prose(self):
+        payload = {
+            "answer": "I'll add that task once you confirm.",
+            "citation_ids": [],
+            "action": {
+                "operation": "create", "entity_type": "task", "title": "Read chapter 4",
+                "due_date": "2026-09-04", "due_time": None, "priority": "medium",
+                "record_id": None, "notes": None, "body": None,
+            },
+        }
+        document = json.dumps(payload)
+        handler = lambda request: httpx.Response(  # noqa: E731
+            200, content=sse_body(split_json(document, 11))
+        )
+        items = list(muse(handler).generate_stream("prompt"))
+        assert "".join(i for i in items if isinstance(i, str)) == payload["answer"]
+        assert items[-1].action.title == "Read chapter 4"
+
+    def test_http_error_does_not_echo_the_body(self):
+        # The body quotes the prompt back, and the prompt carries planner records.
+        handler = lambda request: httpx.Response(  # noqa: E731
+            400, json={"error": {"message": "UNTRUSTED_SOURCES=[secret record text]"}}
+        )
+        with pytest.raises(RuntimeError) as excinfo:
+            list(muse(handler).generate_stream("prompt"))
+        assert "secret record text" not in str(excinfo.value)
+        assert "400" in str(excinfo.value)
+
+    def test_timeout_is_reported_as_a_generation_timeout(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("too slow", request=request)
+
+        with pytest.raises(GenerationTimeout):
+            list(muse(handler).generate_stream("prompt"))
+
+    def test_an_empty_stream_is_an_error_rather_than_an_empty_answer(self):
+        handler = lambda request: httpx.Response(200, content=sse_body([], done=True))  # noqa: E731
+        with pytest.raises(RuntimeError):
+            list(muse(handler).generate_stream("prompt"))
+
+    def test_keepalive_and_unparsable_lines_are_skipped(self):
+        document = json.dumps(ANSWER)
+        body = b"\n".join([
+            b": keep-alive",
+            b"",
+            b"data: not json at all",
+            b"",
+            b"data: " + json.dumps({"choices": []}).encode(),
+            b"",
+            b"data: " + json.dumps({"choices": [{"delta": {}}]}).encode(),
+            b"",
+            b"data: " + json.dumps({"choices": [{"delta": {"content": document}}]}).encode(),
+            b"",
+            b"data: [DONE]",
+            b"",
+        ])
+        handler = lambda request: httpx.Response(200, content=body)  # noqa: E731
+        items = list(muse(handler).generate_stream("prompt"))
+        assert items[-1].answer == ANSWER["answer"]
