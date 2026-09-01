@@ -8,7 +8,11 @@ spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/minScale: "0"
+        # One warm instance. Scaling to zero cost 15.8 seconds on the first
+        # request after any idle period, which is most of a student's first
+        # question of the day. This bills for an idle instance; drop it back to
+        # "0" if that is not worth it.
+        autoscaling.knative.dev/minScale: "1"
         autoscaling.knative.dev/maxScale: "10"
         run.googleapis.com/cpu-throttling: "true"
     spec:
@@ -51,6 +55,8 @@ spec:
             # model_not_found, taking the whole assistant down with it. The
             # standard tier also does not train on prompts, which the Settings
             # screen and the first-run notice report from /v1/ai-info.
+            - name: PLANNER_MUSE_REASONING_EFFORT
+              value: low
             - name: PLANNER_MUSE_MODEL
               value: muse-spark-1.2
             - name: PLANNER_MUSE_API_KEY_RESOURCE
