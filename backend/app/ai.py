@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, Iterator, List, Optional, Protocol, Union
 
 import httpx
 from google import genai
@@ -9,6 +9,7 @@ from google.genai import types
 from pydantic import Field
 
 from .models import EntityType, ProposalOperation, StrictModel
+from .streaming import JsonStringFieldStreamer
 
 SYSTEM_INSTRUCTION = (
     "You are the assistant inside a student planner app. You answer questions about "
@@ -86,6 +87,16 @@ class AnswerGenerator(Protocol):
     trains_on_prompts: bool
 
     def generate(self, prompt: str) -> GeneratedAnswer: ...
+
+
+# Yielded items are answer text as it is decoded, with the validated
+# GeneratedAnswer last. A generator without this is still usable: the copilot
+# falls back to a single blocking call.
+StreamItem = Union[str, GeneratedAnswer]
+
+
+class StreamingAnswerGenerator(AnswerGenerator, Protocol):
+    def generate_stream(self, prompt: str) -> Iterator[StreamItem]: ...
 
 
 class VertexEmbeddingClient:
@@ -217,22 +228,25 @@ class MuseAnswerGenerator:
             "strict": True,
         }
 
+    def _body(self, prompt: str) -> Dict[str, Any]:
+        return {
+            "model": self.model,
+            "temperature": 0.1,
+            "messages": [
+                {"role": "system", "content": SYSTEM_INSTRUCTION},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_schema", "json_schema": self._schema()},
+            # Most of the wait is hidden reasoning, not the answer.
+            "reasoning_effort": self.reasoning_effort,
+        }
+
     def generate(self, prompt: str) -> GeneratedAnswer:
         try:
             response = self.client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers,
-                json={
-                    "model": self.model,
-                    "temperature": 0.1,
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_INSTRUCTION},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "response_format": {"type": "json_schema", "json_schema": self._schema()},
-                    # Most of the wait is hidden reasoning, not the answer.
-                    "reasoning_effort": self.reasoning_effort,
-                },
+                json=self._body(prompt),
             )
         except httpx.TimeoutException as exc:
             raise GenerationTimeout("The model did not answer in time") from exc
@@ -248,3 +262,52 @@ class MuseAnswerGenerator:
         if not content:
             raise RuntimeError("Muse returned an empty response")
         return GeneratedAnswer.model_validate(json.loads(content))
+
+    def generate_stream(self, prompt: str) -> Iterator[StreamItem]:
+        """Yield answer text as it decodes, then the validated answer.
+
+        The completion is a JSON object rather than prose, so the text has to be
+        lifted out of the document as it arrives. Everything after the answer
+        field (citations, the action) is only known once the document closes,
+        which is why the parsed result comes last and is the authoritative one.
+        """
+        streamer = JsonStringFieldStreamer("answer")
+        try:
+            with self.client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=self._headers,
+                json={**self._body(prompt), "stream": True},
+            ) as response:
+                if response.status_code >= 400:
+                    # Read and discard: the body quotes the prompt back, which
+                    # carries the user's planner records.
+                    response.read()
+                    raise RuntimeError(
+                        f"Muse stream request failed with HTTP {response.status_code}"
+                    )
+                for line in response.iter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = event.get("choices") or []
+                    if not choices:
+                        continue
+                    piece = (choices[0].get("delta") or {}).get("content")
+                    if not piece:
+                        continue
+                    text = streamer.feed(piece)
+                    if text:
+                        yield text
+        except httpx.TimeoutException as exc:
+            raise GenerationTimeout("The model did not answer in time") from exc
+        document = streamer.document
+        if not document.strip():
+            raise RuntimeError("Muse returned an empty response")
+        yield GeneratedAnswer.model_validate(json.loads(document))

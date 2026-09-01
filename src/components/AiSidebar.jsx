@@ -123,6 +123,9 @@ export default function AiSidebar() {
     localStorage.getItem('nw_ai_sidebar') === 'collapsed'
   )
   const [input, setInput] = useState('')
+  // Once the answer starts arriving there is something to read, so the
+  // thinking indicator would just be noise sitting under live text.
+  const awaitingFirstToken = typing && !messages.some(message => message.streaming)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -205,7 +208,10 @@ export default function AiSidebar() {
                   <div className="ai-msg-avatar"><Bot size={14} /></div>
                 )}
                 <div className="ai-msg-content">
-                  <div className="ai-msg-bubble">{msg.text}</div>
+                  <div className="ai-msg-bubble">
+                    {msg.text}
+                    {msg.streaming && <span className="ai-caret" aria-hidden="true" />}
+                  </div>
                   <CitationList citations={msg.citations} />
                   {msg.retrieval?.attempted && (
                     <div className="ai-retrieval-disclosure">
@@ -221,7 +227,7 @@ export default function AiSidebar() {
                 </div>
               </div>
             ))}
-            {typing && <ThinkingIndicator onCancel={cancelResponse} />}
+            {awaitingFirstToken && <ThinkingIndicator onCancel={cancelResponse} />}
 
             {available && messages.length <= 2 && !typing && (
               <div className="ai-suggestions">
