@@ -190,11 +190,13 @@ class MuseAnswerGenerator:
         model: str,
         base_url: str = "https://api.meta.ai/v1",
         timeout_seconds: float = 60.0,
+        reasoning_effort: str = "low",
         client: httpx.Client | None = None,
     ):
         if not api_key:
             raise ValueError("Muse API key is required")
         self.model = model
+        self.reasoning_effort = reasoning_effort
         # Contributor-tier models are discounted in exchange for permission to
         # train on prompts and completions; standard-tier models are not.
         self.trains_on_prompts = model.endswith("-contributor")
@@ -226,6 +228,8 @@ class MuseAnswerGenerator:
                         {"role": "user", "content": prompt},
                     ],
                     "response_format": {"type": "json_schema", "json_schema": self._schema()},
+                    # Most of the wait is hidden reasoning, not the answer.
+                    "reasoning_effort": self.reasoning_effort,
                 },
             )
         except httpx.TimeoutException as exc:

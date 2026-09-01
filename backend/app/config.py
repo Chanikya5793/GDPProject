@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     muse_base_url: str = "https://api.meta.ai/v1"
     muse_model: str = "muse-spark-1.2"
     muse_api_key_resource: str = ""
+    # Muse Spark spends most of its output on hidden reasoning: a trivial prompt
+    # burned 475 reasoning tokens at the default and answers took 6 to 11 seconds.
+    # "low" cuts that to 2 to 5 with no measurable loss on planner questions.
+    # "minimal" is faster still but starts leaking citation IDs and markdown into
+    # prose, which is the robotic voice this assistant is meant not to have.
+    muse_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "low"
     muse_timeout_seconds: int = Field(default=60, ge=5, le=300)
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768

@@ -295,3 +295,27 @@ class TestTimeout:
 
         with pytest.raises(httpx.ConnectError):
             muse(handler).generate("prompt")
+
+
+class TestReasoningEffort:
+    def test_the_request_asks_for_reduced_reasoning(self):
+        # Most of the wait was hidden reasoning: 475 tokens on a trivial prompt at
+        # the default, and 6 to 11 seconds on a planner question.
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ANSWER)}}]})
+
+        muse(handler).generate("prompt")
+        assert seen["body"]["reasoning_effort"] == "low"
+
+    def test_the_level_is_configurable(self):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ANSWER)}}]})
+
+        muse(handler, reasoning_effort="high").generate("prompt")
+        assert seen["body"]["reasoning_effort"] == "high"
