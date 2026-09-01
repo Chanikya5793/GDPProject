@@ -502,3 +502,23 @@
   background: var(--green);
   color: #fff;
 }
+
+/* Marks the reply as still arriving, so a pause mid-answer does not read as a
+   finished thought. */
+.ai-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: ai-caret-blink 1s step-end infinite;
+}
+
+@keyframes ai-caret-blink {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-caret { animation: none; }
+}

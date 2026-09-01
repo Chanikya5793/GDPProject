@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import List, Optional, Sequence, Tuple
+from typing import Iterator, List, Optional, Sequence, Tuple, Union
 
-from .ai import AnswerGenerator, EmbeddingClient, GeneratedAnswer
+from .ai import AnswerGenerator, EmbeddingClient, GeneratedAnswer, GenerationTimeout
 from .audit import AuditLogger
 from .injection import assess_untrusted_text, safe_excerpt
 from .models import (
@@ -139,12 +139,10 @@ class CopilotService:
         self.repository = repository
         self.audit = audit
 
-    def answer(
-        self, uid: str, question: str, today: Optional[date] = None,
-        history: Optional[Sequence[ChatTurn]] = None,
-    ) -> tuple[
-        str, List[Citation], RetrievalDisclosure, GeneratedAnswer
-    ]:
+    def _prepare(
+        self, uid: str, question: str, today: Optional[date],
+        history: Optional[Sequence[ChatTurn]],
+    ) -> Tuple[str, List[Citation]]:
         records, citations = self.retrieval.retrieve(uid, question)
         # Retrieval finding nothing is not a reason to stay silent. "Add a task for
         # tomorrow" has nothing to retrieve, and refusing before the model runs made
@@ -184,14 +182,17 @@ class CopilotService:
             f"UNTRUSTED_SOURCES={json.dumps(source_payload)}\n"
             f"RULE_RESULTS={json.dumps([r.model_dump(mode='json') for r in recommendations])}"
         )
-        try:
-            generated = self.generator.generate(prompt)
-        except Exception as exc:
-            self.audit.record(uid, "failure", "failed", {
-                "stage": "generation", "error_type": type(exc).__name__,
-                "provider": getattr(self.generator, "provider", "unknown"),
-            })
-            raise
+        return prompt, citations
+
+    def _audit_generation_failure(self, uid: str, exc: BaseException) -> None:
+        self.audit.record(uid, "failure", "failed", {
+            "stage": "generation", "error_type": type(exc).__name__,
+            "provider": getattr(self.generator, "provider", "unknown"),
+        })
+
+    def _finalize(
+        self, uid: str, generated: GeneratedAnswer, citations: List[Citation],
+    ) -> Tuple[str, List[Citation], RetrievalDisclosure]:
         allowed = {citation.citation_id: citation for citation in citations}
         used = [allowed[citation_id] for citation_id in generated.citation_ids if citation_id in allowed]
         # The citation guard exists so the model cannot narrate the user's records
@@ -209,7 +210,7 @@ class CopilotService:
                 entity_types=sorted({c.entity_type for c in citations}, key=lambda item: item.value),
                 abstained=True, reason="The generated answer did not cite a valid retrieved record.",
             )
-            return answer, [], disclosure, generated
+            return answer, [], disclosure
         self.audit.record(uid, "generation", metadata={
             "citations": len(used),
             "provider": getattr(self.generator, "provider", "unknown"),
@@ -223,4 +224,71 @@ class CopilotService:
             # a grounded answer from a general one.
             reason=None if citations else "No planner records matched; answered without sources.",
         )
-        return generated.answer, used, disclosure, generated
+        return generated.answer, used, disclosure
+
+    def answer(
+        self, uid: str, question: str, today: Optional[date] = None,
+        history: Optional[Sequence[ChatTurn]] = None,
+    ) -> Tuple[str, List[Citation], RetrievalDisclosure, GeneratedAnswer]:
+        prompt, citations = self._prepare(uid, question, today, history)
+        try:
+            generated = self.generator.generate(prompt)
+        except Exception as exc:
+            self._audit_generation_failure(uid, exc)
+            raise
+        answer, used, disclosure = self._finalize(uid, generated, citations)
+        return answer, used, disclosure, generated
+
+    def answer_stream(
+        self, uid: str, question: str, today: Optional[date] = None,
+        history: Optional[Sequence[ChatTurn]] = None,
+    ) -> Iterator[Union[str, Tuple[str, List[Citation], RetrievalDisclosure, GeneratedAnswer]]]:
+        """Yield answer text as it is produced, then the same tuple ``answer`` returns.
+
+        The trailing tuple is authoritative. Streamed text is only a preview:
+        the citation guard can still replace the whole answer once the
+        structured result is known, and a proposal that fails to build appends
+        to it, so a caller must show the final text rather than what it
+        accumulated.
+        """
+        prompt, citations = self._prepare(uid, question, today, history)
+        generate_stream = getattr(self.generator, "generate_stream", None)
+        generated: Optional[GeneratedAnswer] = None
+        emitted = False
+        if generate_stream is not None:
+            try:
+                for item in generate_stream(prompt):
+                    if isinstance(item, GeneratedAnswer):
+                        generated = item
+                    else:
+                        emitted = True
+                        yield item
+            except GenerationTimeout as exc:
+                self._audit_generation_failure(uid, exc)
+                raise
+            except Exception as exc:
+                # Retrying without streaming is only safe while nothing has been
+                # sent. Once the student is reading partial prose, a second
+                # generation would contradict what is already on screen.
+                if emitted:
+                    self._audit_generation_failure(uid, exc)
+                    raise
+                # The stream failed even though the answer will still be
+                # produced, so it is recorded as a failed stage rather than
+                # hidden behind the successful retry.
+                self.audit.record(uid, "failure", "failed", {
+                    "stage": "streaming", "error_type": type(exc).__name__,
+                    "provider": getattr(self.generator, "provider", "unknown"),
+                    "recovered": True,
+                })
+        if generated is None:
+            if emitted:
+                self._audit_generation_failure(uid, RuntimeError("incomplete stream"))
+                raise RuntimeError("The model streamed a partial answer")
+            try:
+                generated = self.generator.generate(prompt)
+            except Exception as exc:
+                self._audit_generation_failure(uid, exc)
+                raise
+        answer, used, disclosure = self._finalize(uid, generated, citations)
+        yield answer, used, disclosure, generated
