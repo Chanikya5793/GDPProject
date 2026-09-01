@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     answer_provider: Literal["vertex", "muse"] = "vertex"
     gemini_model: str = "gemini-2.5-flash"
     muse_base_url: str = "https://api.meta.ai/v1"
-    muse_model: str = "muse-spark-1.2-contributor"
+    muse_model: str = "muse-spark-1.2"
     muse_api_key_resource: str = ""
     muse_timeout_seconds: int = Field(default=60, ge=5, le=300)
     embedding_model: str = "gemini-embedding-001"
