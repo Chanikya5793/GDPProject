@@ -308,7 +308,7 @@ class TestReasoningEffort:
             return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ANSWER)}}]})
 
         muse(handler).generate("prompt")
-        assert seen["body"]["reasoning_effort"] == "low"
+        assert seen["body"]["reasoning_effort"] == "minimal"
 
     def test_the_level_is_configurable(self):
         seen = {}

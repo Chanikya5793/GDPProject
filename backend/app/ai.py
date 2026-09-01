@@ -203,7 +203,9 @@ class MuseAnswerGenerator:
         model: str,
         base_url: str = "https://api.meta.ai/v1",
         timeout_seconds: float = 60.0,
-        reasoning_effort: str = "low",
+        # Kept in step with Settings.muse_reasoning_effort, which is what
+        # production passes in; this default only covers direct construction.
+        reasoning_effort: str = "minimal",
         client: httpx.Client | None = None,
     ):
         if not api_key:
