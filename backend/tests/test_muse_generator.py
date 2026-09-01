@@ -253,7 +253,9 @@ class TestProviderSelection:
 
         assert isinstance(generator, MuseAnswerGenerator)
         assert generator.provider == "muse"
-        assert generator.model == "muse-spark-1.2-contributor"
+        # The default tier, which Meta actually serves. -contributor was withdrawn
+        # and answers model_not_found, which took the whole assistant down.
+        assert generator.model == "muse-spark-1.2"
         # The key comes from Secret Manager, never from the environment.
         assert secrets.requested == [resource]
 
