@@ -87,6 +87,7 @@ export function AiProvider({ children }) {
     controllerRef.current = controller
     const botId = crypto.randomUUID()
     let streamed = ''
+    let steps = []
     let settled = false
     let streamFailure = null
     // Creates the reply on the first delta and patches it in place afterwards,
@@ -95,7 +96,7 @@ export function AiProvider({ children }) {
       const index = previous.findIndex(message => message.id === botId)
       if (index === -1) {
         return [...previous, {
-          id: botId, role: 'bot', text: '', citations: [], proposals: [], ...patch,
+          id: botId, role: 'bot', text: '', citations: [], proposals: [], steps: [], ...patch,
         }]
       }
       const next = [...previous]
@@ -118,6 +119,13 @@ export function AiProvider({ children }) {
         if (event === 'delta') {
           streamed += data.text || ''
           upsertReply({ text: streamed, streaming: true })
+        } else if (event === 'step') {
+          // The assistant looked something up for itself. Anything streamed so
+          // far belonged to the round it has now moved past, so it is cleared
+          // rather than left above an answer it no longer leads into.
+          steps = [...steps, data]
+          streamed = ''
+          upsertReply({ steps, text: '', streaming: true })
         } else if (event === 'final') {
           // Authoritative. The citation guard can replace the whole answer once
           // the structured result is parsed, and a change that could not be
@@ -129,6 +137,7 @@ export function AiProvider({ children }) {
             citations: data.citations || [],
             retrieval: data.retrieval,
             proposals: data.proposals || [],
+            steps,
             streaming: false,
           })
         } else if (event === 'error') {

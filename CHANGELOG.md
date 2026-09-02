@@ -9,15 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Auto-balance overloaded days** (#26) — when a future day holds more
-  unfinished tasks than the configured limit, the lowest-priority overflow is
-  pulled onto the nearest earlier day that still has room. A dismissible notice
-  reports what moved and offers one-click undo, and every move is written to the
-  activity log so it can also be rolled back from there.
-- **Two new Planner Preferences** (#26) — "Auto-Balance Busy Days" turns the
-  automatic pass off so suggestions stay manual, and "Maximum Tasks Per Day"
-  sets what counts as overloaded. The limit drives the existing Optimize banner
-  too, which previously hardcoded a threshold of 3.
+- **The assistant reads the whole planner, not five search hits** — every turn
+  now starts with a computed briefing: what is overdue, due today, due tomorrow,
+  coming this week, unscheduled and on the calendar, with exact counts and the
+  workload findings, each entry carrying its own citation ID. "What is due
+  today", "what am I behind on" and "summarize my week" are date and count
+  questions that cosine similarity could never answer, and they are answered
+  from the briefing without a second model call. It obeys the same privacy gate
+  retrieval does: opted out means nothing, an unindexed entity type is
+  invisible, and a record with its approval switch off is skipped.
+
+- **Lookups the assistant runs for itself** — when the briefing does not cover
+  the question, the model returns lookups instead of prose and is run again with
+  the results: `search` by meaning, `find` by type, status, priority, due window
+  or substring, `agenda` between two dates, `workload` across the planner, and
+  `open_day` for the next day with room. Bounded by `PLANNER_AGENT_TOOL_ROUNDS`
+  (default 2, `0` switches it off), repeats are not run twice, and each lookup
+  is written to the privacy audit. The chat stream gained a `step` event so the
+  web and mobile clients name what it looked at instead of showing a silent
+  pause.
+
+- **Several changes in one reply** — "push all my overdue work to Friday" now
+  produces one preview per task, each with its own before-and-after to accept or
+  reject, rather than a single change or none.
+
+### Changed
+
+- **Reasoning effort raised to `medium`** — `PLANNER_MUSE_REASONING_EFFORT` was
+  pinned at `minimal`, which was chosen during a provider slowdown when `low`
+  timed out against a 60-second ceiling. The assistant no longer just
+  paraphrases what retrieval handed it: choosing whether the briefing already
+  answers the question, which lookups to run, and how many changes a request
+  implies *is* the reasoning step, and starving it produced exactly the
+  wrong-tool, one-action answers minimal is cheap for. Muse Spark bills
+  reasoning cheaply enough that the real constraint is wall-clock, so the
+  budget was rebuilt rather than the effort left low.
+
+- **A latency budget instead of a single timeout** — rounds of lookups are
+  sequential model calls, so a per-call timeout alone bounded the worst case at
+  that timeout times the round count. `PLANNER_MUSE_TIMEOUT_SECONDS` is now 120
+  per call, and the new `PLANNER_AGENT_DEADLINE_SECONDS` (90) refuses a *new*
+  round of lookups once a turn has spent that long: the assistant is told it
+  has none left and answers with what it has, which is a thinner answer rather
+  than a request the platform kills. The Cloud Run request timeout moves to
+  300s to stay above 90 + 120 of model time, keeping a slow generation as the
+  app's own explained 504 rather than a bare platform 500.
 
 - **Configurable planner capacity** — the copilot's daily workload capacity was
   hardcoded at 360 minutes. It is now `PLANNER_MAX_DAILY_MINUTES` deployment-wide,
@@ -46,6 +82,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Narrated JSON no longer loses the whole reply** — a strict `json_schema`
+  response format does not stop Muse Spark writing prose before the document,
+  so a tool-calling reply arrived as `You've got one finished item, I'll pull
+  your September completions.{"tool_requests": ...}` and `json.loads` refused
+  all of it. Measured on 6 of 8 live requests that ended in a lookup, at every
+  reasoning level including `minimal`, which made it the dominant failure of
+  the lookup path rather than an edge case. The parser now falls back to the
+  outermost braces.
+
+- **One change proposed once** — Muse fills both `actions` and `action` with the
+  same change on every reply that proposes one, and not always identically: a
+  live run differed only in `body`. Matched on exact equality that surfaced as
+  two identical preview cards for a single task. Changes are now matched on
+  what they identify, so a record can only be changed once a turn.
+
+- **A reply that had not decided yet no longer proposes anything** — a run that
+  asked "what should I call it?" also attached a create with no title, which
+  cannot become a proposal and printed an apology under the question; a run
+  that was out of rounds while still asking for lookups attached a create
+  literally titled "placeholder". Neither is a decision, so both are dropped.
+
+- **Citation IDs are taken out of the prose** — the model writes "Chemistry
+  revision at 6 PM [S2]" whatever it is told, and the clients already render
+  the sources as their own linked list underneath. The markers are stripped,
+  and the IDs in them are harvested first, so an answer that cited only inline
+  still counts as grounded instead of being struck out by the guard.
+
+- **A clarifying question is no longer replaced by an abstention** — asking for
+  a task with no title made the assistant ask what to call it, and the citation
+  guard struck the question out and printed "I found related records, but I
+  couldn't produce a source-valid answer", leaving nothing to reply to. A reply
+  flagged as a question back is exempt from the guard, bounded by length so the
+  flag cannot be used to smuggle ungrounded narration past it.
+
+- **An empty answer says so** — a round that produced neither prose nor a change
+  rendered an empty bubble that read as a crash. It now says it could not put
+  that together, and a change described in silence gets a sentence, which is
+  also what the preview card uses as its reason.
+
+- **Auto-balance overloaded days** (#26) — when a future day holds more
+  unfinished tasks than the configured limit, the lowest-priority overflow is
+  pulled onto the nearest earlier day that still has room. A dismissible notice
+  reports what moved and offers one-click undo, and every move is written to the
+  activity log so it can also be rolled back from there.
+- **Two new Planner Preferences** (#26) — "Auto-Balance Busy Days" turns the
+  automatic pass off so suggestions stay manual, and "Maximum Tasks Per Day"
+  sets what counts as overloaded. The limit drives the existing Optimize banner
+  too, which previously hardcoded a threshold of 3.
 - Bulk task reschedules now write activity-log entries. The Optimize dialog
   wrote none, so those changes could not be rolled back.
 
