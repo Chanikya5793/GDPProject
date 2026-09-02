@@ -430,10 +430,33 @@ class PlannerSession:
                 "open_day", "Looked for a free day and found none",
                 {"count": 0, "error": "No day within a year has room for that."},
             )
+        # The days it walked past, and what filled them. A bare date is a claim
+        # about the student's planner that cites nothing, and the guard is right
+        # to strike that out, so the tool hands back the evidence for its own
+        # answer: which days were full, and with what.
+        booked: Dict[date, List[PlannerRecord]] = defaultdict(list)
+        for record in self.records:
+            content = record.content
+            if isinstance(content, TaskContent) and not content.completed and content.due_date:
+                booked[content.due_date].append(record)
+        considered = []
+        cursor = after + timedelta(days=1)
+        while cursor <= day:
+            on_day = booked.get(cursor, [])
+            considered.append({
+                "date": cursor.isoformat(),
+                "booked_minutes": sum(
+                    r.content.estimated_minutes for r in on_day  # type: ignore[union-attr]
+                ),
+                "has_room": cursor == day,
+                "records": [self.summarize(record) for record in on_day],
+            })
+            cursor += timedelta(days=1)
         return ToolOutcome(
             "open_day", f"Found the next day with room: {day.isoformat()}",
             {"count": 1, "after": after.isoformat(), "required_minutes": minutes,
-             "next_available_day": day.isoformat()},
+             "capacity_minutes": self.toolbox.planner.capacity(capacity),
+             "next_available_day": day.isoformat(), "days_considered": considered},
         )
 
 
