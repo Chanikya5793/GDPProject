@@ -16,6 +16,7 @@ from .rag import CopilotService, IndexingService, RetrievalService
 from .ratelimit import FirestoreRateLimiter, RateLimiter, RateLimitPolicy
 from .repository import FirestorePlannerRepository, PlannerRepository
 from .secrets import SecretResolver
+from .tools import PlannerToolbox
 from .vector_store import FirestoreVectorStore, VectorStore
 
 
@@ -79,7 +80,14 @@ def build_production_container(settings: Settings) -> Container:
     retrieval = RetrievalService(repository, vector_store, embeddings, audit, settings.retrieval_limit)
     indexing = IndexingService(repository, vector_store, embeddings, audit)
     proposals = ProposalService(repository, audit)
-    copilot = CopilotService(retrieval, generator, planner, repository, audit)
+    toolbox = PlannerToolbox(
+        repository, retrieval, planner, audit, briefing_items=settings.briefing_items
+    )
+    copilot = CopilotService(
+        retrieval, generator, planner, repository, audit,
+        toolbox=toolbox, max_tool_rounds=settings.agent_tool_rounds,
+        deadline_seconds=settings.agent_deadline_seconds,
+    )
     rate_limiter = FirestoreRateLimiter(
         client,
         RateLimitPolicy(
