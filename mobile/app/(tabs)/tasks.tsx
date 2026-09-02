@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, LayoutAnimation,
+  Modal, RefreshControl, Alert, LayoutAnimation, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -626,6 +626,7 @@ function TaskModal({
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
+  const [approvedForAi, setApprovedForAi] = useState(true);
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [category, setCategory] = useState('Homework');
   const [notes, setNotes] = useState('');
@@ -635,6 +636,7 @@ function TaskModal({
       setTitle(task?.title || '');
       setDueDate(task?.dueDate || localDateStr());
       setDueTime(task?.dueTime || '');
+      setApprovedForAi(task?._approvedForAi ?? true);
       setPriority((task?.priority || defaultPriority) as Task['priority']);
       setCategory(task?.category || defaultCategory);
       setNotes(task?.notes || '');
@@ -648,7 +650,7 @@ function TaskModal({
     if (!title.trim() || parsedTime.error) return;
     onSave({
       title: title.trim(), dueDate, dueTime: parsedTime.value ?? '',
-      priority, category, notes,
+      priority, category, notes, _approvedForAi: approvedForAi,
     });
   };
 
@@ -731,6 +733,22 @@ function TaskModal({
               </TouchableOpacity>
             ))}
           </ScrollView>
+
+          <View style={ms.aiRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={ms.label}>Visible to the assistant</Text>
+              <Text style={ms.aiHint}>
+                Lets the copilot read this task when you ask about it. Turn it off to
+                keep this one out of the index.
+              </Text>
+            </View>
+            <Switch
+              value={approvedForAi}
+              onValueChange={setApprovedForAi}
+              trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+              accessibilityLabel="Visible to the assistant"
+            />
+          </View>
 
           <Text style={ms.label}>Notes</Text>
           <TextInput
@@ -824,6 +842,8 @@ function modalStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: R
     label: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, marginBottom: 6, marginTop: 16 },
     input: { backgroundColor: colors.surfaceVariant, borderRadius: 10, padding: 14, fontSize: 16, color: colors.text, borderWidth: 1, borderColor: colors.border },
     fieldError: { fontSize: 12, marginTop: 6 },
+    aiRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
+    aiHint: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
     segmentRow: { flexDirection: 'row', gap: 8 },
     segment: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: colors.surfaceVariant },
     segmentText: { fontSize: 14, fontWeight: '500', color: colors.text },

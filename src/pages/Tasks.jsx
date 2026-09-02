@@ -105,7 +105,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
     priority: task?.priority || defaultPriority || 'medium',
     category: task?.category || defaultCategory || 'Homework',
     notes: task?.notes || '',
-    _approvedForAi: task?._approvedForAi || false,
+    _approvedForAi: task?._approvedForAi ?? true,
   })
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])

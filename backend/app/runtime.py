@@ -38,6 +38,7 @@ def build_answer_generator(settings: Settings, secrets: SecretResolver) -> Answe
             model=settings.muse_model,
             base_url=settings.muse_base_url,
             timeout_seconds=settings.muse_timeout_seconds,
+            reasoning_effort=settings.muse_reasoning_effort,
         )
     return GeminiAnswerGenerator(
         settings.google_cloud_project, settings.google_cloud_location, settings.gemini_model
