@@ -7,6 +7,7 @@ const BUILT_IN = [
   { id: 'project', name: 'Project', color: '#7C3AED', builtin: true },
   { id: 'reading', name: 'Reading', color: '#D97706', builtin: true },
   { id: 'lab', name: 'Lab', color: '#16A34A', builtin: true },
+  {id: 'appointment', name: 'Appointment', color: '#ecf807', builtin: true},
   { id: 'other', name: 'Other', color: '#6B7280', builtin: true },
 ]
 
