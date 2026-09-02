@@ -115,8 +115,17 @@ class MigrationResult(StrictModel):
 
 
 class PrivacySettings(StrictModel):
-    ai_enabled: bool = False
-    indexed_entity_types: List[EntityType] = Field(default_factory=list)
+    # The assistant is on by default, so a new planner works without configuration.
+    # This is a deliberate product decision, not an oversight: record text is sent
+    # to the configured provider, and the deployed tier trains on prompts, so the
+    # Settings screen states the provider and that fact, and every record carries
+    # its own opt-out.
+    ai_enabled: bool = True
+    indexed_entity_types: List[EntityType] = Field(
+        default_factory=lambda: [
+            EntityType.task, EntityType.reminder, EntityType.note, EntityType.schedule,
+        ]
+    )
     index_attachments: bool = False
     retain_chat: bool = False
     chat_retention_days: int = Field(default=0, ge=0, le=365)
@@ -182,10 +191,21 @@ class ActionProposal(StrictModel):
     expires_at: datetime
 
 
+class ChatTurn(StrictModel):
+    """One earlier message in the same conversation."""
+
+    role: Literal["user", "assistant"]
+    text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
+
+
 class ChatRequest(StrictModel):
     message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
     request_id: IdempotencyKey
     timezone: Annotated[str, StringConstraints(min_length=1, max_length=100)] = "UTC"
+    # Sent by the client rather than kept server-side, so a conversation works
+    # without turning on chat retention. Capped because the whole thing is
+    # replayed into the prompt on every turn.
+    history: List[ChatTurn] = Field(default_factory=list, max_length=20)
 
 
 class ChatResponse(StrictModel):

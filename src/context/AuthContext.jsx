@@ -181,8 +181,15 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('nw_user')
   }
 
+  // loading is read by PrivateRoute: without it the guard never waits for auth
+  // to resolve and bounces a signed-in user to the login screen on reload.
+  const value = useMemo(() => ({
+    user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [user, loading])
+
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

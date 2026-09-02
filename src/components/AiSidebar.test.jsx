@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { CitationList, ProposalCard, ThinkingIndicator } from './AiSidebar'
+import { CitationList, FirstRunNotice, ProposalCard, ThinkingIndicator } from './AiSidebar'
 
 describe('copilot evidence and confirmation UI', () => {
   it('renders source-linked exact record metadata', () => {
@@ -34,3 +34,44 @@ describe('copilot evidence and confirmation UI', () => {
   })
 })
 
+describe('first-run disclosure', () => {
+  const info = { provider: 'Meta', model: 'muse-spark-1.2-contributor', trains_on_prompts: true }
+
+  it('names the provider and model that will see planner records', () => {
+    render(<FirstRunNotice info={info} onAcknowledge={() => {}} />)
+    expect(screen.getByText(/Meta/)).toBeInTheDocument()
+    expect(screen.getByText(/muse-spark-1.2-contributor/)).toBeInTheDocument()
+  })
+
+  it('states plainly when the tier trains on what is sent', () => {
+    // The assistant is on by default, so this may be the only place a student
+    // is told. It must not be softened away.
+    render(<FirstRunNotice info={info} onAcknowledge={() => {}} />)
+    expect(screen.getByText(/used to train its models/)).toBeInTheDocument()
+  })
+
+  it('omits the training line when the tier does not train', () => {
+    render(<FirstRunNotice info={{ ...info, trains_on_prompts: false }} onAcknowledge={() => {}} />)
+    expect(screen.queryByText(/used to train its models/)).not.toBeInTheDocument()
+  })
+
+  it('still explains what happens when the provider is unknown', () => {
+    // A failed /v1/ai-info must not turn the disclosure into silence.
+    render(<FirstRunNotice info={null} onAcknowledge={() => {}} />)
+    expect(screen.getByText(/configured AI provider/)).toBeInTheDocument()
+  })
+
+  it('points at both ways out', () => {
+    render(<FirstRunNotice info={info} onAcknowledge={() => {}} />)
+    expect(screen.getByText(/turn the assistant off entirely in Settings/)).toBeInTheDocument()
+    expect(screen.getByText(/visibility switch/)).toBeInTheDocument()
+  })
+
+  it('acknowledges only when the button is pressed', () => {
+    const seen = vi.fn()
+    render(<FirstRunNotice info={info} onAcknowledge={seen} />)
+    expect(seen).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Got it/ }))
+    expect(seen).toHaveBeenCalled()
+  })
+})

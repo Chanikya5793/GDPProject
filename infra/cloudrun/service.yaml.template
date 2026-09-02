@@ -8,13 +8,21 @@ spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/minScale: "0"
+        # One warm instance. Scaling to zero cost 15.8 seconds on the first
+        # request after any idle period, which is most of a student's first
+        # question of the day. This bills for an idle instance; drop it back to
+        # "0" if that is not worth it.
+        autoscaling.knative.dev/minScale: "1"
         autoscaling.knative.dev/maxScale: "10"
         run.googleapis.com/cpu-throttling: "true"
     spec:
       serviceAccountName: ${GDP_SERVICE_ACCOUNT}
       containerConcurrency: 40
-      timeoutSeconds: 60
+      # Must stay above PLANNER_MUSE_TIMEOUT_SECONDS. When they were both 60 the
+      # platform killed the request at the same instant the model client would
+      # have given up, so a slow generation surfaced as a bare 500 instead of the
+      # app's own explained timeout.
+      timeoutSeconds: 120
       containers:
         - image: ${GDP_IMAGE}
           ports:
@@ -43,8 +51,14 @@ spec:
               value: '${GDP_ALLOWED_ORIGINS}'
             - name: PLANNER_ANSWER_PROVIDER
               value: muse
+            # The -contributor tier was withdrawn by Meta and now answers
+            # model_not_found, taking the whole assistant down with it. The
+            # standard tier also does not train on prompts, which the Settings
+            # screen and the first-run notice report from /v1/ai-info.
+            - name: PLANNER_MUSE_REASONING_EFFORT
+              value: minimal
             - name: PLANNER_MUSE_MODEL
-              value: muse-spark-1.2-contributor
+              value: muse-spark-1.2
             - name: PLANNER_MUSE_API_KEY_RESOURCE
               value: ${GDP_MUSE_SECRET_RESOURCE}
             # Default daily task capacity the planner treats as a full day.

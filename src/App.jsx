@@ -3,6 +3,8 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { AiProvider } from './context/AiContext'
 import { SettingsProvider } from './context/SettingsContext'
 import SidebarNav from './components/SidebarNav'
+import AiSidebar from './components/AiSidebar'
+import MigrationBanner from './components/MigrationBanner'
 
 // Pages
 import Login     from './pages/Login'
@@ -29,6 +31,12 @@ function AppLayout({ children }) {
     <div className="app-shell">
       <SidebarNav />
       <div className="main-content">
+        <div className="beta-banner">
+          <span>Beta</span>
+          Secure Copilot
+          Planner records are encrypted offline and synchronized to your authenticated account.
+        </div>
+        <MigrationBanner />
         {children}
       </div>
       <AiSidebar />
@@ -96,10 +104,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </AuthProvider>
+    <SettingsProvider>
+      <AuthProvider>
+        <AiProvider>
+          <HashRouter>
+            <AppRoutes />
+          </HashRouter>
+        </AiProvider>
+      </AuthProvider>
+    </SettingsProvider>
   )
 }

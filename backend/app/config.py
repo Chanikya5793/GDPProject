@@ -19,8 +19,20 @@ class Settings(BaseSettings):
     answer_provider: Literal["vertex", "muse"] = "vertex"
     gemini_model: str = "gemini-2.5-flash"
     muse_base_url: str = "https://api.meta.ai/v1"
-    muse_model: str = "muse-spark-1.2-contributor"
+    muse_model: str = "muse-spark-1.2"
     muse_api_key_resource: str = ""
+    # Muse Spark spends most of its output on hidden reasoning, and it does all of
+    # it before emitting the first answer token, so this sets how long the student
+    # waits before anything appears. A trivial prompt burned 475 reasoning tokens
+    # at the default; "low" cut answers to 6 to 11 seconds.
+    #
+    # Moved to "minimal" on 2026-09-01. During a Muse slowdown "low" timed out on
+    # 3 of 4 requests while "minimal" completed 4 of 4 in 6.7 to 10.4 seconds, and
+    # the answers still cited correctly. The known cost is tone: "minimal" has
+    # previously leaked citation IDs and markdown into prose, and it prefers raw
+    # timestamps ("2026-08-31 22:22") over the plainer wording ("Aug 31 at
+    # 10:22 PM") that "low" produces. Watch that before raising it back.
+    muse_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "minimal"
     muse_timeout_seconds: int = Field(default=60, ge=5, le=300)
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768

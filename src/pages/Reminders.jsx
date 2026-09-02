@@ -36,7 +36,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
     date: reminder?.date || today(),
     time: reminder?.time || '',
     notes: reminder?.notes || '',
-    _approvedForAi: reminder?._approvedForAi || false,
+    _approvedForAi: reminder?._approvedForAi ?? true,
   })
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
