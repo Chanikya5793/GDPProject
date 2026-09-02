@@ -61,3 +61,7 @@ UID corpus. `RESUME_EVIDENCE.md` records measured local results and clearly sepa
 from live Vertex, Cloud Run, web-browser, simulator, and physical-device validation.
 
 Deployment and rollback procedures are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+---
+
+Built by **Chanakya Thotakura** — [chanakyachowdary.in](https://chanakyachowdary.in) · [Case study](https://chanakyachowdary.in/#/work/northwest-planner)
