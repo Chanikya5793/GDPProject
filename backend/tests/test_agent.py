@@ -417,6 +417,60 @@ def test_open_day_skips_days_that_are_already_full(services):
     assert outcome.payload["next_available_day"] == "2026-09-04"
 
 
+def test_open_day_shows_what_filled_the_days_it_walked_past(services):
+    # A bare date is a claim about their planner citing nothing, and the guard
+    # is right to strike that out. A live run abstained on a correct answer for
+    # exactly this reason, so the tool hands back its own evidence.
+    add_task(services, "a", "Essay", date(2026, 9, 3), estimated_minutes=120)
+    session = services.copilot.toolbox.session("alice", TODAY)
+
+    outcome = session.run(ToolRequest(tool=ToolName.open_day, start="2026-09-02", minutes=60))
+
+    full = outcome.payload["days_considered"][0]
+    assert full["date"] == "2026-09-03"
+    assert full["has_room"] is False
+    assert full["booked_minutes"] == 120
+    assert [item["title"] for item in full["records"]] == ["Essay"]
+    assert all(item["citation_id"] for item in full["records"])
+
+
+def test_every_tool_that_returns_records_makes_them_citable(services):
+    # The guard only lets through claims backed by a citation ID, so a tool
+    # that reports records without issuing one produces answers that cannot be
+    # said out loud.
+    add_task(services, "a", "Essay", date(2026, 9, 3), estimated_minutes=120)
+    add_task(services, "b", "Overdue thing", date(2026, 8, 1))
+    session = services.copilot.toolbox.session("alice", TODAY)
+    requests = [
+        ToolRequest(tool=ToolName.find, status="open"),
+        ToolRequest(tool=ToolName.agenda, start="2026-08-01", end="2026-09-30"),
+        ToolRequest(tool=ToolName.workload),
+        ToolRequest(tool=ToolName.open_day, start="2026-09-02", minutes=60),
+    ]
+    issued = set()
+
+    for request in requests:
+        payload = session.run(request).payload
+        for value in _records_in(payload):
+            assert value.get("citation_id"), f"{request.tool} returned an uncitable record"
+            issued.add(value["citation_id"])
+
+    assert issued <= {c.citation_id for c in session.evidence.citations}
+
+
+def _records_in(payload):
+    """Every record-shaped dict anywhere in a tool payload."""
+    if isinstance(payload, dict):
+        if "title" in payload and "type" in payload:
+            yield payload
+            return
+        for value in payload.values():
+            yield from _records_in(value)
+    elif isinstance(payload, list):
+        for value in payload:
+            yield from _records_in(value)
+
+
 def test_a_date_the_model_wrote_as_prose_does_not_become_a_server_error(services):
     add_task(services, "a", "Essay", date(2026, 9, 3))
     session = services.copilot.toolbox.session("alice", TODAY)
