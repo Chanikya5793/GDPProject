@@ -39,13 +39,21 @@ function ReminderModal({ reminder, onSave, onClose }) {
     _approvedForAi: reminder?._approvedForAi ?? true,
   })
 
+  const [titleError, setTitleError] = useState(false)
+
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   const handleSubmit = (e) => {
-    e.preventDefault()
-    if (!form.title.trim()) return
-    onSave(form)
+  e.preventDefault()
+
+  if (!form.title.trim()) {
+    setTitleError(true)
+    return
   }
+
+  setTitleError(false)
+  onSave(form)
+}
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -58,12 +66,21 @@ function ReminderModal({ reminder, onSave, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="form-group">
               <label className="form-label">Title</label>
-              <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)} placeholder="What do you need to remember?" autoFocus />
+              <input className={`form-input${titleError ? ' input-error' : ''}`} value={form.title}
+                onChange={e => {
+                  set('title', e.target.value)
+                  if (e.target.value.trim()) setTitleError(false)
+                }}
+                placeholder="What do you need to remember?"
+                autoFocus
+              />{titleError && (
+              <div className="form-error">* This is a required field</div>
+)}
             </div>
             <div className="form-grid-2">
               <div className="form-group">
                 <label className="form-label">Date</label>
-                <input className="form-input" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+                <input className="form-input" type="date" value={form.date} onChange={e => set('date', e.target.value)}/>
               </div>
               <div className="form-group">
                 <label className="form-label">Time</label>

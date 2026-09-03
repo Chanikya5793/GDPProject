@@ -180,3 +180,13 @@
   border-color: var(--red) !important; 
   background: #FEF2F2 !important; 
 }
+
+.form-error {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.input-error {
+  border-color: var(--red);
+}
