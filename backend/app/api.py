@@ -71,27 +71,23 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
     accept some and reject others rather than being handed one bundle.
     """
     proposals: list[ActionProposal] = []
-    unprepared = 0
+    refusals: list[str] = []
     for action in generated.all_actions():
-        proposal = services.proposals.from_generated_action(uid, action, answer)
-        if proposal:
-            proposals.append(proposal)
+        prepared = services.proposals.prepare(uid, action, answer)
+        if prepared.proposal:
+            proposals.append(prepared.proposal)
         else:
-            # It described a change it could not express: a reminder with no
-            # day, a record that does not exist. Staying silent leaves the
-            # student waiting to confirm a preview that will never arrive.
-            unprepared += 1
-    if unprepared == 1:
+            # It described a change it could not express. Saying only that
+            # something failed left the student guessing which change and what
+            # was missing, so the reason travels with it.
+            label = (action.title or action.record_id or action.entity_type.value).strip()
+            refusals.append(f"{label} ({prepared.reason})" if prepared.reason else label)
+    if len(refusals) == 1:
+        answer = f"{answer}\n\nOne thing I could not set up: {refusals[0]}."
+    elif refusals:
+        listed = "; ".join(refusals)
         answer = (
-            f"{answer}\n\nI could not prepare that change, so there is "
-            "nothing to confirm yet. Tell me the missing detail and I will "
-            "try again."
-        )
-    elif unprepared > 1:
-        answer = (
-            f"{answer}\n\n{unprepared} of those changes could not be prepared, so "
-            "there is nothing to confirm for them. Tell me the missing detail and "
-            "I will try again."
+            f"{answer}\n\n{len(refusals)} things I could not set up: {listed}."
         )
     return ChatResponse(
         answer=answer, citations=citations, retrieval=disclosure, proposals=proposals

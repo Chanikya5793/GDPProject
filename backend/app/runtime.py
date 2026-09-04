@@ -79,7 +79,7 @@ def build_production_container(settings: Settings) -> Container:
     planner = PlannerEngine(settings.max_daily_minutes)
     retrieval = RetrievalService(repository, vector_store, embeddings, audit, settings.retrieval_limit)
     indexing = IndexingService(repository, vector_store, embeddings, audit)
-    proposals = ProposalService(repository, audit)
+    proposals = ProposalService(repository, audit, settings.proposal_ttl_hours)
     toolbox = PlannerToolbox(
         repository, retrieval, planner, audit, briefing_items=settings.briefing_items
     )
