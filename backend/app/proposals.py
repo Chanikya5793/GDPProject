@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -47,18 +48,42 @@ def clean_generated_time(value: Optional[str]) -> Optional[str]:
     return f"{match.group(1)}:{match.group(2)}" if match else None
 
 
+# How long a preview stays confirmable. Thirty minutes was shorter than the
+# conversation it belonged to: the chat now survives a reload, so a student
+# coming back to a thread found every change in it dead. A stale confirm is not
+# dangerous -- it carries the base revision it was built from, so a record
+# edited in the meantime is refused rather than clobbered -- which is what makes
+# a generous window safe.
+DEFAULT_PROPOSAL_TTL_HOURS = 24
+
+
 class InvalidProposal(ValueError):
     pass
 
 
+@dataclass
+class PreparedAction:
+    """A change turned into a preview, or the reason it could not be.
+
+    The reason exists because "I could not prepare that change" told the student
+    nothing at all: not which change, and not what was missing.
+    """
+
+    proposal: Optional[ActionProposal] = None
+    reason: str = ""
+
+
 class ProposalService:
-    def __init__(self, repository: PlannerRepository, audit: AuditLogger):
+    def __init__(
+        self, repository: PlannerRepository, audit: AuditLogger,
+        ttl_hours: int = DEFAULT_PROPOSAL_TTL_HOURS,
+    ):
         self.repository = repository
         self.audit = audit
+        self.ttl_hours = ttl_hours
 
-    def from_generated_action(
-        self, uid: str, action: GeneratedAction, rationale: str
-    ) -> Optional[ActionProposal]:
+    def prepare(self, uid: str, action: GeneratedAction, rationale: str) -> PreparedAction:
+        """Build the preview, or say plainly why the change cannot be one."""
         now = datetime.now(timezone.utc)
         before = None
         after: PlannerContent | None = None
@@ -67,7 +92,7 @@ class ProposalService:
 
         if action.operation == ProposalOperation.create:
             if not action.title:
-                return None
+                return PreparedAction(reason="it did not say what to call it")
             record_id = generated_record_id()
             due_date, embedded_time = split_generated_datetime(action.due_date)
             # A time inside the date field is still the time they asked for.
@@ -81,7 +106,7 @@ class ProposalService:
                 # A reminder is meaningless without a day to fire on, so refuse
                 # rather than invent one; the model is told to ask instead.
                 if not due_date:
-                    return None
+                    return PreparedAction(reason="a reminder needs a day to fire on")
                 after = ReminderContent(
                     title=action.title, date=due_date, time=at_time,
                     notes=action.notes or "",
@@ -91,14 +116,21 @@ class ProposalService:
                     title=action.title, body=action.body or action.notes or "",
                 )
             else:
-                return None
+                # ScheduleContent exists in the model, but nothing in either
+                # client renders one, so a confirmed calendar block would vanish
+                # into a collection no screen reads. Refusing with a reason the
+                # student can act on beats writing an invisible record.
+                return PreparedAction(reason=(
+                    "I can only create tasks, reminders and notes, not calendar "
+                    "blocks. Ask me for a task with a time and I will set that up"
+                ))
         else:
             if not record_id:
-                return None
+                return PreparedAction(reason="it did not say which record to change")
             try:
                 record = self.repository.get_record(uid, action.entity_type, record_id)
             except NotFound:
-                return None
+                return PreparedAction(reason="that record no longer exists")
             before = record.content
             base_revision = record.revision
             if action.operation == ProposalOperation.delete:
@@ -107,39 +139,47 @@ class ProposalService:
                 if isinstance(before, (TaskContent, ReminderContent)):
                     after = before.model_copy(update={"completed": True})
                 else:
-                    return None
+                    return PreparedAction(reason="only tasks and reminders can be completed")
             elif action.operation == ProposalOperation.reschedule:
                 new_date, embedded_time = split_generated_datetime(action.due_date)
                 if not new_date:
-                    return None
+                    return PreparedAction(reason="it did not say what day to move it to")
                 new_time = clean_generated_time(action.due_time) or embedded_time
                 if isinstance(before, TaskContent):
                     after = before.model_copy(update={"due_date": new_date, "due_time": new_time})
                 elif isinstance(before, ReminderContent):
                     after = before.model_copy(update={"date": new_date, "time": new_time})
                 else:
-                    return None
+                    return PreparedAction(reason="only tasks and reminders have a day to move")
             elif action.operation == ProposalOperation.update:
                 updates = {
                     key: value for key, value in {
                         "title": action.title, "priority": action.priority, "notes": action.notes,
                     }.items() if value is not None
                 }
-                if not updates or (isinstance(before, NoteContent) and "priority" in updates):
-                    return None
+                if not updates:
+                    return PreparedAction(reason="it did not say what to change about it")
+                if isinstance(before, NoteContent) and "priority" in updates:
+                    return PreparedAction(reason="a note has no priority to set")
                 after = before.model_copy(update=updates)
 
         proposal = ActionProposal(
             proposal_id=secrets.token_urlsafe(18), operation=action.operation,
             entity_type=action.entity_type, record_id=record_id, base_revision=base_revision,
             before=before, after=after, rationale=rationale[:1000],
-            created_at=now, expires_at=now + timedelta(minutes=30),
+            created_at=now, expires_at=now + timedelta(hours=self.ttl_hours),
         )
         self.repository.save_proposal(uid, proposal)
         self.audit.record(uid, "proposal_created", metadata={
             "operation": proposal.operation.value, "entity_type": proposal.entity_type.value,
         })
-        return proposal
+        return PreparedAction(proposal=proposal)
+
+    def from_generated_action(
+        self, uid: str, action: GeneratedAction, rationale: str
+    ) -> Optional[ActionProposal]:
+        """The proposal alone, for callers that do not report the reason."""
+        return self.prepare(uid, action, rationale).proposal
 
     def confirm(
         self, uid: str, proposal_id: str, idempotency_key: str,

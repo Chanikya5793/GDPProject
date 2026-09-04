@@ -194,7 +194,10 @@ def test_a_change_it_cannot_prepare_is_admitted_not_implied(client, services, au
     assert response.status_code == 200
     body = response.json()
     assert body["proposals"] == []
-    assert "nothing to confirm" in body["answer"]
+    # Naming the change and the reason: "I could not prepare that change" left
+    # the student guessing which one and what was missing.
+    assert "Email advisor" in body["answer"]
+    assert "needs a day to fire on" in body["answer"]
 
 
 def retain_on(client, auth, days=30):
