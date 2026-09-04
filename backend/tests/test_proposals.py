@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -260,3 +260,72 @@ def test_a_junk_date_from_the_model_refuses_rather_than_raising(services):
     # The title is enough to build a task; the unusable date is simply dropped.
     assert proposal is not None
     assert proposal.after.due_date is None
+
+
+def test_a_preview_outlives_the_conversation_it_belongs_to(services):
+    # Thirty minutes was shorter than the thread. The chat survives a reload
+    # now, so a student coming back found every change in it already dead.
+    from app.ai import GeneratedAction
+    from app.models import EntityType, ProposalOperation
+
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.task, title="Essay",
+    ), "because you asked")
+
+    window = prepared.proposal.expires_at - prepared.proposal.created_at
+    assert window >= timedelta(hours=24)
+
+
+def test_the_window_is_deployment_configurable(services):
+    from app.ai import GeneratedAction
+    from app.audit import AuditLogger, MemoryAuditSink
+    from app.models import EntityType, ProposalOperation
+    from app.proposals import ProposalService
+
+    brief = ProposalService(
+        services.repository, AuditLogger(MemoryAuditSink(), b"salt"), ttl_hours=2
+    )
+    prepared = brief.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.task, title="Essay",
+    ), "because you asked")
+
+    assert prepared.proposal.expires_at - prepared.proposal.created_at == timedelta(hours=2)
+
+
+def test_a_calendar_block_is_refused_with_a_reason_not_in_silence(services):
+    # The reproduction: "office hours from 10 to 2" is a schedule, nothing in
+    # either client renders one, and the refusal said only that something
+    # failed. Twice in a row, in the same conversation.
+    from app.ai import GeneratedAction
+    from app.models import EntityType, ProposalOperation
+
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.schedule,
+        title="GA office hours", due_date="2026-09-04", due_time="10:00",
+    ), "because you asked")
+
+    assert prepared.proposal is None
+    assert "tasks, reminders and notes" in prepared.reason
+    assert "task with a time" in prepared.reason
+
+
+def test_every_refusal_says_something_useful(services):
+    # Eleven paths returned None with no explanation between them.
+    from app.ai import GeneratedAction
+    from app.models import EntityType, ProposalOperation
+
+    cases = [
+        GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.task),
+        GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.reminder,
+                        title="Email advisor"),
+        GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.schedule,
+                        title="Office hours"),
+        GeneratedAction(operation=ProposalOperation.complete, entity_type=EntityType.task),
+        GeneratedAction(operation=ProposalOperation.reschedule, entity_type=EntityType.task,
+                        record_id="missing", due_date="2026-09-04"),
+    ]
+
+    for action in cases:
+        prepared = services.proposals.prepare("alice", action, "because you asked")
+        assert prepared.proposal is None
+        assert prepared.reason, f"{action.operation} {action.entity_type} refused in silence"
