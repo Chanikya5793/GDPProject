@@ -1,0 +1,17 @@
+/* One occurrence of a series, on a row that otherwise looks like any other. */
+.repeat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: var(--green-dk);
+  background: var(--green-lt);
+  border: 1px solid var(--green-mid);
+  border-radius: 5px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.repeat-badge svg { flex-shrink: 0; }
