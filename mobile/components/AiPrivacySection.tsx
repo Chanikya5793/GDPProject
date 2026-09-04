@@ -7,8 +7,8 @@ import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
 import {
   AiInfo, AiPrivacy, defaultPrivacy, INDEXABLE_TYPES, IndexableType, privacySummary,
-  providerNotice, RETENTION_CHOICES, setAiEnabled, setRetainChat, setRetentionDays,
-  toggleIndexedType,
+  providerNotice, RetainedChat, RETENTION_CHOICES, setAiEnabled, setRetainChat,
+  setRetentionDays, toggleIndexedType,
 } from '@/utils/aiPrivacy';
 
 // Mirrors web's Settings → AI Privacy & Indexing. The mobile app already sent
@@ -29,6 +29,10 @@ export default function AiPrivacySection() {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState('');
   const [aiInfo, setAiInfo] = useState<AiInfo | null>(null);
+  // What retention actually kept. These rows were written and never readable:
+  // the only lookup was by request_id, which the client never reuses.
+  const [chats, setChats] = useState<RetainedChat[]>([]);
+  const [chatsError, setChatsError] = useState('');
   const s = makeStyles(colors, appearance);
 
   useEffect(() => {
@@ -41,6 +45,7 @@ export default function AiPrivacySection() {
   useEffect(() => {
     if (!apiConfigured()) return;
     apiRequest<AiInfo>('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null));
+    loadChats();
   }, []);
 
   const save = useCallback(async (next: AiPrivacy) => {
@@ -63,6 +68,24 @@ export default function AiPrivacySection() {
     }
   }, [privacy]);
 
+  // Listed whatever the switch currently says: turning retention off stops new
+  // rows being written, and anything kept while it was on is still there to
+  // read and clear.
+  const loadChats = useCallback(() => {
+    apiRequest<RetainedChat[]>('/v1/chats')
+      .then(rows => { setChats(rows); setChatsError(''); })
+      .catch(err => setChatsError((err as Error).message));
+  }, []);
+
+  const deleteOneChat = async (chat: RetainedChat) => {
+    try {
+      await apiRequest(`/v1/chats/${encodeURIComponent(chat.request_id)}`, { method: 'DELETE' });
+      setChats(previous => previous.filter(item => item.request_id !== chat.request_id));
+    } catch (err) {
+      setChatsError((err as Error).message);
+    }
+  };
+
   const purge = (path: string, title: string, message: string) => {
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
@@ -74,6 +97,7 @@ export default function AiPrivacySection() {
           setError('');
           try {
             await apiRequest(path, { method: 'DELETE' });
+            if (path === '/v1/chats') setChats([]);
             setStatus('ready');
             Alert.alert(title, 'Done.');
           } catch (err) {
@@ -228,6 +252,32 @@ export default function AiPrivacySection() {
         <Text style={[s.dangerText, { color: colors.error }]}>Delete retained chats</Text>
       </TouchableOpacity>
 
+      <View style={s.chatsHead}>
+        <Ionicons name="chatbubbles-outline" size={15} color={colors.textSecondary} />
+        <Text style={s.chatsTitle}>Retained chats</Text>
+        <Text style={s.footnote}>{chats.length ? `${chats.length} stored` : 'Nothing stored'}</Text>
+        <TouchableOpacity onPress={loadChats}><Text style={s.chatsRefresh}>Refresh</Text></TouchableOpacity>
+      </View>
+      {chatsError ? <Text style={[s.dangerText, { color: colors.error }]}>{chatsError}</Text> : null}
+      {!chats.length && !chatsError ? (
+        <Text style={s.footnote}>
+          {privacy.retain_chat
+            ? 'Nothing has been kept yet. Exchanges appear here once you ask the assistant something.'
+            : 'Retention is off, so nothing new is being kept. Anything saved while it was on would still be listed here.'}
+        </Text>
+      ) : null}
+      {chats.map(chat => (
+        <View key={chat.request_id} style={s.chatRow}>
+          <View style={s.chatText}>
+            <Text style={s.chatQuestion} numberOfLines={1}>{chat.question}</Text>
+            <Text style={s.chatAnswer} numberOfLines={2}>{chat.answer}</Text>
+          </View>
+          <TouchableOpacity onPress={() => deleteOneChat(chat)} accessibilityLabel={`Delete ${chat.question}`}>
+            <Ionicons name="trash-outline" size={15} color={colors.error} />
+          </TouchableOpacity>
+        </View>
+      ))}
+
       <Text style={s.footnote}>Record content is never indexed without approval.</Text>
       {aiInfo && <Text style={s.footnote}>{providerNotice(aiInfo)}</Text>}
     </View>
@@ -280,6 +330,16 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], appearance
       flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 12,
       borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
     },
+    chatsHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+    chatsTitle: { fontWeight: '700', color: colors.text, fontSize: 13 },
+    chatsRefresh: { marginLeft: 'auto', color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
+    chatRow: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+      backgroundColor: colors.surfaceVariant, borderRadius: 8, padding: 8, marginTop: 6,
+    },
+    chatText: { flex: 1, gap: 2 },
+    chatQuestion: { fontSize: 12, fontWeight: '700', color: colors.text },
+    chatAnswer: { fontSize: 12, color: colors.textMuted },
     dangerText: { fontSize: 14, fontWeight: '600' },
     footnote: { fontSize: 11, color: colors.textMuted, marginTop: 10, lineHeight: 16 },
   });
