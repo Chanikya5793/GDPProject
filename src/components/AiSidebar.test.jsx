@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentSteps, CitationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator } from './AiSidebar'
+import { AgentSteps, CitationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator, seriesSummary } from './AiSidebar'
 
 describe('copilot evidence and confirmation UI', () => {
   it('renders source-linked exact record metadata', () => {
@@ -133,5 +133,36 @@ describe('a batch of changes', () => {
     expect(screen.queryByText('Before')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Review each/ }))
     expect(screen.getAllByText('Before')).toHaveLength(3)
+  })
+})
+
+describe('a repeat', () => {
+  const weekly = count => ({
+    proposal_id: 'p1', operation: 'create', entity_type: 'reminder', status: 'pending',
+    rationale: 'Every Friday at 1:30 PM.',
+    before: null, after: { title: 'Fill Microsoft Form', date: '2026-09-04' },
+    series: Array.from({ length: count }, (_, index) => ({
+      record_id: `r${index}`,
+      content: { title: 'Fill Microsoft Form', date: `2026-09-${String(4 + index * 7).padStart(2, '0')}` },
+    })),
+  })
+
+  it('says how many records one confirmation will write', () => {
+    // The preview shows the first occurrence, so without this the student is
+    // confirming thirteen records having been shown one.
+    render(<ProposalCard proposal={weekly(3)} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    expect(screen.getByText(/Creates 3 records, 2026-09-04 to 2026-09-18/)).toBeInTheDocument()
+  })
+
+  it('stays quiet for an ordinary single change', () => {
+    expect(seriesSummary(weekly(1))).toBeNull()
+    expect(seriesSummary({ operation: 'create' })).toBeNull()
+  })
+
+  it('is one card, not one per occurrence', () => {
+    render(<ProposalList proposals={[weekly(13)]} onConfirm={vi.fn()} onReject={vi.fn()}
+      onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Confirm change/ })).toBeInTheDocument()
   })
 })

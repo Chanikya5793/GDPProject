@@ -14,9 +14,12 @@ from .models import (
     NoteContent,
     PlannerContent,
     ProposalOperation,
+    ProposedRecord,
+    RecurrenceRule,
     ReminderContent,
     TaskContent,
 )
+from .recurrence import MAX_OCCURRENCES, describe, expand
 from .repository import NotFound, PlannerRepository, generated_record_id
 
 # The model fills these fields, so they are untrusted input like any other. It
@@ -93,6 +96,7 @@ class ProposalService:
         if action.operation == ProposalOperation.create:
             if not action.title:
                 return PreparedAction(reason="it did not say what to call it")
+            repeat = _requested_repeat(action)
             record_id = generated_record_id()
             due_date, embedded_time = split_generated_datetime(action.due_date)
             # A time inside the date field is still the time they asked for.
@@ -163,15 +167,48 @@ class ProposalService:
                     return PreparedAction(reason="a note has no priority to set")
                 after = before.model_copy(update=updates)
 
+        series: list[ProposedRecord] = []
+        if action.operation == ProposalOperation.create and after is not None:
+            repeat = _requested_repeat(action)
+            if repeat and not isinstance(after, (TaskContent, ReminderContent)):
+                return PreparedAction(reason="only tasks and reminders can repeat")
+            first = due_date if isinstance(after, TaskContent) else getattr(after, "date", None)
+            if repeat and first is None:
+                return PreparedAction(reason="a repeat needs a day to start on")
+            if repeat:
+                dates = expand(repeat, first)
+                if not dates:
+                    return PreparedAction(reason="that repeat works out to no dates at all")
+                series_id = generated_record_id()
+                for index, occurrence in enumerate(dates):
+                    moved = _on_date(after, occurrence).model_copy(
+                        update={"series_id": series_id, "recurrence": repeat}
+                    )
+                    series.append(ProposedRecord(
+                        record_id=record_id if index == 0 else generated_record_id(),
+                        content=moved,
+                    ))
+                # The preview shows the first occurrence, and the rationale says
+                # how many follow, so a series is judged as one thing.
+                after = series[0].content
+                rationale = (
+                    f"{rationale}\n\nRepeats {describe(repeat)}: "
+                    f"{len(dates)} records from {dates[0].isoformat()} to "
+                    f"{dates[-1].isoformat()}."
+                )
+            else:
+                series.append(ProposedRecord(record_id=record_id, content=after))
+
         proposal = ActionProposal(
             proposal_id=secrets.token_urlsafe(18), operation=action.operation,
             entity_type=action.entity_type, record_id=record_id, base_revision=base_revision,
-            before=before, after=after, rationale=rationale[:1000],
+            before=before, after=after, series=series, rationale=rationale[:2000],
             created_at=now, expires_at=now + timedelta(hours=self.ttl_hours),
         )
         self.repository.save_proposal(uid, proposal)
         self.audit.record(uid, "proposal_created", metadata={
             "operation": proposal.operation.value, "entity_type": proposal.entity_type.value,
+            "records": len(proposal.series) or 1,
         })
         return PreparedAction(proposal=proposal)
 
@@ -222,3 +259,26 @@ class ProposalService:
         if proposal.status != "pending":
             raise InvalidProposal(f"Proposal is {proposal.status}")
         return self.repository.update_proposal_status(uid, proposal_id, "cancelled")
+
+
+def _requested_repeat(action: GeneratedAction) -> Optional[RecurrenceRule]:
+    """The repeat the model asked for, or None. Anything unusable is treated as
+    no repeat rather than an error, because a single record is a sane outcome
+    and a rejected reply is not."""
+    if not action.repeat_frequency:
+        return None
+    try:
+        return RecurrenceRule(
+            frequency=action.repeat_frequency,
+            interval=action.repeat_interval or 1,
+            count=min(action.repeat_count or 1, MAX_OCCURRENCES),
+        )
+    except ValueError:
+        return None
+
+
+def _on_date(content: PlannerContent, day: date) -> PlannerContent:
+    """The same content, moved to another day, whatever its type calls that."""
+    if isinstance(content, TaskContent):
+        return content.model_copy(update={"due_date": day})
+    return content.model_copy(update={"date": day})

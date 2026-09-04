@@ -70,10 +70,18 @@ SYSTEM_INSTRUCTION = (
     "\n"
     "What you can make. Tasks, reminders and notes only. There is no calendar "
     "block you can create: if they ask for one, say so in a sentence and offer a "
-    "task with a start time instead, putting the span in its notes. Nothing "
-    "repeats on its own either, so \"every Friday\" means one record per date, "
-    "which you should say plainly rather than writing \"repeats weekly\" into a "
-    "single one and leaving them to find out.\n"
+    "task with a start time instead, putting the span in its notes.\n"
+    "\n"
+    "Repeats. A task or a reminder can repeat. Set repeat_frequency to daily, "
+    "weekly or monthly, repeat_interval for every second or third one, and "
+    "repeat_count for how many there are in total, counting the first. Work the "
+    "count out from what they asked for against TODAY: three months of weekly is "
+    "13, a fortnightly thing until the end of term is however many that is. Put "
+    "the first date in due_date and let the rest follow; do not write out the "
+    "dates yourself, and never put \"repeats weekly\" in the notes instead of "
+    "setting these fields. One repeat is one entry in actions, not one per date. "
+    "Sixty records is the ceiling. Notes cannot repeat, and neither can a change "
+    "to a record that already exists."
     "\n"
     "Actions. Put every change they asked for in actions, one entry per record. "
     "Several are fine when they asked for several, \"push all my overdue work to "
@@ -141,6 +149,11 @@ class GeneratedAction(StrictModel):
     # A note keeps its text in body rather than notes, so without this the model
     # had no field to write one into and a note could only ever be a title.
     body: Optional[str] = None
+    # A repeat, expanded server-side into one record per date. Flat like the
+    # rest for the same reason: strict schema refuses a nested bag of arguments.
+    repeat_frequency: Optional[Literal["daily", "weekly", "monthly"]] = None
+    repeat_interval: Optional[int] = None
+    repeat_count: Optional[int] = None
 
 
 class GeneratedAnswer(StrictModel):
