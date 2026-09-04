@@ -501,14 +501,6 @@ export default function Settings() {
               </div>
               <Toggle checked={settings.compactMode} onChange={v => updateSetting('compactMode', v)} />
             </div>
-
-            <div className="settings-row">
-              <div className="settings-row-info">
-                <span className="settings-row-label">Reduced Motion</span>
-                <span className="settings-row-desc">Minimize animations throughout the app</span>
-              </div>
-              <Toggle checked={settings.reducedMotion} onChange={v => updateSetting('reducedMotion', v)} />
-            </div>
           </section>
 
           {/* ═══ Planner Preferences ═══ */}

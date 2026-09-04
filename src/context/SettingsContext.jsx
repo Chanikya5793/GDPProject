@@ -8,7 +8,6 @@ const DEFAULTS = {
   accentColor: 'green',
   compactMode: false,
   fontSize: 'default',
-  reducedMotion: false,
   weekStartsOn: 'sunday',
   defaultPriority: 'medium',
   defaultCategory: 'Homework',
@@ -50,12 +49,6 @@ export function SettingsProvider({ children }) {
     // Compact mode
     root.setAttribute('data-compact', settings.compactMode ? 'true' : 'false')
 
-    // Reduced motion
-    if (settings.reducedMotion) {
-      root.setAttribute('data-reduced-motion', 'true')
-    } else {
-      root.removeAttribute('data-reduced-motion')
-    }
   }, [settings])
 
   /* Listen for system theme changes when theme='system' */
