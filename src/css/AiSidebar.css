@@ -522,3 +522,28 @@
 @media (prefers-reduced-motion: reduce) {
   .ai-caret { animation: none; }
 }
+
+/* What the assistant looked up for itself, shown while it works and kept
+   afterwards so a slow answer is legible rather than mysterious. */
+.ai-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-steps li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.ai-steps svg {
+  flex-shrink: 0;
+  color: var(--green);
+}

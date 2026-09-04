@@ -32,6 +32,7 @@ from .models import (
     RejectProposalRequest,
 )
 from .proposals import InvalidProposal
+from .rag import AgentStep
 from .ratelimit import RateLimitExceeded
 from .repository import IdempotencyConflict, NotFound, RevisionConflict
 from .runtime import Container, build_production_container
@@ -62,20 +63,35 @@ def sse_event(event: str, payload: Any) -> str:
 
 
 def build_chat_response(services: Container, uid: str, answer, citations, disclosure, generated):
+    """Turn every change the model asked for into a preview to confirm.
+
+    A request can be plural now: "push all my overdue work to Friday" is one
+    proposal per task, each with its own before-and-after, so the student can
+    accept some and reject others rather than being handed one bundle.
+    """
     proposals: list[ActionProposal] = []
-    if generated.action:
-        proposal = services.proposals.from_generated_action(uid, generated.action, answer)
+    unprepared = 0
+    for action in generated.all_actions():
+        proposal = services.proposals.from_generated_action(uid, action, answer)
         if proposal:
             proposals.append(proposal)
         else:
             # It described a change it could not express: a reminder with no
             # day, a record that does not exist. Staying silent leaves the
             # student waiting to confirm a preview that will never arrive.
-            answer = (
-                f"{answer}\n\nI could not prepare that change, so there is "
-                "nothing to confirm yet. Tell me the missing detail and I will "
-                "try again."
-            )
+            unprepared += 1
+    if unprepared == 1:
+        answer = (
+            f"{answer}\n\nI could not prepare that change, so there is "
+            "nothing to confirm yet. Tell me the missing detail and I will "
+            "try again."
+        )
+    elif unprepared > 1:
+        answer = (
+            f"{answer}\n\n{unprepared} of those changes could not be prepared, so "
+            "there is nothing to confirm for them. Tell me the missing detail and "
+            "I will try again."
+        )
     return ChatResponse(
         answer=answer, citations=citations, retrieval=disclosure, proposals=proposals
     )
@@ -341,10 +357,13 @@ def create_app(container: Container | None = None) -> FastAPI:
     def chat_stream(body: ChatRequest, user: CurrentUser, services: ContainerDep):
         """The same answer as /v1/copilot/chat, delivered as it is written.
 
-        Emits `delta` events carrying answer text, then one `final` event with
-        the complete ChatResponse. The final event is authoritative: the
-        citation guard can replace the answer after generation, so a client
-        must render `final.answer` rather than the text it accumulated.
+        Emits `delta` events carrying answer text, `step` events whenever the
+        assistant looks something up for itself, and one `final` event with the
+        complete ChatResponse. The final event is authoritative: the citation
+        guard can replace the answer after generation, so a client must render
+        `final.answer` rather than the text it accumulated. A `step` also means
+        any text delivered so far belonged to a round the assistant has moved
+        past, so the client must clear what it has when one arrives.
         """
         privacy = services.repository.get_privacy(user.uid)
         if privacy.retain_chat:
@@ -397,7 +416,10 @@ def create_app(container: Container | None = None) -> FastAPI:
                     retain_chat_response(services, user.uid, privacy, body, response)
                     yield sse_event("final", response.model_dump(mode="json"))
                     return
-                yield sse_event("delta", {"text": item})
+                if isinstance(item, AgentStep):
+                    yield sse_event("step", {"tool": item.tool, "label": item.label})
+                else:
+                    yield sse_event("delta", {"text": item})
                 try:
                     item = next(stream)
                 except StopIteration:
