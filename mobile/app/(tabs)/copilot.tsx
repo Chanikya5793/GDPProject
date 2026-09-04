@@ -32,6 +32,11 @@ interface Proposal {
   status: string;
 }
 
+interface AgentStep {
+  tool: string;
+  label: string;
+}
+
 interface ChatResponse {
   answer: string;
   citations: Citation[];
@@ -43,6 +48,8 @@ interface Message extends Partial<ChatResponse> {
   id: string;
   role: 'user' | 'assistant' | 'error';
   text: string;
+  /** What the assistant looked up for itself before answering. */
+  steps?: AgentStep[];
   /** True while the answer is still arriving, so a pause does not read as the end. */
   streaming?: boolean;
 }
@@ -88,6 +95,7 @@ export default function CopilotScreen() {
     controllerRef.current = controller;
     const answerId = idempotencyKey('answer');
     let streamed = '';
+    let steps: AgentStep[] = [];
     let settled = false;
     let streamFailure: { code?: string; detail?: string } | null = null;
 
@@ -113,13 +121,20 @@ export default function CopilotScreen() {
         if (event === 'delta') {
           streamed += (data as { text?: string }).text || '';
           upsertAnswer({ text: streamed, streaming: true });
+        } else if (event === 'step') {
+          // The assistant looked something up for itself. Whatever streamed
+          // before belonged to the round it has moved past, so it is cleared
+          // rather than left above an answer it no longer leads into.
+          steps = [...steps, data as AgentStep];
+          streamed = '';
+          upsertAnswer({ steps, text: '', streaming: true });
         } else if (event === 'final') {
           // Authoritative. The citation guard can replace the whole answer once
           // the structured result is parsed, and a change that could not be
           // prepared appends to it, so this replaces the streamed text.
           settled = true;
           const response = data as ChatResponse;
-          upsertAnswer({ ...response, text: response.answer, streaming: false });
+          upsertAnswer({ ...response, text: response.answer, steps, streaming: false });
         } else if (event === 'error') {
           streamFailure = data as { code?: string; detail?: string };
         }
@@ -201,7 +216,15 @@ export default function CopilotScreen() {
             styles.message, message.role === 'user' ? styles.userMessage : styles.assistantMessage,
             message.role === 'error' && styles.errorMessage,
           ]}>
-            <Text style={message.role === 'user' ? styles.userText : styles.assistantText}>{message.text}</Text>
+            {message.steps?.map((step, index) => (
+              <View key={`${step.tool}-${index}`} style={styles.step}>
+                <Ionicons name="search-outline" size={11} color={accent.primary} />
+                <Text style={styles.stepText}>{step.label}</Text>
+              </View>
+            ))}
+            {(message.text.length > 0 || !message.streaming) && (
+              <Text style={message.role === 'user' ? styles.userText : styles.assistantText}>{message.text}</Text>
+            )}
             {message.citations?.map(citation => (
               <View key={citation.citation_id} style={styles.citation}>
                 <Text style={styles.citationTitle}>[{citation.citation_id}] {citation.title} · rev {citation.revision}</Text>
@@ -232,7 +255,7 @@ export default function CopilotScreen() {
           </View>
         ))}
         {loading && !messages.some(message => message.streaming) && (
-          <View style={styles.loading}><ActivityIndicator color={accent.primary} /><Text style={styles.disclosure}>Retrieving approved records…</Text></View>
+          <View style={styles.loading}><ActivityIndicator color={accent.primary} /><Text style={styles.disclosure}>Reading your planner…</Text></View>
         )}
       </ScrollView>
       <View style={styles.inputRow}>
@@ -274,6 +297,8 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     citationTitle: { color: accent.primary, fontWeight: '600', fontSize: 12 },
     citationExcerpt: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
     disclosure: { color: colors.textMuted, fontSize: 11 },
+    step: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    stepText: { color: colors.textMuted, fontSize: 11, flexShrink: 1 },
     proposal: { borderWidth: 1, borderColor: accent.primary, borderRadius: 10, padding: 10, gap: 8 },
     proposalTitle: { color: accent.primary, fontWeight: '700', textTransform: 'capitalize' },
     proposalReason: { color: colors.textSecondary, fontSize: 12 },

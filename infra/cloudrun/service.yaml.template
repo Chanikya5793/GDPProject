@@ -18,11 +18,16 @@ spec:
     spec:
       serviceAccountName: ${GDP_SERVICE_ACCOUNT}
       containerConcurrency: 40
-      # Must stay above PLANNER_MUSE_TIMEOUT_SECONDS. When they were both 60 the
-      # platform killed the request at the same instant the model client would
-      # have given up, so a slow generation surfaced as a bare 500 instead of the
-      # app's own explained timeout.
-      timeoutSeconds: 120
+      # Must stay above the worst case one chat request can take, which is no
+      # longer a single model call: the assistant may spend a round looking
+      # things up before it answers. That is bounded by
+      # PLANNER_AGENT_DEADLINE_SECONDS (no new round starts after 90s) plus one
+      # more PLANNER_MUSE_TIMEOUT_SECONDS generation, so 210s of model time and
+      # headroom for Firestore either side. When this and the model timeout were
+      # both 60 the platform killed the request at the same instant the model
+      # client would have given up, and a slow generation surfaced as a bare 500
+      # instead of the app's own explained timeout.
+      timeoutSeconds: 300
       containers:
         - image: ${GDP_IMAGE}
           ports:
@@ -55,8 +60,21 @@ spec:
             # model_not_found, taking the whole assistant down with it. The
             # standard tier also does not train on prompts, which the Settings
             # screen and the first-run notice report from /v1/ai-info.
+            # The assistant chooses its own lookups and can propose several
+            # changes at once, and that choosing is the reasoning step, so it is
+            # not starved here. Muse Spark bills reasoning cheaply enough that
+            # the constraint is wall-clock, not spend, which is what the two
+            # timeouts below are for.
             - name: PLANNER_MUSE_REASONING_EFFORT
-              value: minimal
+              value: medium
+            # Per model call. Stays under the request timeout above.
+            - name: PLANNER_MUSE_TIMEOUT_SECONDS
+              value: "120"
+            # No new round of lookups starts after this much of the turn has
+            # gone, so a slow provider costs a thinner answer rather than a
+            # request that dies past the platform ceiling.
+            - name: PLANNER_AGENT_DEADLINE_SECONDS
+              value: "90"
             - name: PLANNER_MUSE_MODEL
               value: muse-spark-1.2
             - name: PLANNER_MUSE_API_KEY_RESOURCE

@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search } from 'lucide-react'
 import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
 
 const SUGGESTIONS = [
-  'What tasks are due today?',
-  'Create a new task for tomorrow',
-  'Show my overdue items',
+  'What is due today?',
+  'What am I behind on?',
   'Summarize my week ahead',
+  'Move my overdue work to Friday',
 ]
 
 export function ThinkingIndicator({ onCancel }) {
@@ -16,7 +16,7 @@ export function ThinkingIndicator({ onCancel }) {
     <div className="ai-msg ai-msg-bot">
       <div className="ai-msg-avatar"><Bot size={14} /></div>
       <div className="ai-msg-bubble ai-thinking">
-        <span>Retrieving approved records…</span>
+        <span>Reading your planner…</span>
         <button onClick={onCancel}><Square size={11} /> Stop</button>
       </div>
     </div>
@@ -52,6 +52,23 @@ export function FirstRunNotice({ info, onAcknowledge }) {
       </p>
       <button onClick={onAcknowledge}>Got it</button>
     </section>
+  )
+}
+
+export function AgentSteps({ steps }) {
+  // What the assistant went and looked at, in the order it did it. A multi-step
+  // answer otherwise reads as a long unexplained pause, and the student has no
+  // way to tell a thorough answer from a stuck one.
+  if (!steps?.length) return null
+  return (
+    <ol className="ai-steps" aria-label="What the assistant looked at">
+      {steps.map((step, index) => (
+        <li key={`${step.tool}-${index}`}>
+          <Search size={11} aria-hidden="true" />
+          <span>{step.label}</span>
+        </li>
+      ))}
+    </ol>
   )
 }
 
@@ -208,10 +225,13 @@ export default function AiSidebar() {
                   <div className="ai-msg-avatar"><Bot size={14} /></div>
                 )}
                 <div className="ai-msg-content">
-                  <div className="ai-msg-bubble">
-                    {msg.text}
-                    {msg.streaming && <span className="ai-caret" aria-hidden="true" />}
-                  </div>
+                  <AgentSteps steps={msg.steps} />
+                  {(msg.text || !msg.streaming) && (
+                    <div className="ai-msg-bubble">
+                      {msg.text}
+                      {msg.streaming && <span className="ai-caret" aria-hidden="true" />}
+                    </div>
+                  )}
                   <CitationList citations={msg.citations} />
                   {msg.retrieval?.attempted && (
                     <div className="ai-retrieval-disclosure">

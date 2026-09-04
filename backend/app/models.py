@@ -237,7 +237,7 @@ class AuditEvent(StrictModel):
     event_id: str
     uid_hash: str
     event_type: Literal[
-        "indexing", "retrieval", "generation", "mcp_access", "proposal_created",
+        "indexing", "retrieval", "generation", "tool_call", "mcp_access", "proposal_created",
         "proposal_confirmed", "proposal_rejected", "failure", "privacy_changed", "deletion",
         "rate_limited",
     ]
