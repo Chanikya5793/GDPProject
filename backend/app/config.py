@@ -5,6 +5,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .planner import DEFAULT_MAX_DAILY_MINUTES
+from .proposals import DEFAULT_PROPOSAL_TTL_HOURS
 
 
 class Settings(BaseSettings):
@@ -78,6 +79,12 @@ class Settings(BaseSettings):
     # Records the briefing may list before it starts truncating. It travels in
     # the prompt on every turn, so this is a token budget.
     briefing_items: int = Field(default=40, ge=0, le=200)
+    # How long a previewed change stays confirmable. Thirty minutes was shorter
+    # than the conversation it belonged to, so a student returning to a thread
+    # found every change in it dead. Safe to be generous: a confirmation carries
+    # the revision it was previewed from, so a record edited meanwhile is
+    # refused rather than overwritten.
+    proposal_ttl_hours: int = Field(default=DEFAULT_PROPOSAL_TTL_HOURS, ge=1, le=720)
     max_daily_minutes: int = Field(default=DEFAULT_MAX_DAILY_MINUTES, ge=15, le=1440)
     chat_rate_limit_requests: int = Field(default=20, ge=1, le=1000)
     chat_rate_limit_window_seconds: int = Field(default=3600, ge=1, le=86400)

@@ -657,7 +657,8 @@ def test_changes_that_cannot_be_prepared_are_counted_not_hidden(services, client
     }).json()
 
     assert body["proposals"] == []
-    assert "2 of those changes could not be prepared" in body["answer"]
+    assert "2 things I could not set up" in body["answer"]
+    assert "Email advisor" in body["answer"] and "Call the library" in body["answer"]
 
 
 def test_a_step_reaches_the_client_as_its_own_event(services, client, auth):

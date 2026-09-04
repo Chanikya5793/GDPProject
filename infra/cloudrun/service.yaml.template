@@ -79,6 +79,11 @@ spec:
               value: muse-spark-1.2
             - name: PLANNER_MUSE_API_KEY_RESOURCE
               value: ${GDP_MUSE_SECRET_RESOURCE}
+            # How long a previewed change stays confirmable. The conversation
+            # now survives a reload, so this has to outlive a browser restart or
+            # the student comes back to a thread of dead previews.
+            - name: PLANNER_PROPOSAL_TTL_HOURS
+              value: "24"
             # Default daily task capacity the planner treats as a full day.
             # Users may override it for themselves via /v1/planner-settings.
             - name: PLANNER_MAX_DAILY_MINUTES
