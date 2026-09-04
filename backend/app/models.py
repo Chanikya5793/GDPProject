@@ -21,6 +21,18 @@ class EntityType(str, Enum):
     schedule = "schedule"
 
 
+class RecurrenceRule(StrictModel):
+    """How often a series repeats, and how many times.
+
+    Bounded by a count rather than an end date because a series is written out
+    as real records, so the number of them is the thing that has to stay sane.
+    """
+
+    frequency: Literal["daily", "weekly", "monthly"]
+    interval: int = Field(default=1, ge=1, le=30)
+    count: int = Field(ge=1, le=60)
+
+
 class TaskContent(StrictModel):
     entity_type: Literal[EntityType.task] = EntityType.task
     title: Title
@@ -31,6 +43,11 @@ class TaskContent(StrictModel):
     notes: SafeText = ""
     completed: bool = False
     estimated_minutes: int = Field(default=30, ge=5, le=1440)
+    # Set on every record of a repeat. The id ties the series together so it can
+    # be found and removed as one; the rule rides along on each record so a row
+    # can say what it is without loading its siblings.
+    series_id: Optional[RecordId] = None
+    recurrence: Optional[RecurrenceRule] = None
 
 
 class ReminderContent(StrictModel):
@@ -40,6 +57,8 @@ class ReminderContent(StrictModel):
     time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     notes: SafeText = ""
     completed: bool = False
+    series_id: Optional[RecordId] = None
+    recurrence: Optional[RecurrenceRule] = None
 
 
 class AttachmentText(StrictModel):
@@ -177,6 +196,13 @@ class ProposalOperation(str, Enum):
     update = "update"
 
 
+class ProposedRecord(StrictModel):
+    """One record a confirmed create will write."""
+
+    record_id: RecordId
+    content: PlannerContent = Field(discriminator="entity_type")
+
+
 class ActionProposal(StrictModel):
     proposal_id: str
     operation: ProposalOperation
@@ -186,6 +212,11 @@ class ActionProposal(StrictModel):
     before: Optional[PlannerContent] = Field(default=None, discriminator="entity_type")
     after: Optional[PlannerContent] = Field(default=None, discriminator="entity_type")
     rationale: str
+    # Every record a confirmed create writes, one per date for a repeat. Empty
+    # for everything else, and for proposals stored before repeats existed, in
+    # which case `after` and `record_id` are the whole of it. `after` mirrors
+    # the first entry so a preview reads the same either way.
+    series: List[ProposedRecord] = Field(default_factory=list, max_length=60)
     status: Literal["pending", "confirmed", "rejected", "cancelled", "failed"] = "pending"
     created_at: datetime
     expires_at: datetime
