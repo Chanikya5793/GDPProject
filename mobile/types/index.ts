@@ -22,6 +22,9 @@ export interface Task {
   _revision?: number;
   _approvedForAi?: boolean;
   _pending?: boolean;
+  /** Set on every record of a repeat, tying the series together. */
+  seriesId?: string | null;
+  recurrence?: { frequency: string; interval: number; count: number } | null;
 }
 
 export interface Reminder {
@@ -35,6 +38,9 @@ export interface Reminder {
   _revision?: number;
   _approvedForAi?: boolean;
   _pending?: boolean;
+  /** Set on every record of a repeat, tying the series together. */
+  seriesId?: string | null;
+  recurrence?: { frequency: string; interval: number; count: number } | null;
 }
 
 export interface NoteAttachment {

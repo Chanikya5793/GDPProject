@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat } from 'lucide-react'
 import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
 
@@ -89,6 +89,14 @@ export function CitationList({ citations }) {
   )
 }
 
+/** The span a repeat covers, so one preview can stand for the whole series. */
+export function seriesSummary(proposal) {
+  const series = proposal?.series
+  if (!series || series.length < 2) return null
+  const day = record => record.content?.due_date || record.content?.date || ''
+  return `Creates ${series.length} records, ${day(series[0])} to ${day(series[series.length - 1])}`
+}
+
 export function ProposalCard({ proposal, onConfirm, onReject }) {
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
@@ -107,6 +115,11 @@ export function ProposalCard({ proposal, onConfirm, onReject }) {
         <span>{proposal.status}</span>
       </div>
       <p>{proposal.rationale}</p>
+      {seriesSummary(proposal) && (
+        <div className="ai-proposal-series">
+          <Repeat size={12} /> {seriesSummary(proposal)}
+        </div>
+      )}
       <div className="ai-proposal-preview">
         <div><span>Before</span><pre>{proposal.before ? JSON.stringify(proposal.before, null, 2) : 'Does not exist'}</pre></div>
         <div><span>After</span><pre>{proposal.after ? JSON.stringify(proposal.after, null, 2) : 'Deleted'}</pre></div>

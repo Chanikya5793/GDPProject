@@ -42,10 +42,14 @@ function fromServer(record: ServerRecord): PlannerItem {
     dueTime: String(record.content.due_time || ''), priority: (record.content.priority || 'medium') as Task['priority'],
     category: String(record.content.category || 'Other'), notes: String(record.content.notes || ''),
     completed: Boolean(record.content.completed),
+    seriesId: (record.content.series_id as string) || null,
+    recurrence: (record.content.recurrence as Task['recurrence']) || null,
   };
   if (record.content.entity_type === 'reminder') return {
     ...common, title: record.content.title, date: String(record.content.date || ''),
     time: String(record.content.time || ''), notes: String(record.content.notes || ''),
+    seriesId: (record.content.series_id as string) || null,
+    recurrence: (record.content.recurrence as Reminder['recurrence']) || null,
   };
   return {
     ...common, title: record.content.title, body: String(record.content.body || ''),
@@ -61,6 +65,7 @@ function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
       entity_type: 'task', title: task.title, due_date: task.dueDate || null,
       due_time: task.dueTime || null, priority: task.priority, category: task.category,
       notes: task.notes, completed: task.completed, estimated_minutes: 30,
+      series_id: task.seriesId || null, recurrence: task.recurrence || null,
     };
   }
   if (kind === 'reminder') {
@@ -68,6 +73,7 @@ function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
     return {
       entity_type: 'reminder', title: reminder.title, date: reminder.date,
       time: reminder.time || null, notes: reminder.notes, completed: false,
+      series_id: reminder.seriesId || null, recurrence: reminder.recurrence || null,
     };
   }
   const note = item as Note;

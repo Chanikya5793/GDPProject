@@ -627,3 +627,16 @@
   border-top: 1px solid var(--green-mid);
   padding-top: 8px;
 }
+
+/* One preview standing for a whole repeat. */
+.ai-proposal-series {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green-dk);
+  background: var(--green-lt);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
