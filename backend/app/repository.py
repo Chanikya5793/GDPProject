@@ -17,11 +17,25 @@ from .models import (
     PlannerRecord,
     PlannerSettings,
     PrivacySettings,
+    ProposedRecord,
     RecordUpsertRequest,
     RetainedExchange,
 )
 
 CONTENT_ADAPTER = TypeAdapter(PlannerContent)
+
+
+def _created_records(proposal: ActionProposal) -> List[ProposedRecord]:
+    """Every record a confirmed create writes, one for all but a repeat.
+
+    Proposals stored before repeats existed carry no series, so they fall back
+    to the single record the preview was built around.
+    """
+    if proposal.series:
+        return list(proposal.series)
+    if not proposal.record_id or proposal.after is None:
+        raise ValueError("Proposal has no record to create")
+    return [ProposedRecord(record_id=proposal.record_id, content=proposal.after)]
 
 
 class RevisionConflict(RuntimeError):
@@ -201,17 +215,19 @@ class MemoryPlannerRepository:
             if proposal.operation.value == "create":
                 if current:
                     raise RevisionConflict("Target record already exists")
-                assert proposal.after is not None
-                self.upsert_record(
-                    uid, proposal.entity_type, proposal.record_id,
-                    RecordUpsertRequest(
-                        content=proposal.after, expected_revision=None,
-                        # Visible to the assistant, like any other new record: the
-                        # user asked it to create this one, so hiding it would leave
-                        # the assistant blind to its own work a moment later.
-                        idempotency_key=idempotency_key, approved_for_ai=True,
-                    ),
-                )
+                for index, item in enumerate(_created_records(proposal)):
+                    self.upsert_record(
+                        uid, proposal.entity_type, item.record_id,
+                        RecordUpsertRequest(
+                            content=item.content, expected_revision=None,
+                            # Visible to the assistant, like any other new record:
+                            # the user asked it to create this one, so hiding it
+                            # would leave the assistant blind to its own work a
+                            # moment later.
+                            idempotency_key=f"{idempotency_key}:{index}",
+                            approved_for_ai=True,
+                        ),
+                    )
             elif proposal.operation.value == "delete":
                 if not current or current.revision != proposal.base_revision:
                     raise RevisionConflict("Record changed after the preview was created")
@@ -536,7 +552,25 @@ class FirestorePlannerRepository:
                 created_at = data["created_at"]
                 approved_for_ai = data.get("approved_for_ai", False)
 
-            if proposal.operation.value != "delete":
+            if proposal.operation.value == "create":
+                # A repeat is one confirmation and many records, written in the
+                # same transaction so a half-created series cannot survive.
+                for item in _created_records(proposal):
+                    encrypted = self.cipher.encrypt(
+                        uid, proposal.entity_type.value, item.record_id, revision,
+                        item.content.model_dump(mode="json"),
+                    )
+                    txn.set(self._record_ref(uid, proposal.entity_type, item.record_id), {
+                        "uid": uid,
+                        "record_id": item.record_id,
+                        "entity_type": proposal.entity_type.value,
+                        "revision": revision,
+                        "approved_for_ai": approved_for_ai,
+                        "encrypted_payload": encrypted.to_dict(),
+                        "created_at": created_at,
+                        "updated_at": now,
+                    })
+            elif proposal.operation.value != "delete":
                 assert proposal.after is not None
                 encrypted = self.cipher.encrypt(
                     uid, proposal.entity_type.value, proposal.record_id, revision,
