@@ -18,6 +18,7 @@ from .models import (
     PlannerSettings,
     PrivacySettings,
     RecordUpsertRequest,
+    RetainedExchange,
 )
 
 CONTENT_ADAPTER = TypeAdapter(PlannerContent)
@@ -59,6 +60,8 @@ class PlannerRepository(Protocol):
     def save_chat_response(
         self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
     ) -> None: ...
+    def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]: ...
+    def delete_chat(self, uid: str, request_id: str) -> bool: ...
     def delete_chats(self, uid: str) -> int: ...
 
 
@@ -71,7 +74,8 @@ class MemoryPlannerRepository:
         self.privacy: Dict[str, PrivacySettings] = {}
         self.planner_settings: Dict[str, PlannerSettings] = {}
         self.proposals: Dict[Tuple[str, str], ActionProposal] = {}
-        self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime]] = {}
+        # question, response, created_at, expires_at
+        self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime, datetime]] = {}
         self._lock = RLock()
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
@@ -235,15 +239,37 @@ class MemoryPlannerRepository:
         value = self.chats.get((uid, request_id))
         if not value:
             return None
-        if value[2] <= datetime.now(timezone.utc):
+        if value[3] <= datetime.now(timezone.utc):
             del self.chats[(uid, request_id)]
             return None
         return deepcopy(value[1])
 
+    def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]:
+        now = datetime.now(timezone.utc)
+        expired = [
+            key for key, value in self.chats.items() if key[0] == uid and value[3] <= now
+        ]
+        for key in expired:
+            del self.chats[key]
+        rows = [
+            RetainedExchange(
+                request_id=key[1], question=value[0], answer=value[1].answer,
+                citations=value[1].citations, created_at=value[2], expires_at=value[3],
+            )
+            for key, value in self.chats.items() if key[0] == uid
+        ]
+        rows.sort(key=lambda row: row.created_at, reverse=True)
+        return rows[:limit]
+
+    def delete_chat(self, uid: str, request_id: str) -> bool:
+        return self.chats.pop((uid, request_id), None) is not None
+
     def save_chat_response(
         self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
     ) -> None:
-        self.chats[(uid, request_id)] = (question, deepcopy(response), expires_at)
+        self.chats[(uid, request_id)] = (
+            question, deepcopy(response), datetime.now(timezone.utc), expires_at
+        )
 
     def delete_chats(self, uid: str) -> int:
         keys = [key for key in self.chats if key[0] == uid]
@@ -565,6 +591,51 @@ class FirestorePlannerRepository:
             "created_at": firestore.SERVER_TIMESTAMP,
             "expires_at": expires_at,
         })
+
+    def _chats(self, uid: str):
+        return self.client.collection("users").document(uid).collection("chats")
+
+    def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]:
+        """The stored exchanges, newest first, with expired ones swept as we go.
+
+        Ordered by creation rather than filtered on expiry, which would need a
+        composite index for the two fields together. Newest first puts the live
+        rows at the front anyway, so the filter below rarely discards anything;
+        what it does discard it also deletes, because until now nothing ever
+        did. `get_chat_response` only expires the one row it is asked for, and
+        it is asked by request_id, which the client never reuses.
+        """
+        now = datetime.now(timezone.utc)
+        snapshots = list(
+            self._chats(uid)
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+        rows: List[RetainedExchange] = []
+        for snapshot in snapshots:
+            data = snapshot.to_dict()
+            if data["expires_at"] <= now:
+                snapshot.reference.delete()
+                continue
+            payload = self.cipher.decrypt(
+                uid, "chat", data["request_id"], 1,
+                EncryptedPayload.from_dict(data["encrypted_payload"]),
+            )
+            response = ChatResponse.model_validate(payload["response"])
+            rows.append(RetainedExchange(
+                request_id=data["request_id"], question=payload["question"],
+                answer=response.answer, citations=response.citations,
+                created_at=data["created_at"], expires_at=data["expires_at"],
+            ))
+        return rows
+
+    def delete_chat(self, uid: str, request_id: str) -> bool:
+        reference = self._chats(uid).document(request_id)
+        if not reference.get().exists:
+            return False
+        reference.delete()
+        return True
 
     def delete_chats(self, uid: str) -> int:
         documents = list(
