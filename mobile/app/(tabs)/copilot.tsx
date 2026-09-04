@@ -10,7 +10,17 @@ import { createStyles } from '@/theme/createStyles';
 import { getItem, setItem } from '@/api/storage';
 import { AiInfo } from '@/utils/aiPrivacy';
 import { AI_NOTICE_KEY, AI_NOTICE_TITLE, noticeParagraphs } from '@/utils/aiNotice';
+
+// The conversation survives leaving the tab or restarting the app. It lived in
+// component state alone, so a long run of changes or a clarifying question
+// waiting to be answered was lost the moment the screen unmounted. The store is
+// already scoped per signed-in user and stays on the device; turning on server
+// side chat retention is still a separate decision.
+const CHAT_STORE = 'ai:conversation';
+// Enough for a working thread. The API only replays the last 20 turns anyway.
+const KEPT_MESSAGES = 60;
 import { toHistory } from '@/utils/chatHistory';
+import { seriesSummary } from '@/utils/series';
 
 interface Citation {
   citation_id: string;
@@ -25,6 +35,8 @@ interface Proposal {
   proposal_id: string;
   operation: string;
   entity_type: string;
+  /** Every record a confirmed create writes; more than one for a repeat. */
+  series?: { content?: { due_date?: string; date?: string } }[];
   base_revision: number | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -69,12 +81,39 @@ export default function CopilotScreen() {
   // account does not silence it for another on the same device.
   const [aiInfo, setAiInfo] = useState<AiInfo | null>(null);
   const [noticeSeen, setNoticeSeen] = useState(true);
+  /** Message ids whose batch of changes is opened up for review. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!apiConfigured()) return;
     getItem<boolean>(AI_NOTICE_KEY, false).then(seen => setNoticeSeen(seen));
     apiRequest<AiInfo>('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null));
   }, []);
+
+  // Reading the store is async, so a message sent before it resolves would be
+  // wiped by the restore landing on top of it. Sending bumps the generation and
+  // an older restore is dropped.
+  const generationRef = useRef(0);
+  const [restored, setRestored] = useState(false);
+
+  useEffect(() => {
+    const generation = ++generationRef.current;
+    getItem<Message[] | null>(CHAT_STORE, null)
+      .then(saved => {
+        if (generationRef.current !== generation) return;
+        if (saved?.length) setMessages(saved);
+        setRestored(true);
+      })
+      .catch(() => setRestored(true));
+  }, []);
+
+  useEffect(() => {
+    // Never mid-stream: a half-written answer is not worth keeping, and the
+    // final event rewrites it anyway. An untouched thread is nothing to restore.
+    if (!restored || loading) return;
+    if (!messages.some(message => message.id !== 'welcome')) return;
+    setItem(CHAT_STORE, messages.slice(-KEPT_MESSAGES)).catch(() => {});
+  }, [messages, restored, loading]);
 
   const acknowledgeNotice = async () => {
     setNoticeSeen(true);
@@ -89,6 +128,9 @@ export default function CopilotScreen() {
     // Read before the new message is appended: history is the earlier turns, so
     // a clarifying question can be answered and picked up from.
     const history = toHistory(messages);
+    // Supersede a restore still in flight: what is on screen now is the thread.
+    generationRef.current += 1;
+    setRestored(true);
     setMessages(previous => [...previous, { id: idempotencyKey('message'), role: 'user', text }]);
     setLoading(true);
     const controller = new AbortController();
@@ -179,6 +221,16 @@ export default function CopilotScreen() {
     })));
   };
 
+  // One at a time on purpose: each confirmation carries its own base revision,
+  // so a record edited elsewhere is the only one refused. The first failure
+  // stops the run, because the later changes were agreed to assuming the
+  // earlier ones happened.
+  const actOnEvery = async (proposals: Proposal[], action: 'confirm' | 'reject') => {
+    for (const proposal of proposals) {
+      if (proposal.status === 'pending') await actOnProposal(proposal, action);
+    }
+  };
+
   const actOnProposal = async (proposal: Proposal, action: 'confirm' | 'reject') => {
     const body = action === 'confirm'
       ? { idempotency_key: idempotencyKey('mobile-confirm'), expected_base_revision: proposal.base_revision }
@@ -187,6 +239,67 @@ export default function CopilotScreen() {
       method: 'POST', body: JSON.stringify(body),
     });
     updateProposal(proposal.proposal_id, updated);
+  };
+
+  const proposalCard = (proposal: Proposal) => (
+    <View key={proposal.proposal_id} style={styles.proposal}>
+      <Text style={styles.proposalTitle}>{proposal.operation} {proposal.entity_type} · {proposal.status}</Text>
+      <Text style={styles.proposalReason}>{proposal.rationale}</Text>
+      {seriesSummary(proposal) ? (
+        <Text style={styles.proposalSeries}>↻ {seriesSummary(proposal)}</Text>
+      ) : null}
+      <View style={styles.previewRow}>
+        <View style={styles.preview}><Text style={styles.previewLabel}>BEFORE</Text><Text style={styles.previewText}>{JSON.stringify(proposal.before, null, 2) || 'None'}</Text></View>
+        <View style={styles.preview}><Text style={styles.previewLabel}>AFTER</Text><Text style={styles.previewText}>{JSON.stringify(proposal.after, null, 2) || 'Deleted'}</Text></View>
+      </View>
+      {proposal.status === 'pending' && (
+        <View style={styles.actions}>
+          <TouchableOpacity style={styles.reject} onPress={() => actOnProposal(proposal, 'reject')}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.confirm} onPress={() => actOnProposal(proposal, 'confirm')}><Text style={styles.confirmText}>Confirm change</Text></TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  // Several changes get one decision, the way the web sidebar does. Thirteen
+  // separate Confirm buttons on a phone is worse than on a desktop, not better.
+  const renderProposals = (message: Message) => {
+    const proposals = message.proposals || [];
+    if (!proposals.length) return null;
+    if (proposals.length === 1) return proposalCard(proposals[0]);
+    const pending = proposals.filter(item => item.status === 'pending');
+    const open = expanded.has(message.id);
+    return (
+      <View style={styles.proposalGroup}>
+        <View style={styles.proposalGroupHead}>
+          <Text style={styles.proposalTitle}>{proposals.length} changes</Text>
+          <TouchableOpacity onPress={() => setExpanded(previous => {
+            const next = new Set(previous);
+            if (next.has(message.id)) next.delete(message.id); else next.add(message.id);
+            return next;
+          })}>
+            <Text style={styles.proposalToggle}>{open ? 'Hide' : 'Review each'}</Text>
+          </TouchableOpacity>
+        </View>
+        {proposals.map(item => (
+          <Text key={item.proposal_id} style={styles.proposalSummaryLine} numberOfLines={1}>
+            {item.operation} · {String((item.after || item.before || {}).title || item.entity_type)}
+            {item.status !== 'pending' ? ` · ${item.status}` : ''}
+          </Text>
+        ))}
+        {pending.length > 0 && (
+          <View style={styles.actions}>
+            <TouchableOpacity style={styles.reject} onPress={() => actOnEvery(pending, 'reject')}>
+              <Text style={styles.rejectText}>Reject all {pending.length}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirm} onPress={() => actOnEvery(pending, 'confirm')}>
+              <Text style={styles.confirmText}>Confirm all {pending.length}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {open ? proposals.map(proposalCard) : null}
+      </View>
+    );
   };
 
   return (
@@ -236,22 +349,7 @@ export default function CopilotScreen() {
                 ? `Abstained: ${message.retrieval.reason || 'insufficient evidence'}`
                 : `Retrieved ${message.retrieval.result_count} approved records`}</Text>
             )}
-            {message.proposals?.map(proposal => (
-              <View key={proposal.proposal_id} style={styles.proposal}>
-                <Text style={styles.proposalTitle}>{proposal.operation} {proposal.entity_type} · {proposal.status}</Text>
-                <Text style={styles.proposalReason}>{proposal.rationale}</Text>
-                <View style={styles.previewRow}>
-                  <View style={styles.preview}><Text style={styles.previewLabel}>BEFORE</Text><Text style={styles.previewText}>{JSON.stringify(proposal.before, null, 2) || 'None'}</Text></View>
-                  <View style={styles.preview}><Text style={styles.previewLabel}>AFTER</Text><Text style={styles.previewText}>{JSON.stringify(proposal.after, null, 2) || 'Deleted'}</Text></View>
-                </View>
-                {proposal.status === 'pending' && (
-                  <View style={styles.actions}>
-                    <TouchableOpacity style={styles.reject} onPress={() => actOnProposal(proposal, 'reject')}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity>
-                    <TouchableOpacity style={styles.confirm} onPress={() => actOnProposal(proposal, 'confirm')}><Text style={styles.confirmText}>Confirm change</Text></TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            ))}
+            {renderProposals(message)}
           </View>
         ))}
         {loading && !messages.some(message => message.streaming) && (
@@ -302,6 +400,13 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     proposal: { borderWidth: 1, borderColor: accent.primary, borderRadius: 10, padding: 10, gap: 8 },
     proposalTitle: { color: accent.primary, fontWeight: '700', textTransform: 'capitalize' },
     proposalReason: { color: colors.textSecondary, fontSize: 12 },
+    proposalSeries: { color: accent.primary, fontSize: 11, fontWeight: '700' },
+    proposalGroup: {
+      borderWidth: 1, borderColor: accent.primary, borderRadius: 10, padding: 10, gap: 6,
+    },
+    proposalGroupHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    proposalToggle: { color: accent.primary, fontSize: 11, fontWeight: '700' },
+    proposalSummaryLine: { color: colors.textSecondary, fontSize: 11 },
     previewRow: { flexDirection: 'row', gap: 6 }, preview: { flex: 1, backgroundColor: colors.surfaceVariant, padding: 6, borderRadius: 6, maxHeight: 140 },
     previewLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700' }, previewText: { color: colors.text, fontSize: 9 },
     actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },

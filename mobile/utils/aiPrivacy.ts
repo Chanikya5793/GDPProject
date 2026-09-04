@@ -113,3 +113,12 @@ export function privacySummary(privacy: AiPrivacy): string {
     ? `${types} · chats kept ${privacy.chat_retention_days} days`
     : `${types} · chats not retained`;
 }
+
+/** One stored exchange, as GET /v1/chats returns it. */
+export interface RetainedChat {
+  request_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  expires_at: string;
+}
