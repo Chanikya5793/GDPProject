@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useSettings } from "../context/SettingsContext"
 import { useAi } from "../context/AiContext"
-import { CitationList, ProposalCard, ThinkingIndicator } from "../components/AiSidebar"
+import { AgentSteps, CitationList, ProposalList, ThinkingIndicator } from "../components/AiSidebar"
 import { getTasks, toggleTask, createTask } from "../api/tasks"
 import { getReminders, createReminder } from "../api/reminders"
 import { getNotes, updateNote, getTags } from "../api/notes"
@@ -536,6 +536,7 @@ const CHAT_SUGGESTIONS = [
 function AiChatPanel() {
   const {
     messages, typing, sendMessage, cancelResponse, confirmProposal, rejectProposal,
+    confirmProposals, rejectProposals,
   } = useAi()
   const [input, setInput] = useState('')
   const msgsRef = useRef(null)
@@ -568,6 +569,7 @@ function AiChatPanel() {
               <div className="ai-msg-avatar"><Bot size={14} /></div>
             )}
             <div className="ai-msg-content">
+              <AgentSteps steps={msg.steps} />
               <div className="ai-msg-bubble">{msg.text}</div>
               <CitationList citations={msg.citations} />
               {msg.retrieval?.attempted && (
@@ -577,10 +579,9 @@ function AiChatPanel() {
                     : `Retrieved ${msg.retrieval.result_count} approved records`}
                 </div>
               )}
-              {msg.proposals?.map(proposal => (
-                <ProposalCard key={proposal.proposal_id} proposal={proposal}
-                  onConfirm={confirmProposal} onReject={rejectProposal} />
-              ))}
+              <ProposalList proposals={msg.proposals}
+                onConfirm={confirmProposal} onReject={rejectProposal}
+                onConfirmAll={confirmProposals} onRejectAll={rejectProposals} />
             </div>
           </div>
         ))}

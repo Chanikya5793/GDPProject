@@ -1,9 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { apiConfigured, apiFetch, apiStream, idempotencyKey } from '../api/client'
+import { getSecureItem, removeSecureItem, setSecureItem } from '../security/cryptoStore'
 import { toHistory } from '../utils/chatHistory'
 import { useAuth } from './AuthContext'
 
 const AiContext = createContext(null)
+
+// The conversation survives a reload. It used to live in React state alone, so
+// refreshing mid-thread lost the thing the assistant had just asked about and
+// the answer it was waiting for. Kept in the same encrypted per-user store the
+// planner cache uses, never on the server, so turning chat retention on is
+// still a separate decision.
+const CHAT_STORE = 'ai:conversation'
+// Enough to keep a working thread without growing without bound. The API only
+// replays the last 20 turns anyway.
+const KEPT_MESSAGES = 60
 
 const WELCOME = {
   id: 'welcome',
@@ -52,11 +63,41 @@ export function AiProvider({ children }) {
     apiFetch('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null))
   }, [user?.uid])
 
+  // True once the stored conversation has been read back, so the empty first
+  // render cannot be written over the top of it.
+  const [restored, setRestored] = useState(false)
+  // Reading the store is async, so a message sent before it resolves would be
+  // wiped by the restore landing on top of it. Anything that puts a message on
+  // screen bumps this, and a restore from an older generation is dropped.
+  const generationRef = useRef(0)
+
   useEffect(() => {
-    setMessages([WELCOME])
+    const generation = ++generationRef.current
+    setRestored(false)
     setError('')
     controllerRef.current?.abort()
+    if (!user?.uid) {
+      setMessages([WELCOME])
+      setRestored(true)
+      return
+    }
+    const settle = saved => {
+      if (generationRef.current !== generation) return
+      setMessages(saved?.length ? saved : [WELCOME])
+      setRestored(true)
+    }
+    getSecureItem(user.uid, CHAT_STORE, null).then(settle).catch(() => settle(null))
   }, [user?.uid])
+
+  useEffect(() => {
+    // Only after a restore, and never mid-stream: a half-written answer is not
+    // worth persisting, and the final event rewrites it anyway.
+    if (!restored || !user?.uid || typing) return
+    // An untouched thread is nothing to restore, and writing it back would
+    // undo the clear that just removed it.
+    if (!messages.some(message => message.id !== WELCOME.id)) return
+    setSecureItem(user.uid, CHAT_STORE, messages.slice(-KEPT_MESSAGES)).catch(() => {})
+  }, [messages, restored, typing, user?.uid])
 
   const togglePopOut = useCallback(() => {
     setPoppedOut(previous => {
@@ -80,6 +121,10 @@ export function AiProvider({ children }) {
     const trimmed = text.trim()
     if (!trimmed || typing) return
     const userMessage = { id: crypto.randomUUID(), role: 'user', text: trimmed }
+    // Supersede any restore still in flight, and allow saving from here on:
+    // what is on screen now is the conversation, not whatever the store held.
+    generationRef.current += 1
+    setRestored(true)
     setMessages(previous => [...previous, userMessage])
     setTyping(true)
     setError('')
@@ -208,17 +253,35 @@ export function AiProvider({ children }) {
     return rejected
   }, [updateProposal])
 
+  // Applied one at a time on purpose: each confirmation carries its own
+  // expected_base_revision, so a record someone edited in another tab is the
+  // only one that fails while the rest still land. The first failure stops the
+  // run rather than pressing on, because the later changes were usually agreed
+  // to on the assumption the earlier ones happened.
+  const confirmProposals = useCallback(async proposals => {
+    for (const proposal of proposals) {
+      if (proposal.status === 'pending') await confirmProposal(proposal)
+    }
+  }, [confirmProposal])
+
+  const rejectProposals = useCallback(async proposals => {
+    for (const proposal of proposals) {
+      if (proposal.status === 'pending') await rejectProposal(proposal)
+    }
+  }, [rejectProposal])
+
   const clearChat = useCallback(() => {
     controllerRef.current?.abort()
     setMessages([WELCOME])
     setTyping(false)
     setError('')
-  }, [])
+    if (user?.uid) removeSecureItem(user.uid, CHAT_STORE)
+  }, [user?.uid])
 
   return (
     <AiContext.Provider value={{
       poppedOut, togglePopOut, messages, typing, error, sendMessage, cancelResponse,
-      clearChat, confirmProposal, rejectProposal,
+      clearChat, confirmProposal, rejectProposal, confirmProposals, rejectProposals,
       aiInfo, noticeAcknowledged, acknowledgeNotice,
       // Whether a backend exists at all. The sidebar uses this to explain the
       // copilot is unavailable instead of letting people send doomed requests.
