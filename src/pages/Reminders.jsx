@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getReminders, createReminder, updateReminder, deleteReminder } from '../api/reminders'
 import { Bell, Pencil, Trash2, List, LayoutGrid, X, ShieldCheck } from 'lucide-react'
+import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Reminders.css'
 
@@ -131,6 +132,7 @@ function ReminderCard({ reminder, onEdit, onDelete }) {
           {isOverdue && <span style={{ color: 'var(--red)', fontWeight: 600, fontSize: '12px' }}>⚠ Overdue</span>}
           {isToday && !isOverdue && <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: '12px' }}>📅 Today</span>}
           {!isOverdue && !isToday && <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Upcoming</span>}
+          <RepeatBadge recurrence={reminder.recurrence} />
         </div>
         {reminder.notes && <div className="rem-notes">{reminder.notes}</div>}
       </div>

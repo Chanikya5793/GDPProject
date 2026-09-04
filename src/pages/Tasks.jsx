@@ -7,6 +7,7 @@ import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
 
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle, ShieldCheck } from 'lucide-react'
+import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } from '../utils/schedule'
@@ -267,6 +268,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
             {escalationLabel && (
               <span className="task-escalation-badge">↑ {escalationLabel}</span>
             )}
+            <RepeatBadge recurrence={task.recurrence} />
           </div>
           <span className={`task-date-compact${isOverdue ? ' overdue' : ''}`}>
             {isOverdue && '⚠ '}{formatDate(task.dueDate)}
@@ -289,6 +291,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
                     </span>
                   )}
                   {task.category && <span className="task-cat">{task.category}</span>}
+                  <RepeatBadge recurrence={task.recurrence} />
                   <span className={`task-priority-badge${ep.wasEscalated && !task.completed && !isOverdue ? ' escalated' : ''}`}>
                     {isOverdue ? (task.priority || 'medium') : ep.effective}{ep.wasEscalated && !task.completed && !isOverdue ? ' ↑' : ''}
                   </span>

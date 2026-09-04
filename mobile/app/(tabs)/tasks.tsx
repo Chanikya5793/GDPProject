@@ -20,6 +20,7 @@ import {
 import { getCategories } from '@/api/categories';
 import { Category, PlannerRecordId, Task } from '@/types';
 import { parseTimeInput } from '@/utils/timeInput';
+import { recurrenceLabel } from '@/utils/recurrence';
 
 // ─── priority escalation (inlined so Metro always picks up changes) ──────────
 
@@ -394,6 +395,11 @@ export default function TasksScreen() {
                       {task.category && (
                         <Text style={[s.cardMetaText, { color: task.completed ? colors.textMuted : pc.text }]}>
                           {task.category}
+                        </Text>
+                      )}
+                      {recurrenceLabel(task.recurrence) && (
+                        <Text style={[s.cardMetaText, { color: accent.primary }]}>
+                          ↻ {recurrenceLabel(task.recurrence)}
                         </Text>
                       )}
                     </View>
