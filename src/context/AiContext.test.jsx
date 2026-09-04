@@ -11,6 +11,13 @@ vi.mock('./AuthContext', () => ({
   useAuth: () => ({ user: { uid: 'u1', name: 'Sam' } }),
 }))
 
+const store = { value: null }
+vi.mock('../security/cryptoStore', () => ({
+  getSecureItem: vi.fn(async () => store.value),
+  setSecureItem: vi.fn(async (_uid, _ns, value) => { store.value = value }),
+  removeSecureItem: vi.fn(() => { store.value = null }),
+}))
+
 const streamMock = vi.fn()
 vi.mock('../api/client', () => ({
   apiConfigured: () => true,
@@ -51,6 +58,7 @@ describe('AiContext streaming', () => {
   beforeEach(() => {
     ctx.current = null
     streamMock.mockReset()
+    store.value = null
     localStorage.clear()
   })
 
@@ -181,5 +189,68 @@ describe('AiContext streaming', () => {
     const last = ctx.current.messages.at(-1)
     expect(last.text).toBe('You have three open tasks.')
     expect(last.text).not.toContain('Let me check')
+  })
+
+  it('brings the conversation back after a reload', async () => {
+    // Losing the thread on refresh meant a clarifying question could never be
+    // answered, and a long run of changes could not be picked back up.
+    streamMock.mockImplementation(scripted([
+      { event: 'final', data: { answer: 'Which class?', citations: [], proposals: [], retrieval: {} } },
+    ]))
+    const first = renderAi()
+    await act(async () => { await ctx.current.sendMessage('add a task') })
+    expect(store.value.map(m => m.text)).toContain('add a task')
+
+    first.unmount()
+    renderAi()
+    await act(async () => {})
+    expect(ctx.current.messages.map(m => m.text)).toContain('add a task')
+    expect(ctx.current.messages.map(m => m.text)).toContain('Which class?')
+  })
+
+  it('does not let a slow restore wipe a message already sent', async () => {
+    // The store is read asynchronously. A restore landing after the student has
+    // typed would otherwise replace what they just sent.
+    const { getSecureItem } = await import('../security/cryptoStore')
+    let release
+    getSecureItem.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    streamMock.mockImplementation(scripted([
+      { event: 'final', data: { answer: 'Sure.', citations: [], proposals: [], retrieval: {} } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('urgent question') })
+    await act(async () => { release([{ id: 'stale', role: 'user', text: 'an older thread' }]) })
+
+    const texts = ctx.current.messages.map(m => m.text)
+    expect(texts).toContain('urgent question')
+    expect(texts).not.toContain('an older thread')
+  })
+
+  it('forgets the conversation when it is cleared', async () => {
+    streamMock.mockImplementation(scripted([
+      { event: 'final', data: { answer: 'Done.', citations: [], proposals: [], retrieval: {} } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('something') })
+    expect(store.value).not.toBeNull()
+    await act(async () => { ctx.current.clearChat() })
+    expect(store.value).toBeNull()
+  })
+
+  it('confirms every pending change from one press', async () => {
+    const { apiFetch } = await import('../api/client')
+    apiFetch.mockClear()
+    apiFetch.mockImplementation(async () => ({ proposal_id: 'x', status: 'confirmed' }))
+    renderAi()
+    const proposals = [
+      { proposal_id: 'a', status: 'pending', base_revision: 1 },
+      { proposal_id: 'b', status: 'pending', base_revision: 2 },
+      { proposal_id: 'c', status: 'confirmed', base_revision: 3 },
+    ]
+    await act(async () => { await ctx.current.confirmProposals(proposals) })
+    const confirmed = apiFetch.mock.calls.filter(call => call[0].includes('/confirm'))
+    expect(confirmed).toHaveLength(2)
+    expect(confirmed[0][0]).toContain('/v1/proposals/a/confirm')
+    expect(confirmed[1][0]).toContain('/v1/proposals/b/confirm')
   })
 })
