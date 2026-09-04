@@ -19,14 +19,14 @@ export async function createNote(note) {
   const created = await createRecord('note', {
     ...note, title: note.title || 'Untitled Note', tagIds: note.tagIds || [],
   })
-  void addLog('created', 'note', created.title, { entityId: created.id, after: created })
+  await addLog('created', 'note', created.title, { entityId: created.id, after: created })
   return created
 }
 
 export async function updateNote(id, updates) {
   const before = (await listRecords('note')).find(note => String(note.id) === String(id))
   const updated = await updateRecord('note', id, updates)
-  void addLog('updated', 'note', updated.title, { entityId: id, before, after: updated })
+  await addLog('updated', 'note', updated.title, { entityId: id, before, after: updated })
   return updated
 }
 
@@ -35,7 +35,7 @@ export async function deleteNote(id) {
   let trashId
   if (note) trashId = await addToTrash(note, 'note')
   await deleteRecord('note', id)
-  void addLog('deleted', 'note', note?.title, { entityId: id, before: note, trashId })
+  await addLog('deleted', 'note', note?.title, { entityId: id, before: note, trashId })
   return { success: true }
 }
 
@@ -51,7 +51,7 @@ export async function createTag(tag) {
   const tags = await getTags()
   const created = { ...tag, id: `tag_${crypto.randomUUID()}` }
   await setSecureCollection(TAGS_NAMESPACE, [...tags, created])
-  void addLog('created', 'tag', created.name, { entityId: created.id, after: created })
+  await addLog('created', 'tag', created.name, { entityId: created.id, after: created })
   return created
 }
 
@@ -61,7 +61,7 @@ export async function updateTag(id, updates) {
   const updated = tags.map(tag => String(tag.id) === String(id) ? { ...tag, ...updates } : tag)
   await setSecureCollection(TAGS_NAMESPACE, updated)
   const tag = updated.find(item => String(item.id) === String(id))
-  void addLog('updated', 'tag', tag?.name, { entityId: id, before, after: tag })
+  await addLog('updated', 'tag', tag?.name, { entityId: id, before, after: tag })
   return tag
 }
 
@@ -73,7 +73,7 @@ export async function deleteTag(id) {
   await Promise.all(notes.filter(note => note.tagIds?.includes(id)).map(note =>
     updateRecord('note', note.id, { tagIds: note.tagIds.filter(tagId => tagId !== id) })
   ))
-  void addLog('deleted', 'tag', tag?.name, { entityId: id, before: tag })
+  await addLog('deleted', 'tag', tag?.name, { entityId: id, before: tag })
   return { success: true }
 }
 
