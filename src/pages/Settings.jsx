@@ -7,6 +7,7 @@ import { restoreTaskDirect } from '../api/tasks'
 import { restoreReminderDirect } from '../api/reminders'
 import { restoreNoteDirect } from '../api/notes'
 import ActivityLog from '../components/ActivityLog'
+import RetainedChats from '../components/RetainedChats'
 import { apiConfigured, apiFetch } from '../api/client'
 import {
   User, Palette, CalendarDays, Database, Recycle,
@@ -74,6 +75,11 @@ export default function Settings() {
   // Who actually processes approved records. Read from the server so this copy
   // cannot drift from the deployed provider.
   const [aiInfo, setAiInfo] = useState(null)
+  // What retention actually kept. Until now these rows were written and never
+  // readable: the only lookup was by request_id, which the client never reuses.
+  const [chats, setChats] = useState([])
+  const [chatsStatus, setChatsStatus] = useState('idle')
+  const [chatsError, setChatsError] = useState('')
 
   useEffect(() => {
     getTrash(user.id).then(setTrash)
@@ -92,6 +98,17 @@ export default function Settings() {
   useEffect(() => {
     if (!apiConfigured()) return
     apiFetch('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null))
+  }, [])
+
+  // Listed whatever the switch currently says: turning retention off stops new
+  // rows being written, and anything kept while it was on is still there to be
+  // read and cleared.
+  useEffect(() => {
+    if (!apiConfigured()) { setChatsStatus('unavailable'); return }
+    setChatsStatus('loading')
+    apiFetch('/v1/chats')
+      .then(value => { setChats(value); setChatsStatus('ready') })
+      .catch(error => { setChatsError(error.message); setChatsStatus('error') })
   }, [])
 
   useEffect(() => {
@@ -156,15 +173,39 @@ export default function Settings() {
     }
   }
 
+  const loadChats = async () => {
+    if (!apiConfigured()) return
+    setChatsStatus('loading')
+    setChatsError('')
+    try {
+      setChats(await apiFetch('/v1/chats'))
+      setChatsStatus('ready')
+    } catch (error) {
+      setChatsStatus('error')
+      setChatsError(error.message)
+    }
+  }
+
   const deleteCopilotChats = async () => {
     setPrivacyStatus('saving')
     setPrivacyError('')
     try {
       await apiFetch('/v1/chats', { method: 'DELETE' })
+      setChats([])
       setPrivacyStatus('ready')
     } catch (error) {
       setPrivacyStatus('error')
       setPrivacyError(error.message)
+    }
+  }
+
+  const deleteOneChat = async chat => {
+    setChatsError('')
+    try {
+      await apiFetch(`/v1/chats/${encodeURIComponent(chat.request_id)}`, { method: 'DELETE' })
+      setChats(previous => previous.filter(item => item.request_id !== chat.request_id))
+    } catch (error) {
+      setChatsError(error.message)
     }
   }
 
@@ -384,7 +425,7 @@ export default function Settings() {
             <div className="settings-row">
               <div className="settings-row-info">
                 <span className="settings-row-label">Retain copilot chats</span>
-                <span className="settings-row-desc">Off by default. Current chats remain in memory only.</span>
+                <span className="settings-row-desc">Off by default. When on, each exchange is stored encrypted on the server and listed below.</span>
               </div>
               <Toggle checked={privacy.retain_chat}
                 onChange={value => updatePrivacy({
@@ -407,6 +448,9 @@ export default function Settings() {
                 </select>
               </div>
             )}
+
+            <RetainedChats chats={chats} status={chatsStatus} error={chatsError}
+              retainOn={privacy.retain_chat} onRefresh={loadChats} onDelete={deleteOneChat} />
 
             {privacyError && <p className="login-error">{privacyError}</p>}
             <div className="settings-profile-actions">
