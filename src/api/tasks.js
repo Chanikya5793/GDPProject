@@ -8,14 +8,14 @@ export async function getTasks() {
 
 export async function createTask(task) {
   const created = await createRecord('task', task)
-  void addLog('created', 'task', created.title, { entityId: created.id, after: created })
+  await addLog('created', 'task', created.title, { entityId: created.id, after: created })
   return created
 }
 
 export async function updateTask(id, updates) {
   const before = (await listRecords('task')).find(task => String(task.id) === String(id))
   const updated = await updateRecord('task', id, updates)
-  void addLog('updated', 'task', updated.title, { entityId: id, before, after: updated })
+  await addLog('updated', 'task', updated.title, { entityId: id, before, after: updated })
   return updated
 }
 
@@ -24,7 +24,7 @@ export async function deleteTask(id) {
   let trashId
   if (task) trashId = await addToTrash(task, 'task')
   await deleteRecord('task', id)
-  void addLog('deleted', 'task', task?.title, { entityId: id, before: task, trashId })
+  await addLog('deleted', 'task', task?.title, { entityId: id, before: task, trashId })
   return { success: true }
 }
 
@@ -36,7 +36,7 @@ export async function toggleTask(id) {
   const before = (await listRecords('task')).find(task => String(task.id) === String(id))
   if (!before) throw new Error('Task not found')
   const updated = await updateRecord('task', id, { completed: !before.completed })
-  void addLog(updated.completed ? 'completed' : 'reopened', 'task', updated.title, {
+  await addLog(updated.completed ? 'completed' : 'reopened', 'task', updated.title, {
     entityId: id, before, after: updated,
   })
   return updated
