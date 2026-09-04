@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
 
@@ -124,10 +124,82 @@ export function ProposalCard({ proposal, onConfirm, onReject }) {
   )
 }
 
+export function ProposalList({ proposals, onConfirm, onReject, onConfirmAll, onRejectAll }) {
+  // One change is one card. Several used to be several cards each wanting its
+  // own click, which is how "make this weekly for three months" turned into
+  // thirteen confirmations. A batch gets one decision by default and opens up
+  // when the student wants to check each one.
+  const [open, setOpen] = useState(false)
+  const [working, setWorking] = useState('')
+  const [error, setError] = useState('')
+  const pending = (proposals || []).filter(proposal => proposal.status === 'pending')
+
+  if (!proposals?.length) return null
+  if (proposals.length === 1) {
+    return <ProposalCard proposal={proposals[0]} onConfirm={onConfirm} onReject={onReject} />
+  }
+
+  const runBatch = async (kind, callback) => {
+    setWorking(kind)
+    setError('')
+    try { await callback(pending) }
+    catch (batchError) { setError(batchError.message) }
+    finally { setWorking('') }
+  }
+
+  const settled = proposals.length - pending.length
+  return (
+    <section className="ai-proposal-group">
+      <div className="ai-proposal-group-head">
+        <ShieldCheck size={14} />
+        <strong>{proposals.length} changes</strong>
+        {settled > 0 && <span className="ai-proposal-group-done">{settled} already decided</span>}
+        <button className="ai-proposal-toggle" onClick={() => setOpen(value => !value)}
+          aria-expanded={open}>
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          {open ? 'Hide' : 'Review each'}
+        </button>
+      </div>
+      <ul className="ai-proposal-summary">
+        {proposals.map(proposal => (
+          <li key={proposal.proposal_id}>
+            <span className="ai-proposal-op">{proposal.operation}</span>
+            <span>{proposal.after?.title || proposal.before?.title || proposal.entity_type}</span>
+            {proposal.status !== 'pending' && (
+              <span className="ai-proposal-status">{proposal.status}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {error && <div className="ai-proposal-error">{error}</div>}
+      {pending.length > 0 && (
+        <div className="ai-proposal-actions">
+          <button disabled={Boolean(working)} onClick={() => runBatch('reject', onRejectAll)}>
+            <X size={12} /> {working === 'reject' ? 'Rejecting…' : `Reject all ${pending.length}`}
+          </button>
+          <button disabled={Boolean(working)} className="confirm"
+            onClick={() => runBatch('confirm', onConfirmAll)}>
+            <ShieldCheck size={12} />
+            {working === 'confirm' ? 'Applying…' : `Confirm all ${pending.length}`}
+          </button>
+        </div>
+      )}
+      {open && (
+        <div className="ai-proposal-each">
+          {proposals.map(proposal => (
+            <ProposalCard key={proposal.proposal_id} proposal={proposal}
+              onConfirm={onConfirm} onReject={onReject} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function AiSidebar() {
   const {
     poppedOut, togglePopOut, messages, typing, sendMessage, cancelResponse, available,
-    clearChat, confirmProposal, rejectProposal,
+    clearChat, confirmProposal, rejectProposal, confirmProposals, rejectProposals,
     aiInfo, noticeAcknowledged, acknowledgeNotice,
   } = useAi()
   const location = useLocation()
@@ -154,8 +226,15 @@ export default function AiSidebar() {
     )
   }, [collapsed, effectivePopped])
 
+  // Follow the answer only while the student is already at the bottom. It used
+  // to scroll on every streamed token, which yanked the view back down the
+  // moment anyone scrolled up to read an earlier answer or a proposal preview.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const list = bottomRef.current?.parentElement
+    if (!list) return
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight
+    if (distance > 120) return
+    bottomRef.current.scrollIntoView({ block: 'end' })
   }, [messages, typing])
 
   useEffect(() => {
@@ -240,10 +319,9 @@ export default function AiSidebar() {
                         : `Retrieved ${msg.retrieval.result_count} approved record${msg.retrieval.result_count === 1 ? '' : 's'}`}
                     </div>
                   )}
-                  {msg.proposals?.map(proposal => (
-                    <ProposalCard key={proposal.proposal_id} proposal={proposal}
-                      onConfirm={confirmProposal} onReject={rejectProposal} />
-                  ))}
+                  <ProposalList proposals={msg.proposals}
+                    onConfirm={confirmProposal} onReject={rejectProposal}
+                    onConfirmAll={confirmProposals} onRejectAll={rejectProposals} />
                 </div>
               </div>
             ))}

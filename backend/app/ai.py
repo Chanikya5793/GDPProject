@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterator, List, Literal, Optional, Protocol, Union
 import httpx
 from google import genai
 from google.genai import types
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .models import EntityType, ProposalOperation, StrictModel
 from .streaming import JsonStringFieldStreamer
@@ -87,6 +87,15 @@ SYSTEM_INSTRUCTION = (
 )
 
 
+# How many records one reply may change. "Make this a weekly task for the next
+# three months" is thirteen creates, and at the old limit of ten pydantic
+# rejected the whole reply rather than trimming it, so the student got an error
+# and no tasks at all. High enough for a term of weekly work; still bounded,
+# because a misread "clear my planner" should not arrive as four hundred
+# confirmations.
+MAX_ACTIONS = 50
+
+
 class ToolName(str, Enum):
     search = "search"
     find = "find"
@@ -140,8 +149,21 @@ class GeneratedAnswer(StrictModel):
     needs_clarification: bool = False
     # One entry per record to change. `action` predates it and is still accepted
     # because the model reaches for the singular form when there is only one.
-    actions: List[GeneratedAction] = Field(default_factory=list, max_length=10)
+    actions: List[GeneratedAction] = Field(default_factory=list, max_length=MAX_ACTIONS)
     action: Optional[GeneratedAction] = None
+
+    @field_validator("actions", mode="before")
+    @classmethod
+    def cap_actions(cls, value: Any) -> Any:
+        """Trim an over-long list rather than throwing the reply away.
+
+        max_length alone is a validation error, which discards the answer, the
+        citations and every action, so asking for more changes than the cap
+        allowed produced a failure instead of the first fifty.
+        """
+        if isinstance(value, list) and len(value) > MAX_ACTIONS:
+            return value[:MAX_ACTIONS]
+        return value
 
     def all_actions(self) -> List[GeneratedAction]:
         """Every requested change, however the model chose to express it.

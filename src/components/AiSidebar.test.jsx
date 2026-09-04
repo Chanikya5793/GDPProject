@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentSteps, CitationList, FirstRunNotice, ProposalCard, ThinkingIndicator } from './AiSidebar'
+import { AgentSteps, CitationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator } from './AiSidebar'
 
 describe('copilot evidence and confirmation UI', () => {
   it('renders source-linked exact record metadata', () => {
@@ -92,5 +92,46 @@ describe('first-run disclosure', () => {
     expect(seen).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Got it/ }))
     expect(seen).toHaveBeenCalled()
+  })
+})
+
+describe('a batch of changes', () => {
+  const many = count => Array.from({ length: count }, (_, index) => ({
+    proposal_id: `p${index}`, operation: 'create', entity_type: 'task',
+    status: 'pending', rationale: 'Weekly review',
+    before: null, after: { title: `Weekly review ${index}` },
+  }))
+
+  it('asks for one decision instead of one per change', () => {
+    // Thirteen weekly tasks used to mean thirteen Confirm buttons.
+    const confirmAll = vi.fn()
+    render(<ProposalList proposals={many(13)} onConfirm={vi.fn()} onReject={vi.fn()}
+      onConfirmAll={confirmAll} onRejectAll={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Confirm all 13/ }))
+    expect(confirmAll).toHaveBeenCalledTimes(1)
+    expect(confirmAll.mock.calls[0][0]).toHaveLength(13)
+  })
+
+  it('still shows a single change as its own card, not a batch', () => {
+    render(<ProposalList proposals={many(1)} onConfirm={vi.fn()} onReject={vi.fn()}
+      onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
+    expect(screen.getByText('Before')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
+  })
+
+  it('counts only what is still pending', () => {
+    const proposals = [...many(2), { ...many(1)[0], proposal_id: 'done', status: 'confirmed' }]
+    render(<ProposalList proposals={proposals} onConfirm={vi.fn()} onReject={vi.fn()}
+      onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Confirm all 2/ })).toBeInTheDocument()
+    expect(screen.getByText(/1 already decided/)).toBeInTheDocument()
+  })
+
+  it('opens up so each change can still be checked one by one', () => {
+    render(<ProposalList proposals={many(3)} onConfirm={vi.fn()} onReject={vi.fn()}
+      onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
+    expect(screen.queryByText('Before')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Review each/ }))
+    expect(screen.getAllByText('Before')).toHaveLength(3)
   })
 })
