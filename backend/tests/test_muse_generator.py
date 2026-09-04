@@ -298,9 +298,11 @@ class TestTimeout:
 
 
 class TestReasoningEffort:
-    def test_the_request_asks_for_reduced_reasoning(self):
-        # Most of the wait was hidden reasoning: 475 tokens on a trivial prompt at
-        # the default, and 6 to 11 seconds on a planner question.
+    def test_the_request_carries_the_reasoning_level(self):
+        # Reasoning is where the assistant decides whether the briefing already
+        # answers the question, which lookups to run, and how many changes were
+        # asked for, so the level is sent explicitly rather than left to the
+        # provider's default.
         seen = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -308,7 +310,7 @@ class TestReasoningEffort:
             return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ANSWER)}}]})
 
         muse(handler).generate("prompt")
-        assert seen["body"]["reasoning_effort"] == "minimal"
+        assert seen["body"]["reasoning_effort"] == "medium"
 
     def test_the_level_is_configurable(self):
         seen = {}

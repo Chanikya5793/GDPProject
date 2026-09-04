@@ -147,4 +147,39 @@ describe('AiContext streaming', () => {
     expect(body.history.at(-1)).toEqual({ role: 'assistant', text: 'Which class?' })
     expect(body.message).toBe('chemistry')
   })
+
+  it('shows each lookup the assistant runs for itself', async () => {
+    streamMock.mockImplementation(scripted([
+      { event: 'step', data: { tool: 'agenda', label: 'Read the calendar from 2026-09-01 to 2026-09-07' } },
+      { event: 'step', data: { tool: 'workload', label: 'Checked the workload rules (2 finding(s))' } },
+      { event: 'delta', data: { text: 'Thursday is your heaviest day.' } },
+      { event: 'final', data: {
+        answer: 'Thursday is your heaviest day.', citations: [], proposals: [], retrieval: {},
+      } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('how is my week?') })
+    const last = ctx.current.messages.at(-1)
+    expect(last.steps.map(step => step.tool)).toEqual(['agenda', 'workload'])
+    expect(last.text).toBe('Thursday is your heaviest day.')
+  })
+
+  it('drops text streamed before a lookup, because that round was superseded', async () => {
+    // The model may start writing and then decide it needs to look something
+    // up. Leaving the abandoned half-sentence above the real answer reads as
+    // the assistant contradicting itself.
+    streamMock.mockImplementation(scripted([
+      { event: 'delta', data: { text: 'Let me check' } },
+      { event: 'step', data: { tool: 'find', label: 'Looked through open tasks (3 found)' } },
+      { event: 'delta', data: { text: 'You have three open tasks.' } },
+      { event: 'final', data: {
+        answer: 'You have three open tasks.', citations: [], proposals: [], retrieval: {},
+      } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('how many tasks?') })
+    const last = ctx.current.messages.at(-1)
+    expect(last.text).toBe('You have three open tasks.')
+    expect(last.text).not.toContain('Let me check')
+  })
 })

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { CitationList, FirstRunNotice, ProposalCard, ThinkingIndicator } from './AiSidebar'
+import { AgentSteps, CitationList, FirstRunNotice, ProposalCard, ThinkingIndicator } from './AiSidebar'
 
 describe('copilot evidence and confirmation UI', () => {
   it('renders source-linked exact record metadata', () => {
@@ -24,6 +24,25 @@ describe('copilot evidence and confirmation UI', () => {
     expect(confirm).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Confirm change/ }))
     expect(confirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('names each lookup the assistant ran, in order', () => {
+    // A multi-step answer is a long pause otherwise, and the student cannot
+    // tell a thorough assistant from a stuck one.
+    render(<AgentSteps steps={[
+      { tool: 'find', label: 'Looked through open tasks (3 found)' },
+      { tool: 'workload', label: 'Checked the workload rules (1 finding(s))' },
+    ]} />)
+    const shown = screen.getAllByRole('listitem').map(node => node.textContent)
+    expect(shown).toEqual([
+      'Looked through open tasks (3 found)',
+      'Checked the workload rules (1 finding(s))',
+    ])
+  })
+
+  it('shows nothing when the assistant answered without looking anything up', () => {
+    const { container } = render(<AgentSteps steps={[]} />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('supports explicit cancellation while retrieval is active', () => {
