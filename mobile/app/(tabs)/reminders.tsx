@@ -11,6 +11,7 @@ import { modalAnimation } from '@/theme/appearance';
 import { getReminders, createReminder, updateReminder, deleteReminder } from '@/api/reminders';
 import { PlannerRecordId, Reminder } from '@/types';
 import { parseTimeInput } from '@/utils/timeInput';
+import { recurrenceLabel } from '@/utils/recurrence';
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -160,6 +161,7 @@ export default function RemindersScreen() {
                       <Text style={[s.cardTitle, { color: colors.text }]}>{rem.title}</Text>
                       <Text style={[s.cardTime, { color: colors.textMuted }]}>
                         {formatTime(rem.time) || 'No time set'}
+                        {recurrenceLabel(rem.recurrence) ? `  ↻ ${recurrenceLabel(rem.recurrence)}` : ''}
                       </Text>
                       {rem.notes ? <Text style={[s.cardNotes, { color: colors.textMuted }]} numberOfLines={2}>{rem.notes}</Text> : null}
                     </View>
