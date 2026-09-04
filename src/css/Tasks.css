@@ -1203,3 +1203,12 @@
   line-height: 1.5;
 }
 
+.form-error {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.input-error {
+  border-color: var(--red);
+}

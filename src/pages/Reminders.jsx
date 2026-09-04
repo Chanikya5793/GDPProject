@@ -74,8 +74,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
                 placeholder="What do you need to remember?"
                 autoFocus
               />{titleError && (
-              <div className="form-error">* This is a required field</div>
-)}
+              <div className="form-error">* This is a required field</div>)}
             </div>
             <div className="form-grid-2">
               <div className="form-group">

@@ -145,7 +145,15 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="form-group">
               <label className="form-label">Title</label>
-              <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)} placeholder="What needs to be done?" autoFocus />
+              <input className={`form-input${titleError ? ' input-error' : ''}`} value={form.title}
+                onChange={e => {
+                  set('title', e.target.value)
+                  if (e.target.value.trim()) setTitleError(false)
+                }}
+                placeholder="What needs to be done?"
+                autoFocus
+              />{titleError && (
+              <div className="form-error">* This is a required field</div>)}
             </div>
             <label className="form-checkbox">
               <input type="checkbox" checked={form._approvedForAi}
