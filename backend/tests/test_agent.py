@@ -892,3 +892,40 @@ def test_a_half_finished_lookup_does_not_leave_a_placeholder_change_behind(servi
     _, _, _, generated = services.copilot.answer("alice", "anything", today=TODAY)
 
     assert generated.all_actions() == []
+
+
+def test_a_term_of_recurring_work_is_not_thrown_away(services):
+    # "Make this weekly for the next three months" is thirteen creates. The old
+    # cap of ten was a hard validation error, so the whole reply was discarded
+    # and the student got a failure with no tasks rather than the thirteen.
+    from app.ai import MAX_ACTIONS
+
+    weekly = [
+        GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title=f"Weekly review {index}", due_date="2026-09-04",
+        )
+        for index in range(13)
+    ]
+
+    generated = GeneratedAnswer(answer="Here are all thirteen.", actions=weekly)
+
+    assert len(generated.all_actions()) == 13
+    assert MAX_ACTIONS >= 13
+
+
+def test_an_absurd_number_of_changes_is_trimmed_not_fatal(services):
+    from app.ai import MAX_ACTIONS
+
+    many = [
+        GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title=f"Task {index}", due_date="2026-09-04",
+        )
+        for index in range(MAX_ACTIONS * 4)
+    ]
+
+    generated = GeneratedAnswer(answer="Rather a lot.", actions=many)
+
+    assert len(generated.all_actions()) == MAX_ACTIONS
+    assert generated.answer == "Rather a lot."
