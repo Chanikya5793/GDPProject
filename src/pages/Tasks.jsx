@@ -109,6 +109,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
   })
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])
+  const [titleError, setTitleError] = useState(false)
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -130,7 +131,11 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!form.title.trim()) return
+    if (!form.title.trim()) {
+      setTitleError(true)
+      return
+    }
+    setTitleError(false)
     onSave({ ...form, reminders: addReminders ? reminders : [] })
   }
 
