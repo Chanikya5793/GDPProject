@@ -215,6 +215,22 @@ class ChatResponse(StrictModel):
     proposals: List[ActionProposal] = Field(default_factory=list)
 
 
+class RetainedExchange(StrictModel):
+    """One stored question and answer, as the student gets to read it back.
+
+    Proposals are deliberately not carried. They expire thirty minutes after
+    they are made, so a preview offered in history could never be confirmed and
+    would only look like a change that failed.
+    """
+
+    request_id: str
+    question: str
+    answer: str
+    citations: List[Citation] = Field(default_factory=list)
+    created_at: datetime
+    expires_at: datetime
+
+
 class ConfirmProposalRequest(StrictModel):
     idempotency_key: IdempotencyKey
     expected_base_revision: Optional[int] = Field(default=None, ge=1)

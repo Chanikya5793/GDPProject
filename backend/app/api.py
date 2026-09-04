@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +30,7 @@ from .models import (
     RecordDeleteRequest,
     RecordUpsertRequest,
     RejectProposalRequest,
+    RetainedExchange,
 )
 from .proposals import InvalidProposal
 from .rag import AgentStep
@@ -442,6 +443,26 @@ def create_app(container: Container | None = None) -> FastAPI:
         return StreamingResponse(
             events(), media_type="text/event-stream", headers=SSE_HEADERS,
         )
+
+    @app.get("/v1/chats", response_model=list[RetainedExchange])
+    def list_chats(
+        user: CurrentUser, services: ContainerDep,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    ):
+        """The exchanges retention actually kept.
+
+        Not gated on the retain_chat switch: turning it off stops new ones being
+        written, and rows from when it was on still exist. Refusing to list them
+        would leave the student unable to see or clear what is already there.
+        """
+        return services.repository.list_chats(user.uid, limit)
+
+    @app.delete("/v1/chats/{request_id}", status_code=204)
+    def delete_chat(request_id: str, user: CurrentUser, services: ContainerDep) -> Response:
+        if not services.repository.delete_chat(user.uid, request_id):
+            raise NotFound("Chat not found")
+        services.audit.record(user.uid, "deletion", metadata={"chat_exchanges": 1})
+        return Response(status_code=204)
 
     @app.delete("/v1/chats", status_code=200)
     def delete_chats(user: CurrentUser, services: ContainerDep):
