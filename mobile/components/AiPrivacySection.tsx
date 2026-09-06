@@ -187,8 +187,8 @@ export default function AiPrivacySection() {
 
       <View style={s.row}>
         <View style={s.rowInfo}>
-          <Text style={s.rowLabel}>Retain copilot chats</Text>
-          <Text style={s.rowDesc}>Off by default. Current chats remain in memory only.</Text>
+          <Text style={s.rowLabel}>Keep conversations</Text>
+          <Text style={s.rowDesc}>On by default, so a conversation can be reopened on another device. Off keeps them on this device only.</Text>
         </View>
         <Switch
           value={privacy.retain_chat}

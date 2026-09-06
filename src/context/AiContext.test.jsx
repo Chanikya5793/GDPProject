@@ -199,7 +199,7 @@ describe('AiContext streaming', () => {
     ]))
     const first = renderAi()
     await act(async () => { await ctx.current.sendMessage('add a task') })
-    expect(store.value.map(m => m.text)).toContain('add a task')
+    expect(store.value.messages.map(m => m.text)).toContain('add a task')
 
     first.unmount()
     renderAi()
@@ -252,5 +252,61 @@ describe('AiContext streaming', () => {
     expect(confirmed).toHaveLength(2)
     expect(confirmed[0][0]).toContain('/v1/proposals/a/confirm')
     expect(confirmed[1][0]).toContain('/v1/proposals/b/confirm')
+  })
+
+  it('carries the thread id so a turn lands in the right conversation', async () => {
+    streamMock.mockImplementation(scripted([
+      { event: 'final', data: {
+        answer: 'ok', citations: [], proposals: [], retrieval: {},
+        conversation_id: 'thread-42',
+      } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('first question') })
+    expect(ctx.current.conversationId).toBe('thread-42')
+
+    await act(async () => { await ctx.current.sendMessage('follow up') })
+    const body = JSON.parse(streamMock.mock.calls.at(-1)[1].body)
+    expect(body.conversation_id).toBe('thread-42')
+  })
+
+  it('starts a fresh thread rather than destroying the old one', async () => {
+    streamMock.mockImplementation(scripted([
+      { event: 'final', data: {
+        answer: 'ok', citations: [], proposals: [], retrieval: {},
+        conversation_id: 'thread-9',
+      } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('something') })
+    expect(ctx.current.conversationId).toBe('thread-9')
+
+    await act(async () => { ctx.current.newConversation() })
+    expect(ctx.current.conversationId).toBeNull()
+    expect(ctx.current.messages.map(m => m.text)).not.toContain('something')
+
+    // The next turn must not silently reuse the thread that was left behind.
+    await act(async () => { await ctx.current.sendMessage('new topic') })
+    const body = JSON.parse(streamMock.mock.calls.at(-1)[1].body)
+    expect(body.conversation_id).toBeNull()
+  })
+
+  it('brings the thread id back with the messages after a reload', async () => {
+    // Without this the screen shows one conversation while the next turn
+    // quietly starts another.
+    streamMock.mockImplementation(scripted([
+      { event: 'final', data: {
+        answer: 'ok', citations: [], proposals: [], retrieval: {},
+        conversation_id: 'thread-77',
+      } },
+    ]))
+    const first = renderAi()
+    await act(async () => { await ctx.current.sendMessage('remember this') })
+    first.unmount()
+
+    renderAi()
+    await act(async () => {})
+    expect(ctx.current.conversationId).toBe('thread-77')
+    expect(ctx.current.messages.map(m => m.text)).toContain('remember this')
   })
 })
