@@ -54,10 +54,6 @@ jobs:
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: mobile
     runs-on: ubuntu-latest
-    # Job level rather than on the step. A step's own env block is not reliably
-    # readable from that same step's `if`, so gating on it there can leave the
-    # build skipping for ever even once the secret exists, which fails silently
-    # and looks exactly like everything working.
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     defaults:
@@ -71,16 +67,22 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
-      # Both steps skip rather than fail without a token, so a fork or a repo
-      # with no EAS account still gets a green build.
       - uses: expo/expo-github-action@v8
-        if: env.EXPO_TOKEN != ''
         with:
           eas-version: latest
           token: ${{ env.EXPO_TOKEN }}
+      # The absence check is a shell test, not an `if:`. A value that came from
+      # a secret is not readable in a conditional at any scope, so gating there
+      # skipped the build even with the token set: green job, no build, nothing
+      # saying why. In the shell $EXPO_TOKEN is simply set or it is not, and
+      # either way the log says which.
       - name: Start the iOS build
-        if: env.EXPO_TOKEN != ''
-        run: eas build --platform ios --profile production --non-interactive --no-wait
+        run: |
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "No EXPO_TOKEN secret; skipping the build."
+            exit 0
+          fi
+          eas build --platform ios --profile production --non-interactive --no-wait
 
   backend:
     runs-on: ubuntu-latest
