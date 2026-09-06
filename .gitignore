@@ -35,6 +35,10 @@ __pycache__/
 # Native build output
 ios/build
 android/app/build
+# `eas build --local` drops the signed archive in mobile/. It is 20MB and
+# rebuilt every time; keep it out of the tree, not out of the way.
+mobile/build-*.ipa
+mobile/build-*.tar.gz
 
 # Local environment files. The .env.example templates are tracked on purpose;
 # a real .env holds Firebase keys and KMS resource names and must never be.
