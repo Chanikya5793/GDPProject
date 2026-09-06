@@ -35,7 +35,6 @@ from .models import (
     RecordUpsertRequest,
     RejectProposalRequest,
     RenameConversationRequest,
-    RetainedExchange,
 )
 from .proposals import InvalidProposal
 from .rag import AgentStep
@@ -132,15 +131,24 @@ def remember_turn(services: Container, uid: str, privacy, body, response) -> Cha
             role="assistant", text=response.answer[:4000],
             citations=response.citations[:40], created_at=now,
         ),
+        retention_days=privacy.chat_retention_days,
     )
     return response.model_copy(update={"conversation_id": detail.conversation_id})
 
 
+# How long a reply stays replayable for its request id. This is not retention:
+# the conversation is the history, and keeping a second full copy of every
+# exchange for thirty days was storing the same words twice. All this has to
+# outlive is a retry.
+REPLAY_WINDOW = timedelta(hours=24)
+
+
 def retain_chat_response(services: Container, uid: str, privacy, body, response) -> None:
-    if privacy.retain_chat and privacy.chat_retention_days > 0:
+    """Keep the answer replayable, so a retried request_id costs no generation."""
+    if privacy.retain_chat:
         services.repository.save_chat_response(
             uid, body.request_id, body.message, response,
-            datetime.now(timezone.utc) + timedelta(days=privacy.chat_retention_days),
+            datetime.now(timezone.utc) + REPLAY_WINDOW,
         )
 
 
@@ -518,26 +526,6 @@ def create_app(container: Container | None = None) -> FastAPI:
         deleted = services.repository.delete_conversations(user.uid)
         services.audit.record(user.uid, "deletion", metadata={"conversations": deleted})
         return {"deleted": deleted}
-
-    @app.get("/v1/chats", response_model=list[RetainedExchange])
-    def list_chats(
-        user: CurrentUser, services: ContainerDep,
-        limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    ):
-        """The exchanges retention actually kept.
-
-        Not gated on the retain_chat switch: turning it off stops new ones being
-        written, and rows from when it was on still exist. Refusing to list them
-        would leave the student unable to see or clear what is already there.
-        """
-        return services.repository.list_chats(user.uid, limit)
-
-    @app.delete("/v1/chats/{request_id}", status_code=204)
-    def delete_chat(request_id: str, user: CurrentUser, services: ContainerDep) -> Response:
-        if not services.repository.delete_chat(user.uid, request_id):
-            raise NotFound("Chat not found")
-        services.audit.record(user.uid, "deletion", metadata={"chat_exchanges": 1})
-        return Response(status_code=204)
 
     @app.delete("/v1/chats", status_code=200)
     def delete_chats(user: CurrentUser, services: ContainerDep):
