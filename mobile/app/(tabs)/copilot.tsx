@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,8 @@ import { apiConfigured, apiRequest, apiStream, idempotencyKey } from '@/api/clie
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
 import { getItem, setItem } from '@/api/storage';
+import { Conversation, ConversationDetail } from '@/utils/conversations';
+import { normalizeStoredThread, StoredThread } from '@/utils/threadStore';
 import { AiInfo } from '@/utils/aiPrivacy';
 import { AI_NOTICE_KEY, AI_NOTICE_TITLE, noticeParagraphs } from '@/utils/aiNotice';
 
@@ -83,6 +85,12 @@ export default function CopilotScreen() {
   const [noticeSeen, setNoticeSeen] = useState(true);
   /** Message ids whose batch of changes is opened up for review. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // The thread this conversation belongs to. The server owns the transcript, so
+  // a thread started here can be picked up on the web and the other way round.
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [showThreads, setShowThreads] = useState(false);
 
   useEffect(() => {
     if (!apiConfigured()) return;
@@ -98,10 +106,13 @@ export default function CopilotScreen() {
 
   useEffect(() => {
     const generation = ++generationRef.current;
-    getItem<Message[] | null>(CHAT_STORE, null)
+    getItem<StoredThread<Message> | Message[] | null>(CHAT_STORE, null)
       .then(saved => {
         if (generationRef.current !== generation) return;
-        if (saved?.length) setMessages(saved);
+        const stored = normalizeStoredThread<Message>(saved);
+        if (stored.messages.length) setMessages(stored.messages);
+        setConversationId(stored.conversationId);
+        conversationIdRef.current = stored.conversationId;
         setRestored(true);
       })
       .catch(() => setRestored(true));
@@ -112,7 +123,10 @@ export default function CopilotScreen() {
     // final event rewrites it anyway. An untouched thread is nothing to restore.
     if (!restored || loading) return;
     if (!messages.some(message => message.id !== 'welcome')) return;
-    setItem(CHAT_STORE, messages.slice(-KEPT_MESSAGES)).catch(() => {});
+    setItem(CHAT_STORE, {
+      conversationId: conversationIdRef.current,
+      messages: messages.slice(-KEPT_MESSAGES),
+    }).catch(() => {});
   }, [messages, restored, loading]);
 
   const acknowledgeNotice = async () => {
@@ -120,6 +134,79 @@ export default function CopilotScreen() {
     await setItem(AI_NOTICE_KEY, true);
   };
   const controllerRef = useRef<AbortController | null>(null);
+
+  const loadConversations = async () => {
+    if (!apiConfigured()) return;
+    try {
+      setConversations(await apiRequest<Conversation[]>('/v1/conversations?limit=50'));
+    } catch {
+      // The list is a convenience; failing to fetch it must not break chatting.
+    }
+  };
+
+  useEffect(() => { loadConversations(); }, []);
+
+  /** Open a stored thread, replacing what is on screen with its transcript. */
+  const openConversation = async (id: string) => {
+    controllerRef.current?.abort();
+    generationRef.current += 1;
+    setShowThreads(false);
+    setLoading(false);
+    try {
+      const detail = await apiRequest<ConversationDetail>(
+        `/v1/conversations/${encodeURIComponent(id)}`,
+      );
+      setMessages(detail.messages.map(turn => ({
+        id: idempotencyKey('turn'),
+        role: turn.role === 'user' ? 'user' : 'assistant',
+        text: turn.text,
+        // Proposals are not carried: they expire, so one offered from history
+        // could never be confirmed and would only look like a failed change.
+      })) as Message[]);
+      setConversationId(id);
+      conversationIdRef.current = id;
+      setRestored(true);
+    } catch (error) {
+      Alert.alert('Could not open', (error as Error).message);
+    }
+  };
+
+  /** Start a fresh thread. Nothing is written until the first message. */
+  const newConversation = () => {
+    controllerRef.current?.abort();
+    generationRef.current += 1;
+    setShowThreads(false);
+    setLoading(false);
+    setConversationId(null);
+    conversationIdRef.current = null;
+    setRestored(true);
+    setMessages([{
+      id: 'welcome', role: 'assistant',
+      text: 'Ask about planner records you approved for AI. Every answer cites exact records, and every change requires confirmation.',
+    }]);
+  };
+
+  const removeConversation = (thread: Conversation) => {
+    Alert.alert('Delete conversation', `Delete “${thread.title}”? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiRequest(
+              `/v1/conversations/${encodeURIComponent(thread.conversation_id)}`,
+              { method: 'DELETE' },
+            );
+            if (conversationIdRef.current === thread.conversation_id) newConversation();
+            await loadConversations();
+          } catch (error) {
+            Alert.alert('Could not delete', (error as Error).message);
+          }
+        },
+      },
+    ]);
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -156,10 +243,13 @@ export default function CopilotScreen() {
         signal: controller.signal,
         body: JSON.stringify({
           message: text, request_id: idempotencyKey('mobile-chat'),
+          conversation_id: conversationIdRef.current,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           history,
         }),
       }, ({ event, data }) => {
+        const thread = (data as { conversation_id?: string })?.conversation_id;
+        if (thread) conversationIdRef.current = thread;
         if (event === 'delta') {
           streamed += (data as { text?: string }).text || '';
           upsertAnswer({ text: streamed, streaming: true });
@@ -205,6 +295,10 @@ export default function CopilotScreen() {
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
       setLoading(false);
+      if (conversationIdRef.current !== conversationId) {
+        setConversationId(conversationIdRef.current);
+      }
+      loadConversations();
     }
   };
 
@@ -304,6 +398,54 @@ export default function CopilotScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {apiConfigured() && (
+        <View style={styles.threadBar}>
+          <TouchableOpacity style={styles.threadBarBtn} onPress={() => setShowThreads(true)}
+            accessibilityLabel="Conversations">
+            <Ionicons name="chatbubbles-outline" size={16} color={accent.primary} />
+            <Text style={styles.threadBarText} numberOfLines={1}>
+              {conversations.find(t => t.conversation_id === conversationId)?.title || 'New conversation'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={newConversation} accessibilityLabel="New conversation">
+            <Ionicons name="add" size={20} color={accent.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Modal visible={showThreads} animationType="slide" transparent
+        onRequestClose={() => setShowThreads(false)}>
+        <View style={styles.threadSheet}>
+          <View style={styles.threadSheetHead}>
+            <Text style={styles.threadSheetTitle}>Conversations</Text>
+            <TouchableOpacity onPress={() => setShowThreads(false)} accessibilityLabel="Close">
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView>
+            {!conversations.length && (
+              <Text style={styles.disclosure}>Nothing yet. Whatever you ask starts one.</Text>
+            )}
+            {conversations.map(thread => (
+              <View key={thread.conversation_id} style={[
+                styles.threadRow,
+                thread.conversation_id === conversationId && styles.threadRowCurrent,
+              ]}>
+                <TouchableOpacity style={styles.threadRowOpen}
+                  onPress={() => openConversation(thread.conversation_id)}>
+                  <Text style={styles.threadRowTitle} numberOfLines={1}>{thread.title}</Text>
+                  <Text style={styles.disclosure}>{thread.message_count} messages</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => removeConversation(thread)}
+                  accessibilityLabel={`Delete ${thread.title}`}>
+                  <Ionicons name="trash-outline" size={16} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+
       <ScrollView ref={scrollRef} style={styles.messages} contentContainerStyle={styles.messagesContent}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
         {apiConfigured() && !noticeSeen && (
@@ -395,6 +537,26 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     citationTitle: { color: accent.primary, fontWeight: '600', fontSize: 12 },
     citationExcerpt: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
     disclosure: { color: colors.textMuted, fontSize: 11 },
+    threadBar: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingHorizontal: 14, paddingVertical: 8,
+      borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card,
+    },
+    threadBarBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+    threadBarText: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '600' },
+    threadSheet: {
+      marginTop: 'auto', maxHeight: '70%', backgroundColor: colors.card,
+      borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, gap: 8,
+    },
+    threadSheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    threadSheetTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    threadRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    threadRowCurrent: { backgroundColor: colors.surfaceVariant, borderRadius: 8, paddingHorizontal: 8 },
+    threadRowOpen: { flex: 1, gap: 2 },
+    threadRowTitle: { color: colors.text, fontSize: 13, fontWeight: '600' },
     step: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     stepText: { color: colors.textMuted, fontSize: 11, flexShrink: 1 },
     proposal: { borderWidth: 1, borderColor: accent.primary, borderRadius: 10, padding: 10, gap: 8 },
