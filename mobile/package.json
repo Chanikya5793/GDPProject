@@ -48,7 +48,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:ios": "eas build --platform ios --profile production --local",
+    "submit:ios": "eas submit --platform ios"
   },
   "private": true
 }
