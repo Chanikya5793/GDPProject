@@ -135,9 +135,15 @@ export function AiProvider({ children }) {
         : `The copilot could not answer: ${requestError.message}`
 
   const loadConversations = useCallback(async () => {
-    if (!apiConfigured()) return
-    try { setConversations(await apiFetch('/v1/conversations?limit=50')) }
-    catch { /* the sidebar is a convenience; a failed list must not break chat */ }
+    if (!apiConfigured()) return []
+    try {
+      const listed = await apiFetch('/v1/conversations?limit=50')
+      setConversations(listed)
+      return listed
+    } catch {
+      // The list is a convenience; a failed fetch must not break chatting.
+      return []
+    }
   }, [])
 
   /** Open a stored thread, replacing what is on screen with its transcript. */
@@ -189,7 +195,17 @@ export function AiProvider({ children }) {
     await loadConversations()
   }, [loadConversations, newConversation])
 
-  useEffect(() => { loadConversations() }, [user?.uid, loadConversations])
+  // A device with nothing stored locally opens the most recent thread rather
+  // than an empty chat, so signing in somewhere new lands you where you were.
+  useEffect(() => {
+    let cancelled = false
+    loadConversations().then(listed => {
+      if (cancelled || !listed?.length) return
+      if (conversationIdRef.current || messagesRef.current.some(m => m.id !== WELCOME.id)) return
+      openConversation(listed[0].conversation_id)
+    })
+    return () => { cancelled = true }
+  }, [user?.uid, loadConversations, openConversation])
 
   const sendMessage = useCallback(async text => {
     const trimmed = text.trim()

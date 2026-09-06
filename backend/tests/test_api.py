@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 
 from conftest import task_request
 
@@ -212,97 +211,42 @@ def ask(client, auth, message, request_id):
                        json={"message": message, "request_id": request_id, "timezone": "UTC"})
 
 
-def test_retained_chats_can_actually_be_read_back(client, auth, services):
-    # They were write-only: the single lookup is by request_id, which the client
-    # never reuses, and no endpoint listed them. Turning retention on wrote rows
-    # that nothing could ever display.
+def test_a_retried_request_is_replayed_rather_than_regenerated(client, auth, services):
+    # The chats store is a replay buffer now, not a second history: the
+    # conversation is the history, and keeping a full copy of every exchange
+    # under a request id as well stored the same words twice.
     retain_on(client, auth)
     services.test_generator.response = GeneratedAnswer(answer="Two things today.")
-    ask(client, auth, "what is due today?", "hist-0001")
-    ask(client, auth, "and tomorrow?", "hist-0002")
 
-    listed = client.get("/v1/chats", headers=auth)
+    first = ask(client, auth, "what is due today?", "replay-0001")
+    second = ask(client, auth, "what is due today?", "replay-0001")
 
-    assert listed.status_code == 200
-    body = listed.json()
-    assert [row["question"] for row in body] == ["and tomorrow?", "what is due today?"]
-    assert body[0]["answer"] == "Two things today."
-    assert body[0]["request_id"] == "hist-0002"
+    assert first.json() == second.json()
+    assert len(services.test_generator.prompts) == 1
 
 
-def test_history_is_newest_first_and_honours_the_limit(client, auth, services):
+def test_the_replay_buffer_outlives_a_retry_not_a_month(client, auth, services):
+    from datetime import timedelta
+
+    from app.api import REPLAY_WINDOW
+
+    retain_on(client, auth, days=365)
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    ask(client, auth, "anything", "replay-0002")
+
+    _, _, created_at, expires_at = services.repository.chats[("alice", "replay-0002")]
+
+    # Independent of the retention setting: this is plumbing, not an archive.
+    assert expires_at - created_at <= REPLAY_WINDOW + timedelta(seconds=5)
+
+
+def test_the_history_lives_in_conversations_not_in_a_flat_list(client, auth, services):
     retain_on(client, auth)
     services.test_generator.response = GeneratedAnswer(answer="ok")
-    for index in range(5):
-        ask(client, auth, f"question {index}", f"limit-000{index}")
+    ask(client, auth, "what is due today?", "single-0001")
 
-    body = client.get("/v1/chats?limit=2", headers=auth).json()
+    # The flat listing is gone; there is one place chat history is read from.
+    assert client.get("/v1/chats", headers=auth).status_code == 405
+    threads = client.get("/v1/conversations", headers=auth).json()
+    assert [row["title"] for row in threads] == ["what is due today?"]
 
-    assert [row["question"] for row in body] == ["question 4", "question 3"]
-
-
-def test_history_does_not_carry_proposals(client, auth, services):
-    # A proposal expires thirty minutes after it is made, so one offered in
-    # history could never be confirmed and would only look like a change that
-    # silently failed.
-    retain_on(client, auth)
-    services.test_generator.response = GeneratedAnswer(
-        answer="I can add that.",
-        action=GeneratedAction(
-            operation=ProposalOperation.create, entity_type=EntityType.task, title="Essay",
-        ),
-    )
-    ask(client, auth, "add an essay task", "prop-0001")
-
-    row = client.get("/v1/chats", headers=auth).json()[0]
-
-    assert "proposals" not in row
-    assert row["answer"] == "I can add that."
-
-
-def test_an_expired_exchange_is_neither_listed_nor_left_behind(client, auth, services):
-    # expires_at was written and never enforced in bulk, so retained chats piled
-    # up for good. Listing is the sweep.
-    retain_on(client, auth)
-    services.test_generator.response = GeneratedAnswer(answer="ok")
-    ask(client, auth, "old question", "stale-0001")
-    key = ("alice", "stale-0001")
-    question, response, created_at, _ = services.repository.chats[key]
-    services.repository.chats[key] = (
-        question, response, created_at, datetime(2020, 1, 1, tzinfo=timezone.utc)
-    )
-
-    assert client.get("/v1/chats", headers=auth).json() == []
-    assert key not in services.repository.chats
-
-
-def test_one_exchange_can_be_deleted_without_clearing_the_lot(client, auth, services):
-    retain_on(client, auth)
-    services.test_generator.response = GeneratedAnswer(answer="ok")
-    ask(client, auth, "keep me", "keep-0001")
-    ask(client, auth, "delete me", "drop-0001")
-
-    assert client.delete("/v1/chats/drop-0001", headers=auth).status_code == 204
-    assert [row["question"] for row in client.get("/v1/chats", headers=auth).json()] == ["keep me"]
-    assert client.delete("/v1/chats/drop-0001", headers=auth).status_code == 404
-
-
-def test_history_still_lists_after_retention_is_switched_off(client, auth, services):
-    # Turning it off stops new rows being written; it does not remove the ones
-    # already there, and refusing to list them would leave no way to see or
-    # clear what is stored.
-    retain_on(client, auth)
-    services.test_generator.response = GeneratedAnswer(answer="ok")
-    ask(client, auth, "written while on", "off-0001")
-    client.put("/v1/privacy", json={
-        "ai_enabled": True, "indexed_entity_types": ["task"], "index_attachments": False,
-        "retain_chat": False, "chat_retention_days": 0,
-    }, headers=auth)
-
-    # Switching retention off deletes them, which is the documented behaviour;
-    # what must not happen is rows surviving with no way to reach them.
-    assert client.get("/v1/chats", headers=auth).json() == []
-
-
-def test_history_needs_a_token(client):
-    assert client.get("/v1/chats").status_code == 401
