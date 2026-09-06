@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentSteps, CitationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator, seriesSummary } from './AiSidebar'
+import { AgentSteps, CitationList, ConversationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator, seriesSummary } from './AiSidebar'
 
 describe('copilot evidence and confirmation UI', () => {
   it('renders source-linked exact record metadata', () => {
@@ -164,5 +164,41 @@ describe('a repeat', () => {
       onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
     expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Confirm change/ })).toBeInTheDocument()
+  })
+})
+
+describe('coming back to an earlier conversation', () => {
+  const threads = [
+    { conversation_id: 'c1', title: 'What is due today?', message_count: 4 },
+    { conversation_id: 'c2', title: 'Push my overdue work', message_count: 2 },
+  ]
+
+  it('lists the threads there are to return to', () => {
+    render(<ConversationList conversations={threads} currentId="c1" onOpen={vi.fn()}
+      onRename={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByText('What is due today?')).toBeInTheDocument()
+    expect(screen.getByText('Push my overdue work')).toBeInTheDocument()
+  })
+
+  it('opens the one that is picked', () => {
+    const open = vi.fn()
+    render(<ConversationList conversations={threads} currentId="c1" onOpen={open}
+      onRename={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByText('Push my overdue work'))
+    expect(open).toHaveBeenCalledWith('c2')
+  })
+
+  it('deletes a single thread by name', () => {
+    const remove = vi.fn()
+    render(<ConversationList conversations={threads} currentId="c1" onOpen={vi.fn()}
+      onRename={vi.fn()} onDelete={remove} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Delete "Push my overdue work"/ }))
+    expect(remove).toHaveBeenCalledWith('c2')
+  })
+
+  it('says so when there is nothing to come back to yet', () => {
+    render(<ConversationList conversations={[]} currentId={null} onOpen={vi.fn()}
+      onRename={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByText(/Nothing yet/)).toBeInTheDocument()
   })
 })
