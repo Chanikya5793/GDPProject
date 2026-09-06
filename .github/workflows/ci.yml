@@ -48,6 +48,12 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: mobile
     runs-on: ubuntu-latest
+    # Job level rather than on the step. A step's own env block is not reliably
+    # readable from that same step's `if`, so gating on it there can leave the
+    # build skipping for ever even once the secret exists, which fails silently
+    # and looks exactly like everything working.
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     defaults:
       run:
         working-directory: mobile
@@ -59,16 +65,15 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
+      # Both steps skip rather than fail without a token, so a fork or a repo
+      # with no EAS account still gets a green build.
       - uses: expo/expo-github-action@v8
+        if: env.EXPO_TOKEN != ''
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      # Skipped rather than failed when the token is absent, so a fork or a
-      # repo without EAS configured still gets a green build.
+          token: ${{ env.EXPO_TOKEN }}
       - name: Start the iOS build
-        if: ${{ env.EXPO_TOKEN != '' }}
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        if: env.EXPO_TOKEN != ''
         run: eas build --platform ios --profile production --non-interactive --no-wait
 
   backend:
