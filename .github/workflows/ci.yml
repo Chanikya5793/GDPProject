@@ -4,6 +4,10 @@ on:
   pull_request:
   push:
     branches: [main, "feature/**"]
+  # Lets a build be started without pushing something to provoke one, which is
+  # what you want when the last merge predates a token or a credential change
+  # rather than a code change.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,7 +49,9 @@ jobs:
   # weeks. This starts the build on main so the artifact is always current;
   # submitting it to TestFlight stays a person's decision.
   mobile-build:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: mobile
     runs-on: ubuntu-latest
     # Job level rather than on the step. A step's own env block is not reliably
