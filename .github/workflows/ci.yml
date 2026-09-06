@@ -44,46 +44,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
 
-  # Mobile ships only when someone builds it: merging updates the website and
-  # never the phone, which is how a copilot-less app stayed on a device for
-  # weeks. This starts the build on main so the artifact is always current;
-  # submitting it to TestFlight stays a person's decision.
-  mobile-build:
-    if: >-
-      github.ref == 'refs/heads/main'
-      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: mobile
-    runs-on: ubuntu-latest
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-    defaults:
-      run:
-        working-directory: mobile
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - run: npm ci
-      - uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ env.EXPO_TOKEN }}
-      # The absence check is a shell test, not an `if:`. A value that came from
-      # a secret is not readable in a conditional at any scope, so gating there
-      # skipped the build even with the token set: green job, no build, nothing
-      # saying why. In the shell $EXPO_TOKEN is simply set or it is not, and
-      # either way the log says which.
-      - name: Start the iOS build
-        run: |
-          if [ -z "${EXPO_TOKEN}" ]; then
-            echo "No EXPO_TOKEN secret; skipping the build."
-            exit 0
-          fi
-          eas build --platform ios --profile production --non-interactive --no-wait
-
   backend:
     runs-on: ubuntu-latest
     defaults:
