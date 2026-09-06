@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat } from 'lucide-react'
+import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat, Plus, MessageSquare, Pencil } from 'lucide-react'
 import { useAi } from '../context/AiContext'
 import '../css/AiSidebar.css'
 
@@ -46,6 +46,11 @@ export function FirstRunNotice({ info, onAcknowledge }) {
           them to be used to train its models.
         </p>
       )}
+      <p>
+        Your conversations are kept, encrypted, so you can reopen one later or
+        pick it up on another device. Turn that off in Settings and they stay on
+        this device only.
+      </p>
       <p>
         You can turn the assistant off entirely in Settings, or keep an individual
         task, reminder or note out of it with its own visibility switch.
@@ -209,12 +214,56 @@ export function ProposalList({ proposals, onConfirm, onReject, onConfirmAll, onR
   )
 }
 
+export function ConversationList({ conversations, currentId, onOpen, onRename, onDelete, onClose }) {
+  // Threads exist so a conversation can be returned to, which is the whole
+  // reason the transcript moved to the server. The list is the way back.
+  return (
+    <div className="ai-threads" role="dialog" aria-label="Conversations">
+      <div className="ai-threads-head">
+        <strong>Conversations</strong>
+        <button className="ai-header-btn" onClick={onClose} aria-label="Close conversations">
+          <X size={14} />
+        </button>
+      </div>
+      {!conversations.length && (
+        <p className="ai-threads-empty">Nothing yet. Whatever you ask starts one.</p>
+      )}
+      <ul>
+        {conversations.map(thread => (
+          <li key={thread.conversation_id}
+            className={thread.conversation_id === currentId ? 'current' : undefined}>
+            <button className="ai-thread-open" onClick={() => onOpen(thread.conversation_id)}>
+              <MessageSquare size={11} aria-hidden="true" />
+              <span className="ai-thread-title">{thread.title}</span>
+              <span className="ai-thread-count">{thread.message_count}</span>
+            </button>
+            <button className="ai-thread-action" aria-label={`Rename "${thread.title}"`}
+              onClick={() => {
+                const title = window.prompt('Rename conversation', thread.title)
+                if (title?.trim()) onRename(thread.conversation_id, title.trim())
+              }}>
+              <Pencil size={11} />
+            </button>
+            <button className="ai-thread-action danger" aria-label={`Delete "${thread.title}"`}
+              onClick={() => onDelete(thread.conversation_id)}>
+              <Trash2 size={11} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function AiSidebar() {
   const {
     poppedOut, togglePopOut, messages, typing, sendMessage, cancelResponse, available,
     clearChat, confirmProposal, rejectProposal, confirmProposals, rejectProposals,
     aiInfo, noticeAcknowledged, acknowledgeNotice,
+    conversationId, conversations, openConversation, newConversation,
+    renameConversation, deleteConversation,
   } = useAi()
+  const [showThreads, setShowThreads] = useState(false)
   const location = useLocation()
   // The pop-out lives in the dashboard grid, so it only applies on the
   // dashboard route. On every other page the assistant always stays in the
@@ -293,6 +342,13 @@ export default function AiSidebar() {
               <span className="ai-badge">Beta</span>
             </div>
             <div className="ai-header-actions">
+              <button className="ai-header-btn" onClick={newConversation} title="New conversation">
+                <Plus size={15} />
+              </button>
+              <button className="ai-header-btn" onClick={() => setShowThreads(value => !value)}
+                title="Conversations" aria-expanded={showThreads}>
+                <MessageSquare size={14} />
+              </button>
               {isDashboard && (
                 <button className="ai-header-btn" onClick={togglePopOut} title="Pop out to dashboard">
                   <ExternalLink size={14} />
@@ -306,6 +362,13 @@ export default function AiSidebar() {
               </button>
             </div>
           </div>
+
+          {showThreads && (
+            <ConversationList conversations={conversations} currentId={conversationId}
+              onOpen={id => { openConversation(id); setShowThreads(false) }}
+              onRename={renameConversation} onDelete={deleteConversation}
+              onClose={() => setShowThreads(false)} />
+          )}
 
           <div className="ai-messages">
             {available && !noticeAcknowledged && (

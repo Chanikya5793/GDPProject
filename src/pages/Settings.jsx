@@ -424,8 +424,8 @@ export default function Settings() {
 
             <div className="settings-row">
               <div className="settings-row-info">
-                <span className="settings-row-label">Retain copilot chats</span>
-                <span className="settings-row-desc">Off by default. When on, each exchange is stored encrypted on the server and listed below.</span>
+                <span className="settings-row-label">Keep conversations</span>
+                <span className="settings-row-desc">On by default, so a conversation can be reopened here or on another device. Each one is stored encrypted and listed below. Turned off, chats stay on this device only.</span>
               </div>
               <Toggle checked={privacy.retain_chat}
                 onChange={value => updatePrivacy({

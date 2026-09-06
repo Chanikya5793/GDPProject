@@ -12,6 +12,9 @@ from .crypto import EncryptedPayload, EnvelopeCipher
 from .models import (
     ActionProposal,
     ChatResponse,
+    Conversation,
+    ConversationDetail,
+    ConversationMessage,
     EntityType,
     PlannerContent,
     PlannerRecord,
@@ -23,6 +26,19 @@ from .models import (
 )
 
 CONTENT_ADAPTER = TypeAdapter(PlannerContent)
+
+# A thread is one encrypted document, and Firestore caps a document at a
+# megabyte, so the oldest turns fall off rather than the write eventually
+# failing. Well past what the prompt replays.
+MAX_THREAD_MESSAGES = 60
+
+
+def thread_title(text: str) -> str:
+    """A thread's name, taken from the first thing asked in it."""
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= 60:
+        return cleaned or "New conversation"
+    return cleaned[:57].rstrip() + "…"
 
 
 def _created_records(proposal: ActionProposal) -> List[ProposedRecord]:
@@ -74,6 +90,15 @@ class PlannerRepository(Protocol):
     def save_chat_response(
         self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
     ) -> None: ...
+    def list_conversations(self, uid: str, limit: int = 50) -> List[Conversation]: ...
+    def get_conversation(self, uid: str, conversation_id: str) -> ConversationDetail: ...
+    def append_turn(
+        self, uid: str, conversation_id: Optional[str],
+        question: ConversationMessage, answer: ConversationMessage,
+    ) -> ConversationDetail: ...
+    def rename_conversation(self, uid: str, conversation_id: str, title: str) -> Conversation: ...
+    def delete_conversation(self, uid: str, conversation_id: str) -> bool: ...
+    def delete_conversations(self, uid: str) -> int: ...
     def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]: ...
     def delete_chat(self, uid: str, request_id: str) -> bool: ...
     def delete_chats(self, uid: str) -> int: ...
@@ -90,6 +115,7 @@ class MemoryPlannerRepository:
         self.proposals: Dict[Tuple[str, str], ActionProposal] = {}
         # question, response, created_at, expires_at
         self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime, datetime]] = {}
+        self.conversations: Dict[Tuple[str, str], ConversationDetail] = {}
         self._lock = RLock()
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
@@ -259,6 +285,54 @@ class MemoryPlannerRepository:
             del self.chats[(uid, request_id)]
             return None
         return deepcopy(value[1])
+
+    def list_conversations(self, uid: str, limit: int = 50) -> List[Conversation]:
+        threads = [
+            Conversation(**detail.model_dump(exclude={"messages"}))
+            for (owner, _), detail in self.conversations.items() if owner == uid
+        ]
+        threads.sort(key=lambda thread: thread.updated_at, reverse=True)
+        return threads[:limit]
+
+    def get_conversation(self, uid: str, conversation_id: str) -> ConversationDetail:
+        detail = self.conversations.get((uid, conversation_id))
+        if not detail:
+            raise NotFound("Conversation not found")
+        return deepcopy(detail)
+
+    def append_turn(
+        self, uid: str, conversation_id: Optional[str],
+        question: ConversationMessage, answer: ConversationMessage,
+    ) -> ConversationDetail:
+        now = datetime.now(timezone.utc)
+        existing = self.conversations.get((uid, conversation_id)) if conversation_id else None
+        if existing is None:
+            conversation_id = conversation_id or generated_record_id()
+            existing = ConversationDetail(
+                conversation_id=conversation_id, title=thread_title(question.text),
+                created_at=now, updated_at=now, message_count=0, messages=[],
+            )
+        messages = [*existing.messages, question, answer][-MAX_THREAD_MESSAGES:]
+        updated = existing.model_copy(update={
+            "messages": messages, "message_count": len(messages), "updated_at": now,
+        })
+        self.conversations[(uid, updated.conversation_id)] = updated
+        return deepcopy(updated)
+
+    def rename_conversation(self, uid: str, conversation_id: str, title: str) -> Conversation:
+        detail = self.get_conversation(uid, conversation_id)
+        renamed = detail.model_copy(update={"title": title})
+        self.conversations[(uid, conversation_id)] = renamed
+        return Conversation(**renamed.model_dump(exclude={"messages"}))
+
+    def delete_conversation(self, uid: str, conversation_id: str) -> bool:
+        return self.conversations.pop((uid, conversation_id), None) is not None
+
+    def delete_conversations(self, uid: str) -> int:
+        keys = [key for key in self.conversations if key[0] == uid]
+        for key in keys:
+            del self.conversations[key]
+        return len(keys)
 
     def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]:
         now = datetime.now(timezone.utc)
@@ -628,6 +702,103 @@ class FirestorePlannerRepository:
 
     def _chats(self, uid: str):
         return self.client.collection("users").document(uid).collection("chats")
+
+    def _threads(self, uid: str):
+        return self.client.collection("users").document(uid).collection("conversations")
+
+    def _read_thread(self, uid: str, snapshot) -> ConversationDetail:
+        data = snapshot.to_dict()
+        payload = self.cipher.decrypt(
+            uid, "conversation", data["conversation_id"], 1,
+            EncryptedPayload.from_dict(data["encrypted_payload"]),
+        )
+        return ConversationDetail(
+            conversation_id=data["conversation_id"], title=payload["title"],
+            created_at=data["created_at"], updated_at=data["updated_at"],
+            message_count=len(payload["messages"]),
+            messages=[ConversationMessage.model_validate(m) for m in payload["messages"]],
+        )
+
+    def _write_thread(self, uid: str, detail: ConversationDetail) -> None:
+        payload = self.cipher.encrypt(
+            uid, "conversation", detail.conversation_id, 1,
+            {
+                "title": detail.title,
+                "messages": [m.model_dump(mode="json") for m in detail.messages],
+            },
+        )
+        self._threads(uid).document(detail.conversation_id).set({
+            "uid": uid,
+            "conversation_id": detail.conversation_id,
+            "encrypted_payload": payload.to_dict(),
+            "created_at": detail.created_at,
+            "updated_at": detail.updated_at,
+        })
+
+    def list_conversations(self, uid: str, limit: int = 50) -> List[Conversation]:
+        # Only the metadata is needed for a sidebar, but the title lives inside
+        # the encrypted payload, so each row is decrypted. Bounded by `limit`.
+        snapshots = list(
+            self._threads(uid)
+            .order_by("updated_at", direction=firestore.Query.DESCENDING)
+            .limit(limit).stream()
+        )
+        return [
+            Conversation(**self._read_thread(uid, snapshot).model_dump(exclude={"messages"}))
+            for snapshot in snapshots
+        ]
+
+    def get_conversation(self, uid: str, conversation_id: str) -> ConversationDetail:
+        snapshot = self._threads(uid).document(conversation_id).get()
+        if not snapshot.exists:
+            raise NotFound("Conversation not found")
+        return self._read_thread(uid, snapshot)
+
+    def append_turn(
+        self, uid: str, conversation_id: Optional[str],
+        question: ConversationMessage, answer: ConversationMessage,
+    ) -> ConversationDetail:
+        now = datetime.now(timezone.utc)
+        existing: Optional[ConversationDetail] = None
+        if conversation_id:
+            try:
+                existing = self.get_conversation(uid, conversation_id)
+            except NotFound:
+                existing = None
+        if existing is None:
+            existing = ConversationDetail(
+                conversation_id=conversation_id or generated_record_id(),
+                title=thread_title(question.text),
+                created_at=now, updated_at=now, message_count=0, messages=[],
+            )
+        messages = [*existing.messages, question, answer][-MAX_THREAD_MESSAGES:]
+        updated = existing.model_copy(update={
+            "messages": messages, "message_count": len(messages), "updated_at": now,
+        })
+        self._write_thread(uid, updated)
+        return updated
+
+    def rename_conversation(self, uid: str, conversation_id: str, title: str) -> Conversation:
+        detail = self.get_conversation(uid, conversation_id)
+        renamed = detail.model_copy(update={"title": title})
+        self._write_thread(uid, renamed)
+        return Conversation(**renamed.model_dump(exclude={"messages"}))
+
+    def delete_conversation(self, uid: str, conversation_id: str) -> bool:
+        reference = self._threads(uid).document(conversation_id)
+        if not reference.get().exists:
+            return False
+        reference.delete()
+        return True
+
+    def delete_conversations(self, uid: str) -> int:
+        documents = list(self._threads(uid).stream())
+        batch = self.client.batch()
+        for document in documents:
+            batch.delete(document.reference)
+        if documents:
+            batch.commit()
+        return len(documents)
 
     def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]:
         """The stored exchanges, newest first, with expired ones swept as we go.

@@ -640,3 +640,67 @@
   border-radius: 6px;
   padding: 5px 8px;
 }
+
+/* The way back into an earlier conversation. */
+.ai-threads {
+  border-bottom: 1px solid var(--border);
+  background: var(--green-lt);
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ai-threads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.ai-threads-empty { font-size: 11px; color: var(--muted); margin: 0; }
+
+.ai-threads ul { list-style: none; margin: 0; padding: 0; }
+
+.ai-threads li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.ai-threads li.current { background: var(--white); }
+
+.ai-thread-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 5px 6px;
+  font-size: 11px;
+  text-align: left;
+  color: inherit;
+}
+
+.ai-thread-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-thread-count { color: var(--muted); font-size: 10px; }
+
+.ai-thread-action {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.ai-thread-action.danger { color: var(--red); }

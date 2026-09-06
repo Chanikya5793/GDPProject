@@ -262,13 +262,19 @@ class CopilotService:
             "change, put it in actions and say it needs their confirmation. Resolve "
             "relative dates against TODAY.",
             f"TODAY={json.dumps(today.isoformat())}",
-            f"CONVERSATION={json.dumps([{'role': t.role, 'text': t.text} for t in (history or [])])}",
-            f"USER_QUESTION={json.dumps(question)}",
             f"PLANNER_BRIEFING={json.dumps(briefing)}",
             f"UNTRUSTED_SOURCES={json.dumps(sources)}",
         ]
         if observations:
             parts.append(f"TOOL_RESULTS={json.dumps(observations)}")
+        # Last on purpose. Providers cache a prompt by its prefix, and these two
+        # change on every single turn: with the conversation and the question up
+        # front, the briefing behind them was re-read from scratch every time
+        # even though it is byte-identical until a record changes.
+        parts.append(
+            f"CONVERSATION={json.dumps([{'role': t.role, 'text': t.text} for t in (history or [])])}"
+        )
+        parts.append(f"USER_QUESTION={json.dumps(question)}")
         parts.append(self._tool_note(rounds_left))
         return "\n".join(parts)
 

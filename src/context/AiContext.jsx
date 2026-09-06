@@ -31,6 +31,10 @@ export function AiProvider({ children }) {
     localStorage.getItem('nw_ai_popped') === 'true'
   )
   const [messages, setMessages] = useState([WELCOME])
+  // The thread this conversation belongs to. The server owns the transcript
+  // now, so a thread can be reopened here or on another device.
+  const [conversationId, setConversationId] = useState(null)
+  const [conversations, setConversations] = useState([])
   const [typing, setTyping] = useState(false)
   const [error, setError] = useState('')
   const controllerRef = useRef(null)
@@ -63,6 +67,7 @@ export function AiProvider({ children }) {
     apiFetch('/v1/ai-info').then(setAiInfo).catch(() => setAiInfo(null))
   }, [user?.uid])
 
+
   // True once the stored conversation has been read back, so the empty first
   // render cannot be written over the top of it.
   const [restored, setRestored] = useState(false)
@@ -70,6 +75,9 @@ export function AiProvider({ children }) {
   // wiped by the restore landing on top of it. Anything that puts a message on
   // screen bumps this, and a restore from an older generation is dropped.
   const generationRef = useRef(0)
+  // Read inside sendMessage's closure, which is memoised on `typing` alone.
+  const conversationIdRef = useRef(null)
+  useEffect(() => { conversationIdRef.current = conversationId }, [conversationId])
 
   useEffect(() => {
     const generation = ++generationRef.current
@@ -83,7 +91,13 @@ export function AiProvider({ children }) {
     }
     const settle = saved => {
       if (generationRef.current !== generation) return
-      setMessages(saved?.length ? saved : [WELCOME])
+      // Older builds stored a bare array. Either way the thread id has to come
+      // back with the messages, or the screen shows one conversation while the
+      // next turn quietly starts another.
+      const stored = Array.isArray(saved) ? { messages: saved, conversationId: null } : saved
+      setMessages(stored?.messages?.length ? stored.messages : [WELCOME])
+      setConversationId(stored?.conversationId || null)
+      conversationIdRef.current = stored?.conversationId || null
       setRestored(true)
     }
     getSecureItem(user.uid, CHAT_STORE, null).then(settle).catch(() => settle(null))
@@ -96,7 +110,10 @@ export function AiProvider({ children }) {
     // An untouched thread is nothing to restore, and writing it back would
     // undo the clear that just removed it.
     if (!messages.some(message => message.id !== WELCOME.id)) return
-    setSecureItem(user.uid, CHAT_STORE, messages.slice(-KEPT_MESSAGES)).catch(() => {})
+    setSecureItem(user.uid, CHAT_STORE, {
+      conversationId: conversationIdRef.current,
+      messages: messages.slice(-KEPT_MESSAGES),
+    }).catch(() => {})
   }, [messages, restored, typing, user?.uid])
 
   const togglePopOut = useCallback(() => {
@@ -116,6 +133,63 @@ export function AiProvider({ children }) {
         // A budget, not a malfunction — the backend's detail names the wait.
         ? `You have reached the copilot request limit. ${requestError.message}`
         : `The copilot could not answer: ${requestError.message}`
+
+  const loadConversations = useCallback(async () => {
+    if (!apiConfigured()) return
+    try { setConversations(await apiFetch('/v1/conversations?limit=50')) }
+    catch { /* the sidebar is a convenience; a failed list must not break chat */ }
+  }, [])
+
+  /** Open a stored thread, replacing what is on screen with its transcript. */
+  const openConversation = useCallback(async id => {
+    controllerRef.current?.abort()
+    generationRef.current += 1
+    setTyping(false)
+    setError('')
+    try {
+      const detail = await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`)
+      setMessages([WELCOME, ...detail.messages.map(message => ({
+        id: crypto.randomUUID(),
+        role: message.role === 'user' ? 'user' : 'bot',
+        text: message.text,
+        citations: message.citations || [],
+        // Proposals are not carried: they expire, so one offered from history
+        // could never be confirmed and would only look like a failed change.
+        proposals: [],
+        steps: [],
+      }))])
+      setConversationId(id)
+      conversationIdRef.current = id
+    } catch (openError) {
+      setError(openError.message)
+    }
+  }, [])
+
+  /** Start a fresh thread. Nothing is written until the first message. */
+  const newConversation = useCallback(() => {
+    controllerRef.current?.abort()
+    generationRef.current += 1
+    setMessages([WELCOME])
+    setConversationId(null)
+    conversationIdRef.current = null
+    setTyping(false)
+    setError('')
+  }, [])
+
+  const renameConversation = useCallback(async (id, title) => {
+    await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ title }),
+    })
+    await loadConversations()
+  }, [loadConversations])
+
+  const deleteConversation = useCallback(async id => {
+    await apiFetch(`/v1/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (conversationIdRef.current === id) newConversation()
+    await loadConversations()
+  }, [loadConversations, newConversation])
+
+  useEffect(() => { loadConversations() }, [user?.uid, loadConversations])
 
   const sendMessage = useCallback(async text => {
     const trimmed = text.trim()
@@ -155,12 +229,14 @@ export function AiProvider({ children }) {
         body: JSON.stringify({
           message: trimmed,
           request_id: idempotencyKey('chat'),
+          conversation_id: conversationIdRef.current,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           // Everything said before this message, so a clarifying question can be
           // answered and picked up from.
           history: toHistory(messagesRef.current),
         }),
       }, ({ event, data }) => {
+        if (data?.conversation_id) conversationIdRef.current = data.conversation_id
         if (event === 'delta') {
           streamed += data.text || ''
           upsertReply({ text: streamed, streaming: true })
@@ -214,8 +290,12 @@ export function AiProvider({ children }) {
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null
       setTyping(false)
+      if (conversationIdRef.current && conversationIdRef.current !== conversationId) {
+        setConversationId(conversationIdRef.current)
+      }
+      loadConversations()
     }
-  }, [typing])
+  }, [typing, conversationId, loadConversations])
 
   const cancelResponse = useCallback(() => {
     controllerRef.current?.abort()
@@ -270,18 +350,19 @@ export function AiProvider({ children }) {
     }
   }, [rejectProposal])
 
+  // Starts a new thread rather than destroying anything: the old one is still
+  // in the list, which is the point of having threads at all.
   const clearChat = useCallback(() => {
-    controllerRef.current?.abort()
-    setMessages([WELCOME])
-    setTyping(false)
-    setError('')
+    newConversation()
     if (user?.uid) removeSecureItem(user.uid, CHAT_STORE)
-  }, [user?.uid])
+  }, [newConversation, user?.uid])
 
   return (
     <AiContext.Provider value={{
       poppedOut, togglePopOut, messages, typing, error, sendMessage, cancelResponse,
       clearChat, confirmProposal, rejectProposal, confirmProposals, rejectProposals,
+      conversationId, conversations, openConversation, newConversation,
+      renameConversation, deleteConversation, loadConversations,
       aiInfo, noticeAcknowledged, acknowledgeNotice,
       // Whether a backend exists at all. The sidebar uses this to explain the
       // copilot is unavailable instead of letting people send doomed requests.
