@@ -4,6 +4,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiConfigured, apiRequest, apiStream, idempotencyKey } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
@@ -21,6 +22,13 @@ import { AI_NOTICE_KEY, AI_NOTICE_TITLE, noticeParagraphs } from '@/utils/aiNoti
 const CHAT_STORE = 'ai:conversation';
 // Enough for a working thread. The API only replays the last 20 turns anyway.
 const KEPT_MESSAGES = 60;
+
+// The tab bar is position:'absolute' on iOS, so it floats over the screen and
+// the bottom of this view sits underneath it. Every other screen clears it with
+// padding on its list; this one has an input row down there, and without the
+// same allowance the box to type in is behind the tab bar and simply cannot be
+// seen. 49pt is the iOS tab bar itself, above whatever the home indicator takes.
+const IOS_TAB_BAR_HEIGHT = 49;
 import { toHistory } from '@/utils/chatHistory';
 import { seriesSummary } from '@/utils/series';
 
@@ -70,6 +78,8 @@ interface Message extends Partial<ChatResponse> {
 
 export default function CopilotScreen() {
   const { colors, accent, appearance } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarSpace = Platform.OS === 'ios' ? IOS_TAB_BAR_HEIGHT + insets.bottom : 0;
   const styles = makeStyles(colors, accent, appearance);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -526,7 +536,7 @@ export default function CopilotScreen() {
         </View>
       )}
 
-      <View style={styles.inputRow}>
+      <View style={[styles.inputRow, { paddingBottom: 12 + tabBarSpace }]}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
           editable={apiConfigured()}
           placeholder={apiConfigured() ? 'Ask your planner…' : 'Copilot unavailable in this build'}
