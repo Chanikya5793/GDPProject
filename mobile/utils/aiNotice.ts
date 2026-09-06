@@ -33,6 +33,10 @@ export function noticeParagraphs(info: AiInfo | null): string[] {
     );
   }
   paragraphs.push(
+    'Your conversations are kept, encrypted, so you can reopen one later or pick it '
+    + 'up on another device. Turn that off in Settings and they stay on this device only.',
+  );
+  paragraphs.push(
     'You can turn the assistant off entirely in Settings, or keep an individual task, '
     + 'reminder or note out of it with its own visibility switch.',
   );

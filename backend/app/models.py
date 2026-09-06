@@ -146,8 +146,13 @@ class PrivacySettings(StrictModel):
         ]
     )
     index_attachments: bool = False
-    retain_chat: bool = False
-    chat_retention_days: int = Field(default=0, ge=0, le=365)
+    # Conversations are kept by default so a thread can be reopened, and on
+    # another device, which is the whole point of a thread. Still a switch, not
+    # a fact: turned off, nothing is written server-side and the conversation
+    # lives only on the device that held it. Users who already chose off keep
+    # that choice, because their stored settings win over this default.
+    retain_chat: bool = True
+    chat_retention_days: int = Field(default=30, ge=0, le=365)
 
 
 class AiProviderInfo(StrictModel):
@@ -229,17 +234,56 @@ class ChatTurn(StrictModel):
     text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
 
 
+class ConversationMessage(StrictModel):
+    """One turn of a stored thread."""
+
+    role: Literal["user", "assistant"]
+    text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
+    citations: List[Citation] = Field(default_factory=list, max_length=40)
+    created_at: datetime
+
+
+class Conversation(StrictModel):
+    """A thread, as the sidebar lists it."""
+
+    conversation_id: RecordId
+    title: Title
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = Field(default=0, ge=0)
+
+
+class ConversationDetail(Conversation):
+    """A thread with its transcript, for opening one.
+
+    Older turns fall off rather than the document growing without bound: the
+    whole thread is one encrypted record, and Firestore caps a document at a
+    megabyte.
+    """
+
+    messages: List[ConversationMessage] = Field(default_factory=list, max_length=200)
+
+
+class RenameConversationRequest(StrictModel):
+    title: Title
+
+
 class ChatRequest(StrictModel):
     message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
     request_id: IdempotencyKey
     timezone: Annotated[str, StringConstraints(min_length=1, max_length=100)] = "UTC"
-    # Sent by the client rather than kept server-side, so a conversation works
-    # without turning on chat retention. Capped because the whole thing is
-    # replayed into the prompt on every turn.
+    # The thread this belongs to. Given one, the server assembles the history
+    # itself and `history` below is ignored; omitted, a new thread is started.
+    conversation_id: Optional[RecordId] = None
+    # Client-sent history, still honoured when no conversation is named so an
+    # older client keeps working. Capped because it is replayed into the prompt.
     history: List[ChatTurn] = Field(default_factory=list, max_length=20)
 
 
 class ChatResponse(StrictModel):
+    # Which thread the exchange landed in, so a client that started without one
+    # knows what to reopen.
+    conversation_id: Optional[str] = None
     answer: str
     citations: List[Citation]
     retrieval: RetrievalDisclosure

@@ -19,7 +19,11 @@ from .models import (
     AiProviderInfo,
     ChatRequest,
     ChatResponse,
+    ChatTurn,
     ConfirmProposalRequest,
+    Conversation,
+    ConversationDetail,
+    ConversationMessage,
     EntityType,
     IndexRequest,
     MigrationRequest,
@@ -30,6 +34,7 @@ from .models import (
     RecordDeleteRequest,
     RecordUpsertRequest,
     RejectProposalRequest,
+    RenameConversationRequest,
     RetainedExchange,
 )
 from .proposals import InvalidProposal
@@ -94,6 +99,43 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
     )
 
 
+def thread_history(services: Container, uid: str, body, privacy):
+    """The turns to replay, from the thread when there is one.
+
+    A named thread is the authority: the client no longer has to carry the
+    transcript, and two devices looking at the same thread see the same one.
+    Without a thread the client's own history still works, so an older build
+    keeps functioning.
+    """
+    if body.conversation_id and privacy.retain_chat:
+        try:
+            detail = services.repository.get_conversation(uid, body.conversation_id)
+        except NotFound:
+            return list(body.history)
+        return [ChatTurn(role=m.role, text=m.text) for m in detail.messages][-20:]
+    return list(body.history)
+
+
+def remember_turn(services: Container, uid: str, privacy, body, response) -> ChatResponse:
+    """Store the exchange in its thread and tell the client which one.
+
+    Opted out, nothing is written and the thread id the client sent is handed
+    straight back, so a device-only conversation still threads locally.
+    """
+    if not privacy.retain_chat:
+        return response.model_copy(update={"conversation_id": body.conversation_id})
+    now = datetime.now(timezone.utc)
+    detail = services.repository.append_turn(
+        uid, body.conversation_id,
+        ConversationMessage(role="user", text=body.message[:4000], created_at=now),
+        ConversationMessage(
+            role="assistant", text=response.answer[:4000],
+            citations=response.citations[:40], created_at=now,
+        ),
+    )
+    return response.model_copy(update={"conversation_id": detail.conversation_id})
+
+
 def retain_chat_response(services: Container, uid: str, privacy, body, response) -> None:
     if privacy.retain_chat and privacy.chat_retention_days > 0:
         services.repository.save_chat_response(
@@ -136,7 +178,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id", "Idempotency-Key"],
         expose_headers=["Mcp-Session-Id", "Retry-After"],
     )
@@ -333,7 +375,8 @@ def create_app(container: Container | None = None) -> FastAPI:
             raise
         try:
             answer, citations, disclosure, generated = services.copilot.answer(
-                user.uid, body.message, history=body.history,
+                user.uid, body.message,
+                history=thread_history(services, user.uid, body, privacy),
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -347,6 +390,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         response = build_chat_response(
             services, user.uid, answer, citations, disclosure, generated
         )
+        response = remember_turn(services, user.uid, privacy, body, response)
         retain_chat_response(services, user.uid, privacy, body, response)
         return response
 
@@ -384,7 +428,8 @@ def create_app(container: Container | None = None) -> FastAPI:
             )
             raise
         stream = services.copilot.answer_stream(
-            user.uid, body.message, history=body.history,
+            user.uid, body.message,
+            history=thread_history(services, user.uid, body, privacy),
         )
         # Pull the first item here rather than inside the response body. Once a
         # streaming body starts the status line is already 200, so retrieval
@@ -410,6 +455,7 @@ def create_app(container: Container | None = None) -> FastAPI:
                     response = build_chat_response(
                         services, user.uid, answer, citations, disclosure, generated
                     )
+                    response = remember_turn(services, user.uid, privacy, body, response)
                     retain_chat_response(services, user.uid, privacy, body, response)
                     yield sse_event("final", response.model_dump(mode="json"))
                     return
@@ -439,6 +485,39 @@ def create_app(container: Container | None = None) -> FastAPI:
         return StreamingResponse(
             events(), media_type="text/event-stream", headers=SSE_HEADERS,
         )
+
+    @app.get("/v1/conversations", response_model=list[Conversation])
+    def list_conversations(
+        user: CurrentUser, services: ContainerDep,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    ):
+        return services.repository.list_conversations(user.uid, limit)
+
+    @app.get("/v1/conversations/{conversation_id}", response_model=ConversationDetail)
+    def get_conversation(conversation_id: str, user: CurrentUser, services: ContainerDep):
+        return services.repository.get_conversation(user.uid, conversation_id)
+
+    @app.patch("/v1/conversations/{conversation_id}", response_model=Conversation)
+    def rename_conversation(
+        conversation_id: str, body: RenameConversationRequest,
+        user: CurrentUser, services: ContainerDep,
+    ):
+        return services.repository.rename_conversation(user.uid, conversation_id, body.title)
+
+    @app.delete("/v1/conversations/{conversation_id}", status_code=204)
+    def delete_conversation(
+        conversation_id: str, user: CurrentUser, services: ContainerDep,
+    ) -> Response:
+        if not services.repository.delete_conversation(user.uid, conversation_id):
+            raise NotFound("Conversation not found")
+        services.audit.record(user.uid, "deletion", metadata={"conversations": 1})
+        return Response(status_code=204)
+
+    @app.delete("/v1/conversations", status_code=200)
+    def delete_conversations(user: CurrentUser, services: ContainerDep):
+        deleted = services.repository.delete_conversations(user.uid)
+        services.audit.record(user.uid, "deletion", metadata={"conversations": deleted})
+        return {"deleted": deleted}
 
     @app.get("/v1/chats", response_model=list[RetainedExchange])
     def list_chats(
