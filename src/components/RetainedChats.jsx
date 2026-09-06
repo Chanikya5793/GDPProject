@@ -22,7 +22,7 @@ export default function RetainedChats({ chats, status, error, retainOn, onRefres
     <section className="settings-chats" aria-label="Retained copilot chats">
       <div className="settings-chats-head">
         <MessageSquare size={14} />
-        <strong>Retained chats</strong>
+        <strong>Your conversations</strong>
         <span className="settings-row-desc">
           {rows.length ? `${rows.length} stored` : 'Nothing stored'}
         </span>
@@ -37,32 +37,27 @@ export default function RetainedChats({ chats, status, error, retainOn, onRefres
       {!rows.length && status !== 'loading' && (
         <p className="settings-row-desc">
           {retainOn
-            ? 'Nothing has been kept yet. Exchanges appear here once you ask the assistant something.'
-            : 'Retention is off, so nothing new is being kept. Anything saved while it was on would still be listed here.'}
+            ? 'Nothing has been kept yet. A conversation appears here once you ask the assistant something.'
+            : 'Keeping conversations is off, so nothing new is stored. Anything saved while it was on is still listed here.'}
         </p>
       )}
 
       <ul className="settings-chats-list">
-        {rows.map(chat => {
-          const left = daysLeft(chat.expires_at)
-          return (
-            <li key={chat.request_id}>
-              <div className="settings-chat-text">
-                <span className="settings-chat-question">{chat.question}</span>
-                <span className="settings-chat-answer">{chat.answer}</span>
-                <span className="settings-chat-meta">
-                  {spokenMoment(chat.created_at)}
-                  {left === null ? ' · expiring now' : ` · ${left} day${left === 1 ? '' : 's'} left`}
-                  {chat.citations?.length ? ` · ${chat.citations.length} source${chat.citations.length === 1 ? '' : 's'}` : ''}
-                </span>
-              </div>
-              <button className="settings-chat-delete" onClick={() => onDelete(chat)}
-                aria-label={`Delete "${chat.question}"`}>
-                <Trash2 size={13} />
-              </button>
-            </li>
-          )
-        })}
+        {rows.map(thread => (
+          <li key={thread.conversation_id}>
+            <div className="settings-chat-text">
+              <span className="settings-chat-question">{thread.title}</span>
+              <span className="settings-chat-meta">
+                {spokenMoment(thread.updated_at)}
+                {` · ${thread.message_count} message${thread.message_count === 1 ? '' : 's'}`}
+              </span>
+            </div>
+            <button className="settings-chat-delete" onClick={() => onDelete(thread)}
+              aria-label={`Delete "${thread.title}"`}>
+              <Trash2 size={13} />
+            </button>
+          </li>
+        ))}
       </ul>
     </section>
   )

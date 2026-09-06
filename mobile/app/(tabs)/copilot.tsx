@@ -186,6 +186,20 @@ export default function CopilotScreen() {
     }]);
   };
 
+  const renameConversation = (thread: Conversation) => {
+    Alert.prompt?.('Rename conversation', undefined, async title => {
+      if (!title?.trim()) return;
+      try {
+        await apiRequest(`/v1/conversations/${encodeURIComponent(thread.conversation_id)}`, {
+          method: 'PATCH', body: JSON.stringify({ title: title.trim() }),
+        });
+        await loadConversations();
+      } catch (error) {
+        Alert.alert('Could not rename', (error as Error).message);
+      }
+    }, 'plain-text', thread.title);
+  };
+
   const removeConversation = (thread: Conversation) => {
     Alert.alert('Delete conversation', `Delete “${thread.title}”? This cannot be undone.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -436,6 +450,10 @@ export default function CopilotScreen() {
                   <Text style={styles.threadRowTitle} numberOfLines={1}>{thread.title}</Text>
                   <Text style={styles.disclosure}>{thread.message_count} messages</Text>
                 </TouchableOpacity>
+                <TouchableOpacity onPress={() => renameConversation(thread)}
+                  accessibilityLabel={`Rename ${thread.title}`}>
+                  <Ionicons name="pencil-outline" size={15} color={colors.textMuted} />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => removeConversation(thread)}
                   accessibilityLabel={`Delete ${thread.title}`}>
                   <Ionicons name="trash-outline" size={16} color={colors.error} />
@@ -498,6 +516,16 @@ export default function CopilotScreen() {
           <View style={styles.loading}><ActivityIndicator color={accent.primary} /><Text style={styles.disclosure}>Reading your planner…</Text></View>
         )}
       </ScrollView>
+      {!apiConfigured() && (
+        <View style={styles.offline}>
+          <Ionicons name="cloud-offline-outline" size={15} color={colors.textMuted} />
+          <Text style={styles.offlineText}>
+            This build was not given the planner backend, so the assistant cannot answer.
+            Your tasks, reminders and notes still work; they are stored encrypted on this device.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.inputRow}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
           editable={apiConfigured()}
@@ -543,6 +571,11 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
       borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card,
     },
     threadBarBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+    offline: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+      padding: 12, backgroundColor: colors.surfaceVariant,
+    },
+    offlineText: { flex: 1, color: colors.textMuted, fontSize: 12, lineHeight: 17 },
     threadBarText: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '600' },
     threadSheet: {
       marginTop: 'auto', maxHeight: '70%', backgroundColor: colors.card,

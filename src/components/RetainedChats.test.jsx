@@ -2,34 +2,33 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import RetainedChats, { daysLeft, spokenMoment } from './RetainedChats'
 
-const exchange = (overrides = {}) => ({
-  request_id: 'chat-1',
-  question: 'What is due today?',
-  answer: 'Two things: Chemistry revision and the essay outline.',
-  citations: [{ citation_id: 'S1' }],
+const thread = (overrides = {}) => ({
+  conversation_id: 'c1',
+  title: 'What is due today?',
+  message_count: 4,
   created_at: '2026-09-02T14:30:00Z',
-  expires_at: '2026-10-02T14:30:00Z',
+  updated_at: '2026-09-02T14:35:00Z',
   ...overrides,
 })
 
 describe('retained chat history', () => {
-  it('shows what retention actually kept', () => {
-    // These rows used to be write-only: the sole lookup was by request_id,
-    // which the client never reuses, so nothing could ever display them.
-    render(<RetainedChats chats={[exchange()]} status="ready" retainOn
+  it('shows the conversations that were kept', () => {
+    // One place chat history is read from. It used to have its own collection,
+    // so the same exchange was stored twice in two shapes.
+    render(<RetainedChats chats={[thread()]} status="ready" retainOn
       onRefresh={vi.fn()} onDelete={vi.fn()} />)
     expect(screen.getByText('What is due today?')).toBeInTheDocument()
-    expect(screen.getByText(/Chemistry revision/)).toBeInTheDocument()
+    expect(screen.getByText(/4 messages/)).toBeInTheDocument()
     expect(screen.getByText(/1 stored/)).toBeInTheDocument()
   })
 
-  it('deletes one exchange without touching the rest', () => {
+  it('deletes one conversation without touching the rest', () => {
     const remove = vi.fn()
     render(<RetainedChats status="ready" retainOn onRefresh={vi.fn()} onDelete={remove}
-      chats={[exchange(), exchange({ request_id: 'chat-2', question: 'And tomorrow?' })]} />)
+      chats={[thread(), thread({ conversation_id: 'c2', title: 'And tomorrow?' })]} />)
     fireEvent.click(screen.getByRole('button', { name: /Delete "And tomorrow\?"/ }))
     expect(remove).toHaveBeenCalledTimes(1)
-    expect(remove.mock.calls[0][0].request_id).toBe('chat-2')
+    expect(remove.mock.calls[0][0].conversation_id).toBe('c2')
   })
 
   it('explains an empty list differently depending on the switch', () => {
@@ -38,7 +37,7 @@ describe('retained chat history', () => {
     expect(screen.getByText(/Nothing has been kept yet/)).toBeInTheDocument()
     rerender(<RetainedChats chats={[]} status="ready" retainOn={false}
       onRefresh={vi.fn()} onDelete={vi.fn()} />)
-    expect(screen.getByText(/Retention is off/)).toBeInTheDocument()
+    expect(screen.getByText(/Keeping conversations is off/)).toBeInTheDocument()
   })
 
   it('surfaces a failed load rather than looking empty', () => {

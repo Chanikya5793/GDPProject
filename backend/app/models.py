@@ -250,6 +250,10 @@ class Conversation(StrictModel):
     title: Title
     created_at: datetime
     updated_at: datetime
+    # Rolls forward on every turn, from the retention period in Settings, so a
+    # thread you are still using does not expire underneath you. Without this
+    # the retention control promised an expiry nothing performed.
+    expires_at: datetime
     message_count: int = Field(default=0, ge=0)
 
 
@@ -288,22 +292,6 @@ class ChatResponse(StrictModel):
     citations: List[Citation]
     retrieval: RetrievalDisclosure
     proposals: List[ActionProposal] = Field(default_factory=list)
-
-
-class RetainedExchange(StrictModel):
-    """One stored question and answer, as the student gets to read it back.
-
-    Proposals are deliberately not carried. They expire thirty minutes after
-    they are made, so a preview offered in history could never be confirmed and
-    would only look like a change that failed.
-    """
-
-    request_id: str
-    question: str
-    answer: str
-    citations: List[Citation] = Field(default_factory=list)
-    created_at: datetime
-    expires_at: datetime
 
 
 class ConfirmProposalRequest(StrictModel):

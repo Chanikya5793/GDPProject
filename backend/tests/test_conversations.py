@@ -206,3 +206,47 @@ def test_the_briefing_sits_ahead_of_what_changes_every_turn(client, auth, servic
     assert prompt.index("PLANNER_BRIEFING=") < prompt.index("CONVERSATION=")
     assert prompt.index("PLANNER_BRIEFING=") < prompt.index("USER_QUESTION=")
     assert prompt.index("CONVERSATION=") < prompt.index("USER_QUESTION=")
+
+
+def test_a_thread_expires_on_the_retention_period_the_student_chose(client, auth, services):
+    # The retention control offered 7, 30 or 90 days and nothing performed it
+    # once the history moved into threads.
+    from datetime import timedelta
+
+    client.put("/v1/privacy", json={
+        "ai_enabled": True, "indexed_entity_types": ["task"], "index_attachments": False,
+        "retain_chat": True, "chat_retention_days": 7,
+    }, headers=auth)
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    started = ask(client, auth, "a question", "expiry-0001").json()
+
+    detail = services.repository.get_conversation("alice", started["conversation_id"])
+
+    assert timedelta(days=6) < detail.expires_at - detail.created_at <= timedelta(days=7)
+
+
+def test_using_a_thread_pushes_its_expiry_out(client, auth, services):
+    # A thread you are still in must not expire underneath you.
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    started = ask(client, auth, "first", "expiry-0002").json()
+    first = services.repository.get_conversation("alice", started["conversation_id"]).expires_at
+
+    ask(client, auth, "second", "expiry-0003", started["conversation_id"])
+    later = services.repository.get_conversation("alice", started["conversation_id"]).expires_at
+
+    assert later >= first
+
+
+def test_an_expired_thread_is_neither_listed_nor_left_behind(client, auth, services):
+    from datetime import datetime, timezone
+
+    services.test_generator.response = GeneratedAnswer(answer="ok")
+    started = ask(client, auth, "old thread", "expiry-0004").json()
+    key = ("alice", started["conversation_id"])
+    stale = services.repository.conversations[key]
+    services.repository.conversations[key] = stale.model_copy(
+        update={"expires_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
+    )
+
+    assert client.get("/v1/conversations", headers=auth).json() == []
+    assert key not in services.repository.conversations

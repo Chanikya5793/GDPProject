@@ -309,4 +309,47 @@ describe('AiContext streaming', () => {
     expect(ctx.current.conversationId).toBe('thread-77')
     expect(ctx.current.messages.map(m => m.text)).toContain('remember this')
   })
+
+  it('opens the most recent thread on a device with nothing stored', async () => {
+    // Signing in somewhere new used to land on an empty chat with the history
+    // hidden behind a button.
+    const { apiFetch } = await import('../api/client')
+    apiFetch.mockImplementation(async path => {
+      if (path.startsWith('/v1/conversations?')) {
+        return [{ conversation_id: 'c-newest', title: 'Chemistry plan', message_count: 2 }]
+      }
+      if (path === '/v1/conversations/c-newest') {
+        return {
+          conversation_id: 'c-newest', title: 'Chemistry plan', message_count: 2,
+          messages: [
+            { role: 'user', text: 'what is due today?', citations: [] },
+            { role: 'assistant', text: 'Two things.', citations: [] },
+          ],
+        }
+      }
+      return {}
+    })
+    renderAi()
+    await act(async () => {})
+    expect(ctx.current.conversationId).toBe('c-newest')
+    expect(ctx.current.messages.map(m => m.text)).toContain('Two things.')
+  })
+
+  it('leaves a restored local thread alone rather than replacing it', async () => {
+    // Whatever is already on screen wins: reopening the newest thread over the
+    // top of it would discard the conversation the student came back to.
+    store.value = {
+      conversationId: 'c-local',
+      messages: [{ id: 'm1', role: 'user', text: 'my local thread' }],
+    }
+    const { apiFetch } = await import('../api/client')
+    apiFetch.mockImplementation(async path =>
+      path.startsWith('/v1/conversations?')
+        ? [{ conversation_id: 'c-other', title: 'Something else', message_count: 2 }]
+        : {})
+    renderAi()
+    await act(async () => {})
+    expect(ctx.current.conversationId).toBe('c-local')
+    expect(ctx.current.messages.map(m => m.text)).toContain('my local thread')
+  })
 })
