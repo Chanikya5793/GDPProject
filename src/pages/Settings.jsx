@@ -106,7 +106,7 @@ export default function Settings() {
   useEffect(() => {
     if (!apiConfigured()) { setChatsStatus('unavailable'); return }
     setChatsStatus('loading')
-    apiFetch('/v1/chats')
+    apiFetch('/v1/conversations?limit=50')
       .then(value => { setChats(value); setChatsStatus('ready') })
       .catch(error => { setChatsError(error.message); setChatsStatus('error') })
   }, [])
@@ -178,7 +178,7 @@ export default function Settings() {
     setChatsStatus('loading')
     setChatsError('')
     try {
-      setChats(await apiFetch('/v1/chats'))
+      setChats(await apiFetch('/v1/conversations?limit=50'))
       setChatsStatus('ready')
     } catch (error) {
       setChatsStatus('error')
@@ -190,7 +190,7 @@ export default function Settings() {
     setPrivacyStatus('saving')
     setPrivacyError('')
     try {
-      await apiFetch('/v1/chats', { method: 'DELETE' })
+      await apiFetch('/v1/conversations', { method: 'DELETE' })
       setChats([])
       setPrivacyStatus('ready')
     } catch (error) {
@@ -202,8 +202,12 @@ export default function Settings() {
   const deleteOneChat = async chat => {
     setChatsError('')
     try {
-      await apiFetch(`/v1/chats/${encodeURIComponent(chat.request_id)}`, { method: 'DELETE' })
-      setChats(previous => previous.filter(item => item.request_id !== chat.request_id))
+      await apiFetch(`/v1/conversations/${encodeURIComponent(chat.conversation_id)}`, {
+        method: 'DELETE',
+      })
+      setChats(previous => previous.filter(
+        item => item.conversation_id !== chat.conversation_id
+      ))
     } catch (error) {
       setChatsError(error.message)
     }

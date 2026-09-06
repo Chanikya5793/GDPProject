@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Dict, List, Optional, Protocol, Tuple
 
@@ -22,7 +22,6 @@ from .models import (
     PrivacySettings,
     ProposedRecord,
     RecordUpsertRequest,
-    RetainedExchange,
 )
 
 CONTENT_ADAPTER = TypeAdapter(PlannerContent)
@@ -95,12 +94,11 @@ class PlannerRepository(Protocol):
     def append_turn(
         self, uid: str, conversation_id: Optional[str],
         question: ConversationMessage, answer: ConversationMessage,
+        retention_days: int = 30,
     ) -> ConversationDetail: ...
     def rename_conversation(self, uid: str, conversation_id: str, title: str) -> Conversation: ...
     def delete_conversation(self, uid: str, conversation_id: str) -> bool: ...
     def delete_conversations(self, uid: str) -> int: ...
-    def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]: ...
-    def delete_chat(self, uid: str, request_id: str) -> bool: ...
     def delete_chats(self, uid: str) -> int: ...
 
 
@@ -287,6 +285,12 @@ class MemoryPlannerRepository:
         return deepcopy(value[1])
 
     def list_conversations(self, uid: str, limit: int = 50) -> List[Conversation]:
+        now = datetime.now(timezone.utc)
+        for key in [
+            key for key, detail in self.conversations.items()
+            if key[0] == uid and detail.expires_at <= now
+        ]:
+            del self.conversations[key]
         threads = [
             Conversation(**detail.model_dump(exclude={"messages"}))
             for (owner, _), detail in self.conversations.items() if owner == uid
@@ -303,18 +307,22 @@ class MemoryPlannerRepository:
     def append_turn(
         self, uid: str, conversation_id: Optional[str],
         question: ConversationMessage, answer: ConversationMessage,
+        retention_days: int = 30,
     ) -> ConversationDetail:
         now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=retention_days or 3650)
         existing = self.conversations.get((uid, conversation_id)) if conversation_id else None
         if existing is None:
             conversation_id = conversation_id or generated_record_id()
             existing = ConversationDetail(
                 conversation_id=conversation_id, title=thread_title(question.text),
-                created_at=now, updated_at=now, message_count=0, messages=[],
+                created_at=now, updated_at=now, expires_at=expires_at,
+                message_count=0, messages=[],
             )
         messages = [*existing.messages, question, answer][-MAX_THREAD_MESSAGES:]
         updated = existing.model_copy(update={
-            "messages": messages, "message_count": len(messages), "updated_at": now,
+            "messages": messages, "message_count": len(messages),
+            "updated_at": now, "expires_at": expires_at,
         })
         self.conversations[(uid, updated.conversation_id)] = updated
         return deepcopy(updated)
@@ -333,26 +341,6 @@ class MemoryPlannerRepository:
         for key in keys:
             del self.conversations[key]
         return len(keys)
-
-    def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]:
-        now = datetime.now(timezone.utc)
-        expired = [
-            key for key, value in self.chats.items() if key[0] == uid and value[3] <= now
-        ]
-        for key in expired:
-            del self.chats[key]
-        rows = [
-            RetainedExchange(
-                request_id=key[1], question=value[0], answer=value[1].answer,
-                citations=value[1].citations, created_at=value[2], expires_at=value[3],
-            )
-            for key, value in self.chats.items() if key[0] == uid
-        ]
-        rows.sort(key=lambda row: row.created_at, reverse=True)
-        return rows[:limit]
-
-    def delete_chat(self, uid: str, request_id: str) -> bool:
-        return self.chats.pop((uid, request_id), None) is not None
 
     def save_chat_response(
         self, uid: str, request_id: str, question: str, response: ChatResponse, expires_at: datetime
@@ -715,6 +703,7 @@ class FirestorePlannerRepository:
         return ConversationDetail(
             conversation_id=data["conversation_id"], title=payload["title"],
             created_at=data["created_at"], updated_at=data["updated_at"],
+            expires_at=data["expires_at"],
             message_count=len(payload["messages"]),
             messages=[ConversationMessage.model_validate(m) for m in payload["messages"]],
         )
@@ -733,20 +722,31 @@ class FirestorePlannerRepository:
             "encrypted_payload": payload.to_dict(),
             "created_at": detail.created_at,
             "updated_at": detail.updated_at,
+            # A real Firestore TTL field, so the retention period in Settings is
+            # performed rather than merely displayed.
+            "expires_at": detail.expires_at,
         })
 
     def list_conversations(self, uid: str, limit: int = 50) -> List[Conversation]:
         # Only the metadata is needed for a sidebar, but the title lives inside
         # the encrypted payload, so each row is decrypted. Bounded by `limit`.
+        now = datetime.now(timezone.utc)
         snapshots = list(
             self._threads(uid)
             .order_by("updated_at", direction=firestore.Query.DESCENDING)
             .limit(limit).stream()
         )
-        return [
-            Conversation(**self._read_thread(uid, snapshot).model_dump(exclude={"messages"}))
-            for snapshot in snapshots
-        ]
+        threads = []
+        for snapshot in snapshots:
+            # The TTL policy reclaims these within about a day of their date, so
+            # the listing sweeps anything already past it rather than showing a
+            # thread that is meant to be gone.
+            if snapshot.to_dict()["expires_at"] <= now:
+                snapshot.reference.delete()
+                continue
+            detail = self._read_thread(uid, snapshot)
+            threads.append(Conversation(**detail.model_dump(exclude={"messages"})))
+        return threads
 
     def get_conversation(self, uid: str, conversation_id: str) -> ConversationDetail:
         snapshot = self._threads(uid).document(conversation_id).get()
@@ -757,8 +757,10 @@ class FirestorePlannerRepository:
     def append_turn(
         self, uid: str, conversation_id: Optional[str],
         question: ConversationMessage, answer: ConversationMessage,
+        retention_days: int = 30,
     ) -> ConversationDetail:
         now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=retention_days or 3650)
         existing: Optional[ConversationDetail] = None
         if conversation_id:
             try:
@@ -769,11 +771,13 @@ class FirestorePlannerRepository:
             existing = ConversationDetail(
                 conversation_id=conversation_id or generated_record_id(),
                 title=thread_title(question.text),
-                created_at=now, updated_at=now, message_count=0, messages=[],
+                created_at=now, updated_at=now, expires_at=expires_at,
+                message_count=0, messages=[],
             )
         messages = [*existing.messages, question, answer][-MAX_THREAD_MESSAGES:]
         updated = existing.model_copy(update={
-            "messages": messages, "message_count": len(messages), "updated_at": now,
+            "messages": messages, "message_count": len(messages),
+            "updated_at": now, "expires_at": expires_at,
         })
         self._write_thread(uid, updated)
         return updated
@@ -799,48 +803,6 @@ class FirestorePlannerRepository:
         if documents:
             batch.commit()
         return len(documents)
-
-    def list_chats(self, uid: str, limit: int = 50) -> List[RetainedExchange]:
-        """The stored exchanges, newest first, with expired ones swept as we go.
-
-        Ordered by creation rather than filtered on expiry, which would need a
-        composite index for the two fields together. Newest first puts the live
-        rows at the front anyway, so the filter below rarely discards anything;
-        what it does discard it also deletes, because until now nothing ever
-        did. `get_chat_response` only expires the one row it is asked for, and
-        it is asked by request_id, which the client never reuses.
-        """
-        now = datetime.now(timezone.utc)
-        snapshots = list(
-            self._chats(uid)
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
-            .limit(limit)
-            .stream()
-        )
-        rows: List[RetainedExchange] = []
-        for snapshot in snapshots:
-            data = snapshot.to_dict()
-            if data["expires_at"] <= now:
-                snapshot.reference.delete()
-                continue
-            payload = self.cipher.decrypt(
-                uid, "chat", data["request_id"], 1,
-                EncryptedPayload.from_dict(data["encrypted_payload"]),
-            )
-            response = ChatResponse.model_validate(payload["response"])
-            rows.append(RetainedExchange(
-                request_id=data["request_id"], question=payload["question"],
-                answer=response.answer, citations=response.citations,
-                created_at=data["created_at"], expires_at=data["expires_at"],
-            ))
-        return rows
-
-    def delete_chat(self, uid: str, request_id: str) -> bool:
-        reference = self._chats(uid).document(request_id)
-        if not reference.get().exists:
-            return False
-        reference.delete()
-        return True
 
     def delete_chats(self, uid: str) -> int:
         documents = list(
