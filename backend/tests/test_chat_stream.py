@@ -159,8 +159,12 @@ def test_the_final_answer_overrides_streamed_text_when_the_citation_guard_trips(
         GeneratedAnswer(answer="You have four tasks due tomorrow.", citation_ids=["S9"]),
         chunks=["You have four ", "tasks due tomorrow."],
     )
+    # Asks about the indexed record by name, so retrieval actually matches it and
+    # there is something for the guard to be strict about. "what is due?" no
+    # longer retrieves anything: it is not close enough to any record, which is
+    # the fix that stopped "Hello" being answered with an abstention.
     response = client.post("/v1/copilot/chat/stream", headers=auth, json={
-        "message": "what is due?", "request_id": "stream-0005",
+        "message": "write report", "request_id": "stream-0005",
     })
     events = read_events(response)
     assert deltas(events) == "You have four tasks due tomorrow."
