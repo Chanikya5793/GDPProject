@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     mcp_session_secret_resource: str = ""
     chat_retention_days: int = Field(default=30, ge=0, le=365)
     retrieval_limit: int = Field(default=5, ge=1, le=20)
+    # See DEFAULT_MAX_DISTANCE in rag.py. Lower it if unrelated records still
+    # come back for a message that is not about the planner at all.
+    retrieval_max_distance: float = Field(default=0.7, ge=0.05, le=2.0)
     # How many extra generations the assistant may spend looking things up
     # before it has to answer. Every turn already arrives with a briefing and a
     # search, so most questions never use one; 0 turns the loop off entirely.

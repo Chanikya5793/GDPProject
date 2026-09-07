@@ -930,3 +930,61 @@ def test_an_absurd_number_of_changes_is_trimmed_not_fatal(services):
 
     assert len(generated.all_actions()) == MAX_ACTIONS
     assert generated.answer == "Rather a lot."
+
+
+# ---------------------------------------------------------------------------
+# Saying hello
+# ---------------------------------------------------------------------------
+
+
+def test_a_greeting_is_answered_not_abstained_on(services):
+    # Reported from a phone: "Hello" came back as "I found related records, but
+    # I couldn't produce a source-valid answer." Nearest-neighbour search returns
+    # its k nearest whatever the distance, so a greeting "matched" records, and
+    # the guard then demanded citations for a hello.
+    record = add_task(services, "now", "Chemistry revision", TODAY)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+    use(services, GeneratedAnswer(answer="Hi. What would you like to look at?"))
+
+    answer, citations, disclosure, _ = services.copilot.answer("alice", "Hello", today=TODAY)
+
+    assert answer == "Hi. What would you like to look at?"
+    assert not disclosure.abstained
+    assert citations == []
+
+
+def test_an_unrelated_record_is_not_offered_as_a_source(services):
+    # The other half of the same fault: a greeting pulled five arbitrary records
+    # into the prompt, so the model was reasoning over noise on every turn.
+    record = add_task(services, "now", "Chemistry revision", TODAY)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+
+    records, citations = services.retrieval.retrieve("alice", "Hello")
+
+    assert records == []
+    assert citations == []
+
+
+def test_a_question_that_is_about_a_record_still_retrieves_it(services):
+    # The cutoff must not throw away real matches.
+    record = add_task(services, "chem", "Chemistry revision", TODAY)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+
+    records, _ = services.retrieval.retrieve("alice", "chemistry revision")
+
+    assert [item.record_id for item in records] == ["chem"]
+
+
+def test_the_cutoff_is_deployment_configurable(services):
+    # It could not be measured against the deployed embedding model, so it has
+    # to be adjustable without a code change.
+    from app.rag import RetrievalService
+
+    record = add_task(services, "chem", "Chemistry revision", TODAY)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+    strict = RetrievalService(
+        services.repository, services.vector_store, services.retrieval.embeddings,
+        services.audit, limit=5, max_distance=0.01,
+    )
+
+    assert strict.retrieve("alice", "chemistry revision")[0] == []
