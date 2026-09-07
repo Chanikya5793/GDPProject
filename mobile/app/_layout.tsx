@@ -6,6 +6,7 @@ import 'react-native-reanimated';
 
 import { AuthProvider } from '@/contexts/AuthContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
+import { ToastProvider } from '@/components/Toast';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -23,7 +24,9 @@ export default function RootLayout() {
   return (
     <SettingsProvider>
       <AuthProvider>
-        <RootLayoutNav />
+        <ToastProvider>
+          <RootLayoutNav />
+        </ToastProvider>
       </AuthProvider>
     </SettingsProvider>
   );
