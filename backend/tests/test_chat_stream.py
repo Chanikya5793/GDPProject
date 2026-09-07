@@ -170,7 +170,7 @@ def test_the_final_answer_overrides_streamed_text_when_the_citation_guard_trips(
     assert deltas(events) == "You have four tasks due tomorrow."
     final = final_of(events)
     assert final["answer"] != "You have four tasks due tomorrow."
-    assert "source-valid" in final["answer"]
+    assert "couldn't back that up" in final["answer"]
     assert final["citations"] == []
     assert final["retrieval"]["abstained"] is True
 

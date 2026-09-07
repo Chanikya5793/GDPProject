@@ -528,12 +528,14 @@ def test_a_question_back_survives_the_citation_guard(services):
     assert not disclosure.abstained
 
 
-def test_an_ungrounded_claim_is_still_replaced(services):
-    # The clarification exemption must not become a way around the guard: a
-    # statement about their records with nothing to back it still goes.
+def test_a_source_that_was_never_retrieved_is_refused(services):
+    # The one thing this can actually detect: a reply pointing at evidence that
+    # does not exist.
     record = add_task(services, "now", "Chemistry revision", TODAY)
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
-    use(services, GeneratedAnswer(answer="You have nine tasks due tomorrow."))
+    use(services, GeneratedAnswer(
+        answer="You have nine tasks due tomorrow.", citation_ids=["S404"],
+    ))
 
     answer, citations, disclosure, _ = services.copilot.answer(
         "alice", "chemistry", today=TODAY
@@ -541,7 +543,27 @@ def test_an_ungrounded_claim_is_still_replaced(services):
 
     assert disclosure.abstained
     assert citations == []
-    assert "source-valid" in answer
+    assert "couldn't back that up" in answer
+
+
+def test_an_uncited_answer_is_allowed_through(services):
+    # A deliberate narrowing, and a real loss of coverage. It used to abstain
+    # whenever a search matched and the reply cited nothing, on the reasoning
+    # that retrieval was the only evidence. The briefing carries the whole
+    # planner every turn now, so an uncited answer is usually drawn from it --
+    # and the old rule answered "Hello" with a refusal, because nearest
+    # neighbour search always matches something and a greeting has nothing to
+    # cite. What is given up: prose that claims something false while citing
+    # nothing now reaches the student. Citing S1 and then saying anything at
+    # all always did too, so the rule was never the protection it looked like.
+    record = add_task(services, "now", "Chemistry revision", TODAY)
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+    use(services, GeneratedAnswer(answer="You have nine tasks due tomorrow."))
+
+    answer, _, disclosure, _ = services.copilot.answer("alice", "chemistry", today=TODAY)
+
+    assert not disclosure.abstained
+    assert answer == "You have nine tasks due tomorrow."
 
 
 def test_the_briefing_alone_does_not_turn_a_general_question_into_a_refusal(services):
@@ -678,19 +700,16 @@ def test_a_step_reaches_the_client_as_its_own_event(services, client, auth):
     assert "event: final" in body
 
 
-def test_a_long_narration_cannot_hide_behind_the_clarification_flag(services):
-    # The exemption is for questions back. Setting the flag on a page of prose
-    # about their records would otherwise walk straight past the guard.
+def test_a_greeting_is_not_refused_for_having_nothing_to_cite(services):
+    # The reported fault, from a phone: "Hello" came back as a refusal.
     record = add_task(services, "now", "Chemistry revision", TODAY)
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
-    use(services, GeneratedAnswer(
-        answer="You have nine tasks due tomorrow. " * 30, needs_clarification=True,
-    ))
+    use(services, GeneratedAnswer(answer="Hi. What would you like to look at?"))
 
-    answer, _, disclosure, _ = services.copilot.answer("alice", "chemistry", today=TODAY)
+    answer, _, disclosure, _ = services.copilot.answer("alice", "Hello", today=TODAY)
 
-    assert disclosure.abstained
-    assert "source-valid" in answer
+    assert not disclosure.abstained
+    assert answer == "Hi. What would you like to look at?"
 
 
 def test_a_reply_with_nothing_in_it_says_so_rather_than_showing_an_empty_bubble(services):
@@ -988,3 +1007,45 @@ def test_the_cutoff_is_deployment_configurable(services):
     )
 
     assert strict.retrieve("alice", "chemistry revision")[0] == []
+
+
+def test_a_greeting_does_not_arrive_carrying_a_change(services, client, auth):
+    # Strict schema requires the action field to be present, and the model fills
+    # it rather than leaving it null. Live, "Hello" came back carrying a note
+    # with no title whose body was the greeting itself, which could not be
+    # prepared and so printed "one thing I could not set up" under the hello.
+    use(services, GeneratedAnswer(
+        answer="Hello! What would you like to do?",
+        action=GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="", body="Hello! What would you like to do?",
+        ),
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "Hello", "request_id": "greeting-0001",
+    }).json()
+
+    assert body["answer"] == "Hello! What would you like to do?"
+    assert body["proposals"] == []
+    assert "could not set up" not in body["answer"]
+
+
+def test_an_edit_with_no_record_is_dropped_rather_than_reported(services):
+    generated = GeneratedAnswer(answer="Sure.", action=GeneratedAction(
+        operation=ProposalOperation.reschedule, entity_type=EntityType.task,
+        due_date="2026-09-11",
+    ))
+    assert generated.all_actions() == []
+
+
+def test_a_real_change_is_still_kept(services):
+    # The filter must only catch what carries nothing at all.
+    named = GeneratedAnswer(actions=[GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.task, title="Essay",
+    )])
+    targeted = GeneratedAnswer(actions=[GeneratedAction(
+        operation=ProposalOperation.complete, entity_type=EntityType.task, record_id="t1",
+    )])
+    assert len(named.all_actions()) == 1
+    assert len(targeted.all_actions()) == 1

@@ -49,12 +49,6 @@ DEFAULT_TOOL_ROUNDS = 2
 # the deadline.
 DEFAULT_DEADLINE_SECONDS = 90
 
-# A clarifying question is exempt from the citation guard, so the exemption is
-# bounded by length: "what should I call it?" is short by nature, and a page of
-# ungrounded narration about the student's records is not a question however it
-# is labelled.
-CLARIFICATION_LIMIT = 400
-
 # Shown when a round produces neither prose nor a change. An empty bubble reads
 # as a crash, and the student has nothing to act on either way.
 EMPTY_ANSWER = "I couldn't put that together. Ask me again, or narrow it down a little."
@@ -326,31 +320,41 @@ class CopilotService:
         answer = answer or EMPTY_ANSWER
         cited = list(dict.fromkeys([*generated.citation_ids, *inline]))
         used = [allowed[cid] for cid in cited if cid in allowed]
-        searched = [cid for cid in session.search_citation_ids if cid in allowed]
-        clarifying = generated.needs_clarification and len(answer) <= CLARIFICATION_LIMIT
-        # The citation guard exists so the model cannot narrate the student's
-        # records without evidence. It applies only when a search actually
-        # matched something and the reply claims to be about it. A proposed
-        # change has no record to misquote, a question back is not a claim at
-        # all, and the briefing is volunteered rather than asked for, so none of
-        # those may trip it.
-        if searched and not used and not actions and not clarifying:
+        # Citing an ID that was never issued is the one thing this can actually
+        # detect, and it is the real fabrication: a reply pointing at evidence
+        # that does not exist.
+        invented = [cid for cid in cited if cid not in allowed]
+        # It used to abstain whenever a search matched and the reply cited
+        # nothing, on the reasoning that retrieval was the only evidence there
+        # was. The briefing changed that: the whole planner is in front of the
+        # model every turn, so an uncited answer is usually one drawn from the
+        # briefing, or not about records at all. Live, that rule answered
+        # "Hello" with "I couldn't produce a source-valid answer", because
+        # nearest-neighbour search always matches something and a greeting has
+        # nothing to cite. Narrowing it gives up checking that prose is
+        # supported -- which it never really did, since citing S1 was enough to
+        # pass while saying anything at all.
+        if invented and not used and not actions and not generated.needs_clarification:
             self.audit.record(uid, "generation", "abstained", {
                 "reason": "invalid_citations",
                 "provider": getattr(self.generator, "provider", "unknown"),
             })
-            refusal = "I found related records, but I couldn't produce a source-valid answer."
+            refusal = (
+                "I couldn't back that up against your records. Ask me again and I'll "
+                "look properly."
+            )
             disclosure = RetrievalDisclosure(
                 attempted=True, result_count=len(citations),
                 entity_types=sorted({c.entity_type for c in citations}, key=lambda item: item.value),
-                abstained=True, reason="The generated answer did not cite a valid retrieved record.",
+                abstained=True,
+                reason="The answer pointed at a source that was never retrieved.",
             )
             return refusal, [], disclosure
         self.audit.record(uid, "generation", metadata={
             "citations": len(used),
             "provider": getattr(self.generator, "provider", "unknown"),
             "trains_on_prompts": bool(getattr(self.generator, "trains_on_prompts", False)),
-            "clarifying": clarifying,
+            "clarifying": bool(generated.needs_clarification),
             "actions": len(actions),
             "empty_answer": not generated.answer.strip(),
         })
