@@ -209,6 +209,15 @@ class GeneratedAnswer(StrictModel):
         """
         merged: Dict[Any, GeneratedAction] = {}
         for action in [*self.actions, *([self.action] if self.action else [])]:
+            # Nothing identifiable, so it cannot become any change: a create
+            # with no name, or an edit with no record. Strict schema requires
+            # the field to be present, and the model fills it rather than
+            # leaving it null, so a greeting arrives carrying a titleless note
+            # whose body is the greeting itself. Dropped in silence, because it
+            # was never a request: reporting it produced "one thing I could not
+            # set up" underneath "Hello".
+            if not (action.title or "").strip() and not action.record_id:
+                continue
             if action.record_id:
                 key: Any = (action.operation, action.entity_type, action.record_id)
             else:

@@ -182,7 +182,7 @@ def test_copilot_rejects_generator_citations_not_retrieved(services):
     answer, citations, disclosure, _ = services.copilot.answer("alice", "chemistry")
     assert disclosure.abstained
     assert citations == []
-    assert "source-valid" in answer
+    assert "couldn't back that up" in answer
 
 
 def test_untrusted_content_is_delimited_and_flagged(services):
