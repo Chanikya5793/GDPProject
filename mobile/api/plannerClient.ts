@@ -122,8 +122,27 @@ async function loadCache(kind: Kind): Promise<PlannerItem[]> {
   return getItem<PlannerItem[]>(cacheKey(kind), []);
 }
 
+const dataListeners = new Set<() => void>();
+
+/**
+ * Subscribe to any change in the cached planner records.
+ *
+ * Every create, edit, delete and refresh lands in `saveCache`, which makes this
+ * the one place that knows the records moved. Notification scheduling hangs off
+ * it so an alert cannot drift out of step with the task it belongs to — no
+ * screen has to remember to keep it in sync.
+ */
+export function onPlannerDataChanged(listener: () => void): () => void {
+  dataListeners.add(listener);
+  return () => { dataListeners.delete(listener); };
+}
+
 async function saveCache(kind: Kind, items: PlannerItem[]): Promise<void> {
   await setItem(cacheKey(kind), items);
+  // Listeners are advisory; one throwing must not fail the write that caused it.
+  for (const listener of dataListeners) {
+    try { listener(); } catch { /* ignore */ }
+  }
 }
 
 async function send(operation: OutboxOperation): Promise<ServerRecord | undefined> {

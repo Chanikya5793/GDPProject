@@ -64,7 +64,8 @@
         {
           "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device."
         }
-      ]
+      ],
+      "./plugins/withoutPushEntitlement"
     ],
     "experiments": {
       "typedRoutes": true

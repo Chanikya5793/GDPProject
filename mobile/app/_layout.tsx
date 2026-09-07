@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { ToastProvider } from '@/components/Toast';
+import NotificationSync from '@/components/NotificationSync';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -25,6 +26,7 @@ export default function RootLayout() {
     <SettingsProvider>
       <AuthProvider>
         <ToastProvider>
+          <NotificationSync />
           <RootLayoutNav />
         </ToastProvider>
       </AuthProvider>
