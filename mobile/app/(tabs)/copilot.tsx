@@ -31,6 +31,7 @@ const KEPT_MESSAGES = 60;
 const IOS_TAB_BAR_HEIGHT = 49;
 import { toHistory } from '@/utils/chatHistory';
 import { seriesSummary } from '@/utils/series';
+import { changeLines, changeSummary } from '@/utils/changePreview';
 
 interface Citation {
   citation_id: string;
@@ -366,9 +367,15 @@ export default function CopilotScreen() {
       {seriesSummary(proposal) ? (
         <Text style={styles.proposalSeries}>↻ {seriesSummary(proposal)}</Text>
       ) : null}
-      <View style={styles.previewRow}>
-        <View style={styles.preview}><Text style={styles.previewLabel}>BEFORE</Text><Text style={styles.previewText}>{JSON.stringify(proposal.before, null, 2) || 'None'}</Text></View>
-        <View style={styles.preview}><Text style={styles.previewLabel}>AFTER</Text><Text style={styles.previewText}>{JSON.stringify(proposal.after, null, 2) || 'Deleted'}</Text></View>
+      <View style={styles.changeList}>
+        {changeLines(proposal).map(line => (
+          <View key={line.label} style={styles.changeRow}>
+            <Text style={styles.changeLabel}>{line.label}</Text>
+            {line.from !== undefined && <Text style={styles.changeFrom}>{line.from}</Text>}
+            {line.from !== undefined && <Text style={styles.changeArrow}>→</Text>}
+            <Text style={styles.changeTo}>{line.to}</Text>
+          </View>
+        ))}
       </View>
       {proposal.status === 'pending' && (
         <View style={styles.actions}>
@@ -401,7 +408,7 @@ export default function CopilotScreen() {
         </View>
         {proposals.map(item => (
           <Text key={item.proposal_id} style={styles.proposalSummaryLine} numberOfLines={1}>
-            {item.operation} · {String((item.after || item.before || {}).title || item.entity_type)}
+            {item.operation} · {changeSummary(item)}
             {item.status !== 'pending' ? ` · ${item.status}` : ''}
           </Text>
         ))}
@@ -612,6 +619,12 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     proposalGroupHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     proposalToggle: { color: accent.primary, fontSize: 11, fontWeight: '700' },
     proposalSummaryLine: { color: colors.textSecondary, fontSize: 11 },
+    changeList: { gap: 4 },
+    changeRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' },
+    changeLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.4, minWidth: 52, textTransform: 'uppercase' },
+    changeFrom: { color: colors.textMuted, fontSize: 12, textDecorationLine: 'line-through' },
+    changeArrow: { color: accent.primary, fontSize: 12 },
+    changeTo: { color: colors.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
     previewRow: { flexDirection: 'row', gap: 6 }, preview: { flex: 1, backgroundColor: colors.surfaceVariant, padding: 6, borderRadius: 6, maxHeight: 140 },
     previewLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700' }, previewText: { color: colors.text, fontSize: 9 },
     actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },

@@ -150,16 +150,39 @@ class IndexingService:
         return deleted
 
 
+# How far a record may sit from the question and still count as related.
+# Cosine distance: 0 is the same direction, 1 is unrelated, 2 is opposite.
+#
+# Without this, nearest-neighbour search returns its k nearest whatever the
+# distance, so every message "matched" records -- including "Hello", which then
+# tripped the citation guard and was answered with "I couldn't produce a
+# source-valid answer". A greeting has nothing to cite because nothing in the
+# planner is about it.
+#
+# Measured against the embeddings the tests use: a direct match sits at 0.08, a
+# related question at 0.44, a greeting at 0.81. 0.7 separates them with room on
+# both sides. It could not be measured against the deployed embedding model from
+# here, which is why it is a setting rather than a constant.
+#
+# Being strict costs little now. Retrieval used to be the only thing the model
+# saw, so dropping a loose match lost information; the briefing carries the whole
+# planner on every turn, so a record missed here is still in front of the model.
+# A wrong record in the prompt is worse than a missing one.
+DEFAULT_MAX_DISTANCE = 0.7
+
+
 class RetrievalService:
     def __init__(
         self, repository: PlannerRepository, vector_store: VectorStore,
         embeddings: EmbeddingClient, audit: AuditLogger, limit: int = 5,
+        max_distance: float = DEFAULT_MAX_DISTANCE,
     ):
         self.repository = repository
         self.vector_store = vector_store
         self.embeddings = embeddings
         self.audit = audit
         self.limit = limit
+        self.max_distance = max_distance
 
     def retrieve(self, uid: str, query: str) -> Tuple[List[PlannerRecord], List[Citation]]:
         settings = self.repository.get_privacy(uid)
@@ -177,6 +200,8 @@ class RetrievalService:
         records: List[PlannerRecord] = []
         citations: List[Citation] = []
         for index, hit in enumerate(hits, start=1):
+            if hit.distance > self.max_distance:
+                continue
             if hit.entity_type not in settings.indexed_entity_types:
                 continue
             try:
