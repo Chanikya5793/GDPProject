@@ -65,7 +65,28 @@
           "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device."
         }
       ],
-      "./plugins/withoutPushEntitlement"
+      "./plugins/withoutPushEntitlement",
+      "./plugins/withSiriShortcuts",
+      [
+        "expo-widgets",
+        {
+          "bundleIdentifier": "com.nwmissouri.studentplanner.widgets",
+          "groupIdentifier": "group.com.nwmissouri.studentplanner",
+          "widgets": [
+            {
+              "name": "DueToday",
+              "displayName": "Due Today",
+              "description": "How much is due today, and when the next thing is.",
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryRectangular",
+                "accessoryInline"
+              ]
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

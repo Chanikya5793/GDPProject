@@ -24,7 +24,8 @@ const LEAD_CHOICES: { value: number; label: string }[] = [
 type Permission = 'unknown' | 'granted' | 'denied';
 
 /**
- * Alerts, and the truthful version of whether they are on.
+ * Alerts and the home screen widget, and the truthful version of whether they
+ * are on.
  *
  * The app's own switch is only half the answer: iOS can be refusing to deliver
  * anything regardless of what the switch says, and a settings screen that shows
@@ -76,11 +77,19 @@ export default function NotificationsSection() {
     updateSetting('reminderDefault', minutes);
   }, [updateSetting]);
 
+  // Deliberately warned about rather than confirmed away: the cost is that
+  // titles leave the encrypted store for a container the widget process can
+  // read, and the student is the only one who can weigh that.
+  const setWidgetTitles = useCallback((value: boolean) => {
+    updateSetting('widgetShowTitles', value);
+    if (value) toast.show('Widget titles are visible on the Lock Screen', 'info');
+  }, [updateSetting, toast]);
+
   return (
     <View style={s.section}>
       <View style={s.sectionHeader}>
         <Ionicons name="notifications-outline" size={18} color={accent.primary} />
-        <Text style={s.sectionTitle}>Notifications</Text>
+        <Text style={s.sectionTitle}>Notifications &amp; Widget</Text>
       </View>
       <Text style={s.blurb}>
         Scheduled on this device from what is already stored here. Nothing about
@@ -143,10 +152,29 @@ export default function NotificationsSection() {
         </View>
       </View>
 
+      <View style={s.row}>
+        <View style={s.rowInfo}>
+          <Text style={s.rowLabel}>Show Titles on the Widget</Text>
+          <Text style={s.rowDesc}>
+            Off by default, the widget shows only counts and times. Turning this
+            on puts what a task is called on the home screen — and on the Lock
+            Screen, which is readable without unlocking the phone.
+          </Text>
+        </View>
+        <Switch
+          value={settings.widgetShowTitles}
+          onValueChange={setWidgetTitles}
+          trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+          thumbColor={Platform.OS === 'android'
+            ? (settings.widgetShowTitles ? accent.light : '#f4f3f4')
+            : undefined}
+        />
+      </View>
+
       <Text style={s.footnote}>
         iOS holds a limited number of pending alerts, so the nearest ones are
         scheduled first and the rest follow as those pass. Signing out clears
-        every alert from this device.
+        every alert and empties the widget.
       </Text>
     </View>
   );

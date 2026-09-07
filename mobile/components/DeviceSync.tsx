@@ -12,23 +12,26 @@ import {
   syncScheduledNotifications,
   onNotificationTapped,
 } from '@/api/notifications';
+import { clearWidget, syncWidget } from '@/api/widgets';
 
 const ASKED_KEY = 'nw_notifications_asked';
 
 /**
- * Keeps the phone's pending alerts in step with the planner.
+ * Keeps what the phone shows outside the app — pending alerts and the home
+ * screen widget — in step with the planner.
  *
  * Renders nothing. It exists as a component rather than a module so it can sit
  * inside the auth and settings providers and see the same signed-in user and
  * the same preferences the screens do.
  *
- * Rescheduling is driven by three things and nothing else: a change to the
- * cached records, a change to the alert settings, and the app coming back to
- * the foreground. The last one matters more than it looks — the plan is capped
- * at what iOS will hold, so returning after a few days is when the alerts that
- * were pushed past the cap get their turn.
+ * Both surfaces are driven by the same three things and nothing else: a change
+ * to the cached records, a change to the settings that shape them, and the app
+ * coming back to the foreground. The last one matters more than it looks. Both
+ * surfaces are scheduled ahead — alerts because iOS holds only so many pending,
+ * the widget because no JavaScript of ours runs once the app is closed — so
+ * foregrounding is when anything beyond that horizon gets its turn.
  */
-export default function NotificationSync() {
+export default function DeviceSync() {
   const { user, loading } = useAuth();
   const { settings } = useSettings();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,6 +48,7 @@ export default function NotificationSync() {
       // Signed out. The system queue is not scoped to a user, so alerts naming
       // this student's work must go before anyone else can sign in.
       cancelAllNotifications().catch(() => {});
+      clearWidget();
       return;
     }
 
@@ -66,7 +70,9 @@ export default function NotificationSync() {
     const sync = () => {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
-        if (active) syncScheduledNotifications().catch(() => {});
+        if (!active) return;
+        syncScheduledNotifications().catch(() => {});
+        syncWidget().catch(() => {});
       }, 400);
     };
 
@@ -82,7 +88,7 @@ export default function NotificationSync() {
       stopWatchingData();
       subscription.remove();
     };
-  }, [user, loading, settings.dueDateAlerts, settings.reminderDefault]);
+  }, [user, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
 
   // A tapped alert should land on the thing it was about, not the home screen.
   useEffect(() => onNotificationTapped(payload => {
