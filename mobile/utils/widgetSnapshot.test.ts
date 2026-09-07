@@ -3,11 +3,12 @@ import { Reminder, Task } from '@/types';
 import {
   buildWidgetSnapshot,
   buildWidgetTimeline,
+  MAX_ITEMS,
   MAX_TIMELINE_ENTRIES,
   MAX_TITLE_LENGTH,
 } from './widgetSnapshot';
 
-const NOW = new Date(2026, 8, 7, 8, 0).getTime(); // 2026-09-07, 08:00 local
+const NOW = new Date(2026, 8, 7, 8, 0).getTime(); // Mon 2026-09-07, 08:00 local
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -39,54 +40,88 @@ describe('buildWidgetSnapshot', () => {
     expect(result.overdue).toBe(0);
   });
 
-  it('names the next moment left today', () => {
-    expect(snap([task()], [reminder()]).nextAt).toBe('2:00 PM');
+  it('names the next moment left today as a timestamp a layout can count down from', () => {
+    expect(snap([task()], [reminder()]).nextAt).toBe(new Date(2026, 8, 7, 14, 0).getTime());
   });
 
-  it('leaves nextAt empty once the day is done', () => {
+  it('leaves nextAt at zero once the day is done', () => {
     const done = buildWidgetSnapshot({
       tasks: [task()], reminders: [], showTitles: false,
       now: new Date(2026, 8, 7, 20, 0).getTime(),
     });
-    expect(done.nextAt).toBe('');
+    expect(done.nextAt).toBe(0);
     expect(done.dueToday).toBe(1);
   });
 
-  it('withholds titles unless they are opted in', () => {
-    expect(snap([task()]).nextTitle).toBe('');
-    expect(snap([task()], [], true).nextTitle).toBe('Essay draft');
+  it('withholds every title unless they are allowed', () => {
+    const hidden = snap([task()], [reminder()]);
+    expect(hidden.items.every(item => item.title === '')).toBe(true);
+    expect(hidden.titlesAllowed).toBe(false);
+
+    const shown = snap([task()], [reminder()], true);
+    expect(shown.items.map(item => item.title)).toContain('Essay draft');
+    expect(shown.titlesAllowed).toBe(true);
   });
 
-  it('truncates an opted-in title rather than letting it run', () => {
+  it('truncates an allowed title rather than letting it run', () => {
     const long = 'Comparative analysis of distributed consensus protocols';
-    const result = snap([task({ title: long })], [], true);
-    expect(result.nextTitle.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
-    expect(result.nextTitle.endsWith('…')).toBe(true);
+    const title = snap([task({ title: long })], [], true).items[0].title;
+    expect(title.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+    expect(title.endsWith('…')).toBe(true);
   });
 
-  it('counts past days as overdue, not as due today', () => {
-    const result = snap([task({ id: 'old', dueDate: '2026-09-01' })]);
+  it('separates overdue from due today and counts what is already done', () => {
+    const result = snap([
+      task({ id: 'old', dueDate: '2026-09-01' }),
+      task({ id: 'fin', completed: true }),
+      task(),
+    ]);
     expect(result.overdue).toBe(1);
-    expect(result.dueToday).toBe(0);
+    expect(result.dueToday).toBe(1);
+    expect(result.doneToday).toBe(1);
+    expect(result.totalToday).toBe(2);
   });
 
-  it('ignores completed tasks and undated records', () => {
-    expect(snap([task({ completed: true })]).empty).toBe(true);
-    expect(snap([task({ dueDate: '' })]).empty).toBe(true);
+  it('leads the published list with overdue work', () => {
+    const result = snap([task({ id: 'old', dueDate: '2026-09-02' }), task()]);
+    expect(result.items[0].id).toBe('old');
   });
 
-  it('reports an empty planner so the widget can say so', () => {
+  it('carries category and priority so a widget can filter on them', () => {
+    const [item] = snap([task({ category: 'Exam', priority: 'high' })]).items;
+    expect(item.category).toBe('Exam');
+    expect(item.priority).toBe('high');
+    expect(item.kind).toBe('task');
+  });
+
+  it('caps how many items are published', () => {
+    const many = Array.from({ length: 25 }, (_, index) => task({ id: `t${index}` }));
+    expect(snap(many).items.length).toBeLessThanOrEqual(MAX_ITEMS);
+  });
+
+  it('builds a seven-day load starting today', () => {
+    const result = snap([task(), task({ id: 't2', dueDate: '2026-09-09' })]);
+    expect(result.days).toHaveLength(7);
+    expect(result.days[0].isToday).toBe(true);
+    expect(result.days[0].label).toBe('M');
+    expect(result.days[0].count).toBe(1);
+    expect(result.days[2].count).toBe(1);
+    expect(result.days[1].count).toBe(0);
+  });
+
+  it('reports an empty planner so a widget can say so', () => {
     const result = snap([], []);
-    expect(result).toEqual({ dueToday: 0, overdue: 0, nextAt: '', nextTitle: '', empty: true });
+    expect(result.empty).toBe(true);
+    expect(result.items).toEqual([]);
   });
 
-  it('does not treat tomorrow as today', () => {
-    expect(snap([task({ dueDate: '2026-09-08' })]).dueToday).toBe(0);
+  it('skips records with no date at all', () => {
+    expect(snap([task({ dueDate: '' })], [reminder({ date: '' })]).empty).toBe(true);
   });
 });
 
 describe('buildWidgetTimeline', () => {
-  it('starts now and crosses midnight, so the count rolls over unattended', () => {
+  it('starts now and crosses midnight, so counts roll over unattended', () => {
     const entries = buildWidgetTimeline({
       tasks: [task()], reminders: [], now: NOW, showTitles: false,
     });
@@ -100,9 +135,9 @@ describe('buildWidgetTimeline', () => {
     const entries = buildWidgetTimeline({
       tasks: [task()], reminders: [reminder()], now: NOW, showTitles: false,
     });
-    expect(entries[0].props.nextAt).toBe('2:00 PM');
+    expect(entries[0].props.nextAt).toBe(new Date(2026, 8, 7, 14, 0).getTime());
     const afterTwo = entries.find(entry => entry.date.getHours() === 14);
-    expect(afterTwo!.props.nextAt).toBe('5:00 PM');
+    expect(afterTwo!.props.nextAt).toBe(new Date(2026, 8, 7, 17, 0).getTime());
   });
 
   it('returns entries in order and within the cap', () => {
