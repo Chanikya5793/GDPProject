@@ -12,7 +12,8 @@ import {
   syncScheduledNotifications,
   onNotificationTapped,
 } from '@/api/notifications';
-import { clearWidget, syncWidget } from '@/api/widgets';
+import { clearWidget, onWidgetAction, syncWidget } from '@/api/widgets';
+import { updateTask } from '@/api/tasks';
 
 const ASKED_KEY = 'nw_notifications_asked';
 
@@ -89,6 +90,17 @@ export default function DeviceSync() {
       subscription.remove();
     };
   }, [user, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
+
+  // A tick box tapped on a widget. The widget has already redrawn itself; this
+  // is what makes it true. Taps made while the app was closed never arrive —
+  // the ordinary refresh above rebuilds every timeline from the records and
+  // quietly puts the box back.
+  useEffect(() => {
+    if (!user) return;
+    return onWidgetAction(async recordId => {
+      await updateTask(recordId, { completed: true });
+    });
+  }, [user]);
 
   // A tapped alert should land on the thing it was about, not the home screen.
   useEffect(() => onNotificationTapped(payload => {

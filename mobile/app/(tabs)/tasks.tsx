@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { draftFromLink, wantsNewRecord } from '@/utils/draftFromLink';
+import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -104,18 +104,25 @@ export default function TasksScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'active' | 'completed' | 'all'>('active');
   const [modalVisible, setModalVisible] = useState(false);
-  // Seeded by a `?new=` link — Siri, the Shortcuts app, or a tapped alert. The
-  // parameter is cleared once consumed, or navigating back here would reopen
+  // Seeded by a `?new=` link — Siri, the Shortcuts app, or a tapped alert,
+  // which may also carry a due date, priority, category and notes. The
+  // parameters are cleared once consumed, or navigating back here would reopen
   // the form on a phrase the student already dealt with.
-  const [draftTitle, setDraftTitle] = useState('');
-  const params = useLocalSearchParams<{ new?: string }>();
+  const [draft, setDraft] = useState<LinkDraft>(EMPTY_DRAFT);
+  const params = useLocalSearchParams<{
+    new?: string; due?: string; at?: string;
+    priority?: string; category?: string; notes?: string;
+  }>();
 
   useEffect(() => {
     if (!wantsNewRecord(params.new)) return;
-    setDraftTitle(draftFromLink(params.new));
+    setDraft(fullDraftFromLink(params));
     setEditingTask(null);
     setModalVisible(true);
-    router.setParams({ new: undefined });
+    router.setParams({
+      new: undefined, due: undefined, at: undefined,
+      priority: undefined, category: undefined, notes: undefined,
+    });
   }, [params.new]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
@@ -446,7 +453,7 @@ export default function TasksScreen() {
       {/* Task create/edit modal */}
       <TaskModal
         visible={modalVisible}
-        draftTitle={draftTitle}
+        draft={draft}
         task={editingTask}
         categories={categories}
         colors={colors}
@@ -455,7 +462,7 @@ export default function TasksScreen() {
         defaultPriority={settings.defaultPriority}
         defaultCategory={settings.defaultCategory}
         onSave={handleSave}
-        onClose={() => { setModalVisible(false); setDraftTitle(''); setEditingTask(null); }}
+        onClose={() => { setModalVisible(false); setDraft(EMPTY_DRAFT); setEditingTask(null); }}
       />
 
       {/* Reschedule modal */}
@@ -632,13 +639,13 @@ function RescheduleModal({
 // ─── Task create/edit modal ──────────────────────────────────────────────────
 
 function TaskModal({
-  visible, task, draftTitle, categories, colors, accent, appearance, defaultPriority, defaultCategory,
+  visible, task, draft, categories, colors, accent, appearance, defaultPriority, defaultCategory,
   onSave, onClose,
 }: {
   visible: boolean;
   task: Task | null;
-  /** Text a link arrived with, used only when creating. */
-  draftTitle: string;
+  /** What a link arrived with, used only when creating. */
+  draft: LinkDraft;
   categories: Category[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
@@ -658,13 +665,13 @@ function TaskModal({
 
   useEffect(() => {
     if (visible) {
-      setTitle(task?.title || draftTitle);
-      setDueDate(task?.dueDate || localDateStr());
-      setDueTime(task?.dueTime || '');
+      setTitle(task?.title || draft.title);
+      setDueDate(task?.dueDate || draft.date || localDateStr());
+      setDueTime(task?.dueTime || draft.time);
       setApprovedForAi(task?._approvedForAi ?? true);
-      setPriority((task?.priority || defaultPriority) as Task['priority']);
-      setCategory(task?.category || defaultCategory);
-      setNotes(task?.notes || '');
+      setPriority((task?.priority || draft.priority || defaultPriority) as Task['priority']);
+      setCategory(task?.category || draft.category || defaultCategory);
+      setNotes(task?.notes || draft.notes);
     }
   }, [visible, task]);
 
