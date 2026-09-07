@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat, Plus, MessageSquare, Pencil } from 'lucide-react'
 import { useAi } from '../context/AiContext'
+import { changeLines, changeSummary } from '../utils/changePreview'
 import '../css/AiSidebar.css'
 
 const SUGGESTIONS = [
@@ -125,10 +126,16 @@ export function ProposalCard({ proposal, onConfirm, onReject }) {
           <Repeat size={12} /> {seriesSummary(proposal)}
         </div>
       )}
-      <div className="ai-proposal-preview">
-        <div><span>Before</span><pre>{proposal.before ? JSON.stringify(proposal.before, null, 2) : 'Does not exist'}</pre></div>
-        <div><span>After</span><pre>{proposal.after ? JSON.stringify(proposal.after, null, 2) : 'Deleted'}</pre></div>
-      </div>
+      <ul className="ai-proposal-change">
+        {changeLines(proposal).map(line => (
+          <li key={line.label}>
+            <span className="ai-change-label">{line.label}</span>
+            {line.from !== undefined && <span className="ai-change-from">{line.from}</span>}
+            {line.from !== undefined && <span className="ai-change-arrow" aria-hidden="true">→</span>}
+            <span className="ai-change-to">{line.to}</span>
+          </li>
+        ))}
+      </ul>
       {error && <div className="ai-proposal-error">{error}</div>}
       {proposal.status === 'pending' && (
         <div className="ai-proposal-actions">
@@ -182,7 +189,7 @@ export function ProposalList({ proposals, onConfirm, onReject, onConfirmAll, onR
         {proposals.map(proposal => (
           <li key={proposal.proposal_id}>
             <span className="ai-proposal-op">{proposal.operation}</span>
-            <span>{proposal.after?.title || proposal.before?.title || proposal.entity_type}</span>
+            <span>{changeSummary(proposal)}</span>
             {proposal.status !== 'pending' && (
               <span className="ai-proposal-status">{proposal.status}</span>
             )}

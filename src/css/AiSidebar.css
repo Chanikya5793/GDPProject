@@ -704,3 +704,11 @@
 }
 
 .ai-thread-action.danger { color: var(--red); }
+
+/* The change as a person reads it, not as it is stored. */
+.ai-proposal-change { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ai-proposal-change li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.ai-change-label { min-width: 58px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.ai-change-from { color: var(--muted); text-decoration: line-through; }
+.ai-change-arrow { color: var(--green); }
+.ai-change-to { font-weight: 600; }

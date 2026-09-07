@@ -17,10 +17,14 @@ describe('copilot evidence and confirmation UI', () => {
     const confirm = vi.fn()
     render(<ProposalCard proposal={{
       proposal_id: 'p1', operation: 'complete', entity_type: 'task', status: 'pending',
-      rationale: 'Requested by user', before: { completed: false }, after: { completed: true },
+      rationale: 'Requested by user',
+      before: { title: 'Lab report', completed: false },
+      after: { title: 'Lab report', completed: true },
     }} onConfirm={confirm} onReject={vi.fn()} />)
-    expect(screen.getByText('Before')).toBeInTheDocument()
-    expect(screen.getByText('After')).toBeInTheDocument()
+    // The change reads as what moves, not as the stored record.
+    expect(screen.getByText('Done')).toBeInTheDocument()
+    expect(screen.getByText('yes')).toBeInTheDocument()
+    expect(screen.queryByText(/completed/)).not.toBeInTheDocument()
     expect(confirm).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Confirm change/ }))
     expect(confirm).toHaveBeenCalledTimes(1)
@@ -115,7 +119,7 @@ describe('a batch of changes', () => {
   it('still shows a single change as its own card, not a batch', () => {
     render(<ProposalList proposals={many(1)} onConfirm={vi.fn()} onReject={vi.fn()}
       onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
-    expect(screen.getByText('Before')).toBeInTheDocument()
+    expect(screen.getByText('Adds')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Confirm all/ })).not.toBeInTheDocument()
   })
 
@@ -130,9 +134,9 @@ describe('a batch of changes', () => {
   it('opens up so each change can still be checked one by one', () => {
     render(<ProposalList proposals={many(3)} onConfirm={vi.fn()} onReject={vi.fn()}
       onConfirmAll={vi.fn()} onRejectAll={vi.fn()} />)
-    expect(screen.queryByText('Before')).not.toBeInTheDocument()
+    expect(screen.queryByText('Adds')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Review each/ }))
-    expect(screen.getAllByText('Before')).toHaveLength(3)
+    expect(screen.getAllByText('Adds')).toHaveLength(3)
   })
 })
 
