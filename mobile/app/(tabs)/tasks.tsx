@@ -3,7 +3,9 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   Modal, RefreshControl, Alert, LayoutAnimation, Switch,
 } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { draftFromLink, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -102,6 +104,19 @@ export default function TasksScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'active' | 'completed' | 'all'>('active');
   const [modalVisible, setModalVisible] = useState(false);
+  // Seeded by a `?new=` link — Siri, the Shortcuts app, or a tapped alert. The
+  // parameter is cleared once consumed, or navigating back here would reopen
+  // the form on a phrase the student already dealt with.
+  const [draftTitle, setDraftTitle] = useState('');
+  const params = useLocalSearchParams<{ new?: string }>();
+
+  useEffect(() => {
+    if (!wantsNewRecord(params.new)) return;
+    setDraftTitle(draftFromLink(params.new));
+    setEditingTask(null);
+    setModalVisible(true);
+    router.setParams({ new: undefined });
+  }, [params.new]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
   const [autoBalanced, setAutoBalanced] = useState<RescheduleSuggestion[] | null>(null);
@@ -431,6 +446,7 @@ export default function TasksScreen() {
       {/* Task create/edit modal */}
       <TaskModal
         visible={modalVisible}
+        draftTitle={draftTitle}
         task={editingTask}
         categories={categories}
         colors={colors}
@@ -439,7 +455,7 @@ export default function TasksScreen() {
         defaultPriority={settings.defaultPriority}
         defaultCategory={settings.defaultCategory}
         onSave={handleSave}
-        onClose={() => { setModalVisible(false); setEditingTask(null); }}
+        onClose={() => { setModalVisible(false); setDraftTitle(''); setEditingTask(null); }}
       />
 
       {/* Reschedule modal */}
@@ -616,10 +632,13 @@ function RescheduleModal({
 // ─── Task create/edit modal ──────────────────────────────────────────────────
 
 function TaskModal({
-  visible, task, categories, colors, accent, appearance, defaultPriority, defaultCategory, onSave, onClose,
+  visible, task, draftTitle, categories, colors, accent, appearance, defaultPriority, defaultCategory,
+  onSave, onClose,
 }: {
   visible: boolean;
   task: Task | null;
+  /** Text a link arrived with, used only when creating. */
+  draftTitle: string;
   categories: Category[];
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
@@ -639,7 +658,7 @@ function TaskModal({
 
   useEffect(() => {
     if (visible) {
-      setTitle(task?.title || '');
+      setTitle(task?.title || draftTitle);
       setDueDate(task?.dueDate || localDateStr());
       setDueTime(task?.dueTime || '');
       setApprovedForAi(task?._approvedForAi ?? true);

@@ -3,7 +3,9 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   Modal, RefreshControl, Alert, Platform, Switch,
 } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { draftFromLink, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
@@ -39,6 +41,19 @@ export default function RemindersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const [modalVisible, setModalVisible] = useState(false);
+  // Seeded by a `?new=` link — Siri, the Shortcuts app, or a tapped alert. The
+  // parameter is cleared once consumed, or navigating back here would reopen
+  // the form on a phrase the student already dealt with.
+  const [draftTitle, setDraftTitle] = useState('');
+  const params = useLocalSearchParams<{ new?: string }>();
+
+  useEffect(() => {
+    if (!wantsNewRecord(params.new)) return;
+    setDraftTitle(draftFromLink(params.new));
+    setEditingRem(null);
+    setModalVisible(true);
+    router.setParams({ new: undefined });
+  }, [params.new]);
   const [editingRem, setEditingRem] = useState<Reminder | null>(null);
 
   const loadData = useCallback(async () => {
@@ -184,20 +199,25 @@ export default function RemindersScreen() {
 
       <ReminderModal
         visible={modalVisible}
+        draftTitle={draftTitle}
         reminder={editingRem}
         colors={colors}
         accent={accent}
           appearance={appearance}
         onSave={handleSave}
-        onClose={() => { setModalVisible(false); setEditingRem(null); }}
+        onClose={() => { setModalVisible(false); setDraftTitle(''); setEditingRem(null); }}
       />
     </View>
   );
 }
 
-function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, onClose }: {
+function ReminderModal({
+  visible, reminder, draftTitle, colors, accent, appearance, onSave, onClose,
+}: {
   visible: boolean;
   reminder: Reminder | null;
+  /** Text a link arrived with, used only when creating. */
+  draftTitle: string;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
   appearance: ReturnType<typeof useAppTheme>['appearance'];
@@ -212,7 +232,7 @@ function ReminderModal({ visible, reminder, colors, accent, appearance, onSave, 
 
   useEffect(() => {
     if (visible) {
-      setTitle(reminder?.title || '');
+      setTitle(reminder?.title || draftTitle);
       setDate(reminder?.date || localDateStr());
       setTime(reminder?.time || '');
       setApprovedForAi(reminder?._approvedForAi ?? true);
