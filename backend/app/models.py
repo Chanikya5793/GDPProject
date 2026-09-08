@@ -164,11 +164,20 @@ class AiProviderInfo(StrictModel):
     trains_on_prompts: bool
 
 
+ReplyStyle = Literal["quiet", "brief", "normal", "detailed"]
+
+
 class PlannerSettings(StrictModel):
     """Per-user planner tuning. `max_daily_minutes` of None means "defer to the
-    deployment default", so a user who never touches it follows the service."""
+    deployment default", so a user who never touches it follows the service.
+
+    `reply_style` is how much the assistant says. It lives here rather than on
+    the device because the prompt is assembled server-side and the same person
+    should get the same assistant on the web, on their phone, and anywhere else
+    that talks to this API."""
 
     max_daily_minutes: Optional[int] = Field(default=None, ge=15, le=1440)
+    reply_style: ReplyStyle = "brief"
 
 
 class IndexRequest(StrictModel):
@@ -292,6 +301,11 @@ class ChatResponse(StrictModel):
     citations: List[Citation]
     retrieval: RetrievalDisclosure
     proposals: List[ActionProposal] = Field(default_factory=list)
+    # Changes the assistant described but could not express as a proposal, each
+    # already carrying its own reason. A field rather than a paragraph welded
+    # onto the answer: the clients render it as a notice, and a short reply
+    # stays short instead of growing a failure report at the end of it.
+    unavailable: List[str] = Field(default_factory=list)
 
 
 class ConfirmProposalRequest(StrictModel):

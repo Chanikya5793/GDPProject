@@ -11,6 +11,7 @@ import pytest
 from app.ai import GeneratedAction, GeneratedAnswer, ToolName, ToolRequest
 from app.models import (
     EntityType,
+    PlannerSettings,
     PrivacySettings,
     ProposalOperation,
     RecordUpsertRequest,
@@ -679,8 +680,12 @@ def test_changes_that_cannot_be_prepared_are_counted_not_hidden(services, client
     }).json()
 
     assert body["proposals"] == []
-    assert "2 things I could not set up" in body["answer"]
-    assert "Email advisor" in body["answer"] and "Call the library" in body["answer"]
+    # They travel in their own field rather than glued onto the answer, so a
+    # short reply stays short and the client can render them as a notice.
+    assert len(body["unavailable"]) == 2
+    listed = " ".join(body["unavailable"])
+    assert "Email advisor" in listed and "Call the library" in listed
+    assert "could not" not in body["answer"]
 
 
 def test_a_step_reaches_the_client_as_its_own_event(services, client, auth):
@@ -720,9 +725,9 @@ def test_a_reply_with_nothing_in_it_says_so_rather_than_showing_an_empty_bubble(
     assert "couldn't put that together" in answer
 
 
-def test_a_change_described_in_silence_still_gets_a_sentence(services, client, auth):
-    # The prose doubles as the proposal's rationale, so an empty answer would
-    # leave a preview card with nothing above it saying why it is there.
+def test_a_change_described_in_silence_still_says_how_many(services, client, auth):
+    # Silence is a legitimate reply now: the card renders every field and its
+    # own confirm control, so the answer only has to say how much is waiting.
     use(services, GeneratedAnswer(actions=[GeneratedAction(
         operation=ProposalOperation.create, entity_type=EntityType.task,
         title="Draft the essay", due_date="2026-09-04",
@@ -732,8 +737,61 @@ def test_a_change_described_in_silence_still_gets_a_sentence(services, client, a
         "message": "add an essay task for Friday", "request_id": "silent-0001",
     }).json()
 
-    assert "Confirm it and I'll apply it" in body["answer"]
-    assert body["proposals"][0]["rationale"] == body["answer"]
+    assert body["answer"] == "1 change to confirm."
+    # The rationale is built from the action rather than reused from the prose,
+    # which is what used to force the assistant to write something.
+    assert body["proposals"][0]["rationale"] == "Add task: Draft the essay"
+
+
+def test_reply_style_reaches_the_model(services):
+    generator = use(services, GeneratedAnswer(answer="Two left."))
+    services.repository.set_planner_settings("alice", PlannerSettings(reply_style="detailed"))
+
+    services.copilot.answer("alice", "how busy am I?", today=TODAY)
+
+    assert "REPLY_STYLE=detailed" in generator.prompts[0]
+
+
+def test_reply_style_defaults_to_brief_without_a_choice(services):
+    generator = use(services, GeneratedAnswer(answer="Two left."))
+
+    services.copilot.answer("alice", "how busy am I?", today=TODAY)
+
+    assert "REPLY_STYLE=brief" in generator.prompts[0]
+
+
+def test_quiet_drops_prose_the_model_wrote_anyway(services, client, auth):
+    # The point of the setting. Five attempts in this file's history to fix tone
+    # by rewording are the argument for enforcing it rather than asking: an
+    # instruction the model can decline is not a setting.
+    services.repository.set_planner_settings("alice", PlannerSettings(reply_style="quiet"))
+    use(services, GeneratedAnswer(
+        answer="Right, I'll get that essay task set up for Friday and you can confirm it.",
+        actions=[GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="Draft the essay", due_date="2026-09-04",
+        )],
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "add an essay task for Friday", "request_id": "quiet-00001",
+    }).json()
+
+    assert body["answer"] == "1 change to confirm."
+    assert len(body["proposals"]) == 1
+
+
+def test_quiet_leaves_an_answer_to_a_question_alone(services, client, auth):
+    # Only prose *about changes* is dropped. A question still needs an answer,
+    # and the prompt is what keeps that one short.
+    services.repository.set_planner_settings("alice", PlannerSettings(reply_style="quiet"))
+    use(services, GeneratedAnswer(answer="Two tasks."))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "how many tasks today?", "request_id": "quiet-00002",
+    }).json()
+
+    assert body["answer"] == "Two tasks."
 
 
 def test_a_slow_turn_stops_asking_for_lookups_instead_of_running_out_of_time(services):

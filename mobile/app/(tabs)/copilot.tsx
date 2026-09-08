@@ -62,6 +62,8 @@ interface ChatResponse {
   citations: Citation[];
   retrieval: { attempted: boolean; result_count: number; abstained: boolean; reason?: string };
   proposals: Proposal[];
+  /** Changes it described but could not turn into a proposal, each with its reason. */
+  unavailable?: string[];
 }
 
 interface Message extends Partial<ChatResponse> {
@@ -536,6 +538,16 @@ export default function CopilotScreen() {
             {(message.text.length > 0 || !message.streaming) && (
               <Text style={message.role === 'user' ? styles.userText : styles.assistantText}>{message.text}</Text>
             )}
+            {message.unavailable?.length ? (
+              <View style={styles.unavailable}>
+                <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+                <Text style={styles.unavailableText}>
+                  {message.unavailable.length === 1
+                    ? `Could not set up: ${message.unavailable[0]}`
+                    : `Could not set up ${message.unavailable.length}: ${message.unavailable.join('; ')}`}
+                </Text>
+              </View>
+            ) : null}
             {message.citations?.map(citation => (
               <View key={citation.citation_id} style={styles.citation}>
                 <Text style={styles.citationTitle}>[{citation.citation_id}] {citation.title} · rev {citation.revision}</Text>
@@ -603,6 +615,11 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     citationTitle: { color: accent.primary, fontWeight: '600', fontSize: 12 },
     citationExcerpt: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
     disclosure: { color: colors.textMuted, fontSize: 11 },
+    unavailable: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+      backgroundColor: colors.errorSurface, borderRadius: 8, padding: 8,
+    },
+    unavailableText: { flex: 1, color: colors.text, fontSize: 12, lineHeight: 17 },
     threadBar: {
       flexDirection: 'row', alignItems: 'center', gap: 10,
       paddingHorizontal: 14, paddingVertical: 8,
