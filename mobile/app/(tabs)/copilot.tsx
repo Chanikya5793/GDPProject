@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tabBarSpace } from '@/utils/tabBarSpace';
+import { useToast } from '@/components/Toast';
 import { apiConfigured, apiRequest, apiStream, idempotencyKey } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
@@ -23,12 +25,7 @@ const CHAT_STORE = 'ai:conversation';
 // Enough for a working thread. The API only replays the last 20 turns anyway.
 const KEPT_MESSAGES = 60;
 
-// The tab bar is position:'absolute' on iOS, so it floats over the screen and
-// the bottom of this view sits underneath it. Every other screen clears it with
-// padding on its list; this one has an input row down there, and without the
-// same allowance the box to type in is behind the tab bar and simply cannot be
-// seen. 49pt is the iOS tab bar itself, above whatever the home indicator takes.
-const IOS_TAB_BAR_HEIGHT = 49;
+
 import { toHistory } from '@/utils/chatHistory';
 import { seriesSummary } from '@/utils/series';
 import { changeLines, changeSummary } from '@/utils/changePreview';
@@ -80,7 +77,8 @@ interface Message extends Partial<ChatResponse> {
 export default function CopilotScreen() {
   const { colors, accent, appearance } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const tabBarSpace = Platform.OS === 'ios' ? IOS_TAB_BAR_HEIGHT + insets.bottom : 0;
+  const toast = useToast();
+  const bottomSpace = tabBarSpace(insets.bottom);
   const styles = makeStyles(colors, accent, appearance);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -345,19 +343,42 @@ export default function CopilotScreen() {
   // stops the run, because the later changes were agreed to assuming the
   // earlier ones happened.
   const actOnEvery = async (proposals: Proposal[], action: 'confirm' | 'reject') => {
-    for (const proposal of proposals) {
-      if (proposal.status === 'pending') await actOnProposal(proposal, action);
+    const pending = proposals.filter(proposal => proposal.status === 'pending');
+    let done = 0;
+    try {
+      for (const proposal of pending) {
+        await actOnProposal(proposal, action, true);
+        done += 1;
+      }
+    } catch {
+      // actOnProposal has already said what went wrong. Stop rather than press
+      // on: the rest were agreed to on the assumption the earlier ones landed.
+      return;
+    }
+    if (action === 'confirm' && done) {
+      toast.show(done === 1 ? 'Saved to your planner' : `Saved ${done} changes`, 'success');
     }
   };
 
-  const actOnProposal = async (proposal: Proposal, action: 'confirm' | 'reject') => {
+  const actOnProposal = async (
+    proposal: Proposal, action: 'confirm' | 'reject', quiet = false,
+  ) => {
     const body = action === 'confirm'
       ? { idempotency_key: idempotencyKey('mobile-confirm'), expected_base_revision: proposal.base_revision }
       : { reason: 'Rejected in mobile copilot' };
-    const updated = await apiRequest<Proposal>(`/v1/proposals/${proposal.proposal_id}/${action}`, {
-      method: 'POST', body: JSON.stringify(body),
-    });
-    updateProposal(proposal.proposal_id, updated);
+    try {
+      const updated = await apiRequest<Proposal>(`/v1/proposals/${proposal.proposal_id}/${action}`, {
+        method: 'POST', body: JSON.stringify(body),
+      });
+      updateProposal(proposal.proposal_id, updated);
+      if (action === 'confirm' && !quiet) toast.show('Saved to your planner', 'success');
+    } catch (error) {
+      // A preview older than a day is refused rather than applied, and saying
+      // nothing left the card looking like it had simply ignored the tap.
+      const detail = error instanceof Error ? error.message : 'Could not apply that change.';
+      toast.show(detail, 'error');
+      throw error;
+    }
   };
 
   const proposalCard = (proposal: Proposal) => (
@@ -543,7 +564,7 @@ export default function CopilotScreen() {
         </View>
       )}
 
-      <View style={[styles.inputRow, { paddingBottom: 12 + tabBarSpace }]}>
+      <View style={[styles.inputRow, { paddingBottom: 12 + bottomSpace }]}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
           editable={apiConfigured()}
           placeholder={apiConfigured() ? 'Ask your planner…' : 'Copilot unavailable in this build'}
