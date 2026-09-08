@@ -743,6 +743,65 @@ def test_a_change_described_in_silence_still_says_how_many(services, client, aut
     assert body["proposals"][0]["rationale"] == "Add task: Draft the essay"
 
 
+def test_the_model_is_shown_the_id_it_needs_to_change_a_record(services):
+    # The regression test for duplicate records. Every record used to reach the
+    # model carrying only a citation id, while the instructions told it that
+    # changing a record needs "the record_id of an existing record you were
+    # shown" -- so an edit request became either a guess at "S1" or, more often,
+    # a create, which the server accepted and turned into a second copy.
+    add_task(services, "lab-report-01", "Lab report", date(2026, 9, 4))
+    generator = use(services, GeneratedAnswer(answer="Two left."))
+
+    services.copilot.answer("alice", "when is the lab report due?", today=TODAY)
+
+    assert "lab-report-01" in generator.prompts[0]
+
+
+def test_a_citation_id_in_record_id_is_resolved_rather_than_duplicating(services, client, auth):
+    # The safety net. Records now carry both ids and the instructions explain
+    # which is which, but the mapping to undo this mistake is right there, so
+    # there is no reason to let an S-number become a second copy of the record.
+    add_task(services, "essay-01", "Essay draft", date(2026, 9, 4))
+    use(services, GeneratedAnswer(
+        answer="Moving it.",
+        citation_ids=["S1"],
+        actions=[GeneratedAction(
+            operation=ProposalOperation.reschedule, entity_type=EntityType.task,
+            record_id="S1", due_date="2026-09-11",
+        )],
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "push the essay to next Friday", "request_id": "citeid-0001",
+    }).json()
+
+    assert len(body["proposals"]) == 1
+    proposal = body["proposals"][0]
+    assert proposal["record_id"] == "essay-01"
+    assert proposal["operation"] == "reschedule"
+    assert body["unavailable"] == []
+
+
+def test_an_unresolvable_citation_id_is_refused_honestly(services, client, auth):
+    # Nothing was cited, so there is no mapping to rescue it. Saying "that
+    # record no longer exists" would be a lie about a record that is fine.
+    add_task(services, "essay-02", "Essay draft", date(2026, 9, 4))
+    use(services, GeneratedAnswer(
+        answer="Moving it.",
+        actions=[GeneratedAction(
+            operation=ProposalOperation.reschedule, entity_type=EntityType.task,
+            record_id="S7", due_date="2026-09-11",
+        )],
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "push the essay to next Friday", "request_id": "citeid-0002",
+    }).json()
+
+    assert body["proposals"] == []
+    assert "citation" in body["unavailable"][0]
+
+
 def test_reply_style_reaches_the_model(services):
     generator = use(services, GeneratedAnswer(answer="Two left."))
     services.repository.set_planner_settings("alice", PlannerSettings(reply_style="detailed"))

@@ -19,6 +19,11 @@ export interface Task {
   notes: string;
   completed: boolean;
   createdAt: string;
+  /**
+   * "Leave this one where I put it." Auto-balance never moves a pinned task to
+   * an earlier day, and its priority is not escalated as the date nears.
+   */
+  keepScheduled?: boolean;
   _revision?: number;
   _approvedForAi?: boolean;
   _pending?: boolean;
@@ -34,6 +39,8 @@ export interface Reminder {
   date: string;
   time: string;
   notes: string;
+  /** The server has always stored this; the mobile client used to discard it. */
+  completed?: boolean;
   createdAt: string;
   _revision?: number;
   _approvedForAi?: boolean;

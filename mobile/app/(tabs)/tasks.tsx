@@ -49,7 +49,9 @@ function getEffectivePriority(task: Task): EscalatedPriority {
   const daysUntilDue = getDaysUntilDue(task.dueDate);
   const original = task.priority;
   let effective: Task['priority'] = original;
-  if (!task.completed && task.dueDate) {
+  // Pinned by the student. Escalating the badge anyway would read as the app
+  // ignoring the toggle they just set, even though nothing actually moved.
+  if (!task.completed && task.dueDate && !task.keepScheduled) {
     if (daysUntilDue <= 1) {
       effective = 'high';                          // overdue / today / tomorrow → HIGH
     } else if (daysUntilDue <= 3) {
@@ -659,6 +661,7 @@ function TaskModal({
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [approvedForAi, setApprovedForAi] = useState(true);
+  const [keepScheduled, setKeepScheduled] = useState(false);
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [category, setCategory] = useState('Homework');
   const [notes, setNotes] = useState('');
@@ -669,6 +672,7 @@ function TaskModal({
       setDueDate(task?.dueDate || draft.date || localDateStr());
       setDueTime(task?.dueTime || draft.time);
       setApprovedForAi(task?._approvedForAi ?? true);
+      setKeepScheduled(task?.keepScheduled ?? false);
       setPriority((task?.priority || draft.priority || defaultPriority) as Task['priority']);
       setCategory(task?.category || draft.category || defaultCategory);
       setNotes(task?.notes || draft.notes);
@@ -683,6 +687,7 @@ function TaskModal({
     onSave({
       title: title.trim(), dueDate, dueTime: parsedTime.value ?? '',
       priority, category, notes, _approvedForAi: approvedForAi,
+      keepScheduled,
     });
   };
 
@@ -779,6 +784,22 @@ function TaskModal({
               onValueChange={setApprovedForAi}
               trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
               accessibilityLabel="Visible to the assistant"
+            />
+          </View>
+
+          <View style={ms.aiRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={ms.label}>Keep where I put it</Text>
+              <Text style={ms.aiHint}>
+                Stops the app moving this task to an earlier day when a day gets
+                crowded, and stops it turning urgent on its own as the date nears.
+              </Text>
+            </View>
+            <Switch
+              value={keepScheduled}
+              onValueChange={setKeepScheduled}
+              trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+              accessibilityLabel="Keep where I put it"
             />
           </View>
 

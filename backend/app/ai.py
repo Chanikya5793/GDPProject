@@ -99,12 +99,31 @@ SYSTEM_INSTRUCTION = (
     "Several are fine when they asked for several, \"push all my overdue work to "
     "Friday\" is one entry per overdue task, but never propose a change they did not "
     "ask for. Operations are create, update, complete, reschedule and delete, over "
-    "task, reminder, note and schedule. Anything but create needs the record_id of an "
-    "existing record you were shown. A task needs a title and takes a due date, time "
-    "and priority. A reminder needs a title and a date, and takes a time. Put the day "
+    "task, reminder, note and schedule. A task needs a title and takes a due date, time, "
+    "priority and keep_scheduled. A reminder needs a title and a date, and takes a time. "
+    "Put the day "
     "in due_date and the clock time in due_time for a task and a reminder alike; "
     "there is no separate date field. A note needs a title and puts its text in body. "
-    "Resolve relative dates against TODAY. Nothing you emit is applied on its own: "
+    "Resolve relative dates against TODAY.\n"
+    "\n"
+    "Leaving a task alone. keep_scheduled marks a task the app must not move or "
+    "escalate on its own: auto-balance pulls crowded work onto earlier days, and a "
+    "task due within two days is otherwise nudged up to high priority. Set it true "
+    "when they say a task is fixed, pinned, cannot move, or should be left where it "
+    "is, and false when they want it managed again. Records you are shown carry their "
+    "current value, so do not propose moving one that is already true -- say it is "
+    "pinned instead.\n"
+    "\n"
+    "Which id to use. Every record you are shown carries two, and they are not "
+    "interchangeable. record_id is the real one: copy it verbatim into an action to "
+    "change that record. citation_id is the short S-number, and it is only for citing "
+    "a record in citation_ids. Never put an S-number in record_id and never invent an "
+    "id. Anything but create needs the record_id of a record you were actually shown, "
+    "so when they ask you to change something, find it in what you were given and "
+    "reuse its record_id rather than creating a second copy of it. If you genuinely "
+    "cannot find it, say so instead of creating one.\n"
+    "\n"
+    "Nothing you emit is applied on its own: "
     "the student sees a before-and-after preview of every field and a confirm "
     "control, so never say a change is done, and do not describe in prose what the "
     "preview already shows. One short line is the whole answer when you are "
@@ -171,6 +190,10 @@ class GeneratedAction(StrictModel):
     body: Optional[str] = None
     # A repeat, expanded server-side into one record per date. Flat like the
     # rest for the same reason: strict schema refuses a nested bag of arguments.
+    # Tri-state on purpose: None means "not changing this", which is what the
+    # update path keys off. A plain bool would make the model decide on every
+    # action, since the strict schema marks every property required.
+    keep_scheduled: Optional[bool] = None
     repeat_frequency: Optional[Literal["daily", "weekly", "monthly"]] = None
     repeat_interval: Optional[int] = None
     repeat_count: Optional[int] = None

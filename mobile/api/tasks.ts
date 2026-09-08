@@ -29,7 +29,12 @@ export async function createTask(task: Partial<Task> & { userId: string; title: 
     category: task.category || 'Homework',
     notes: task.notes || '',
     completed: false,
+    keepScheduled: Boolean(task.keepScheduled),
     createdAt: new Date().toISOString(),
+    // Rebuilt field by field above, so anything not named here is dropped.
+    // That is how the assistant-visibility toggle came to be silently lost on
+    // every task created from this client.
+    _approvedForAi: task._approvedForAi ?? true,
   };
   const created = await createPlannerItem('task', newTask);
   await addLog('created', 'task', created.title, { entityId: created.id, after: created });

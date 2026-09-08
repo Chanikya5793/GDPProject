@@ -27,7 +27,9 @@ function getEffectivePriority(task: Task): EscalatedPriority {
   const daysUntilDue = getDaysUntilDueDash(task.dueDate);
   const original = task.priority;
   let effective: Task['priority'] = original;
-  if (!task.completed && task.dueDate) {
+  // Pinned by the student. Escalating the badge anyway would read as the app
+  // ignoring the toggle they just set, even though nothing actually moved.
+  if (!task.completed && task.dueDate && !task.keepScheduled) {
     if (daysUntilDue <= 1) effective = 'high';
     else if (daysUntilDue <= 4 && original === 'low') effective = 'medium';
   }

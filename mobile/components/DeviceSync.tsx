@@ -15,6 +15,7 @@ import {
 import { clearWidget, onWidgetAction, syncWidget } from '@/api/widgets';
 import { clearLiveActivities } from '@/api/liveActivity';
 import { updateTask } from '@/api/tasks';
+import { updateReminder } from '@/api/reminders';
 
 const ASKED_KEY = 'nw_notifications_asked';
 
@@ -102,8 +103,9 @@ export default function DeviceSync() {
   // quietly puts the box back.
   useEffect(() => {
     if (!user) return;
-    return onWidgetAction(async recordId => {
-      await updateTask(recordId, { completed: true });
+    return onWidgetAction(async (kind, recordId) => {
+      if (kind === 'reminder') await updateReminder(recordId, { completed: true });
+      else await updateTask(recordId, { completed: true });
     });
   }, [user]);
 
