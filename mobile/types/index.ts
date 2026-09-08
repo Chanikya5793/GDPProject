@@ -93,6 +93,8 @@ export interface Settings {
   showCompleted: boolean;
   reminderDefault: number;
   dueDateAlerts: boolean;
+  /** Whether the home screen widget may show record titles. Off by default. */
+  widgetShowTitles: boolean;
   autoBalance: boolean;
   dailyTaskLimit: number;
 }

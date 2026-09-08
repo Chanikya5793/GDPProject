@@ -9,7 +9,7 @@ import { Settings } from '@/types';
 const baseSettings: Settings = {
   theme: 'system', accentColor: 'green', compactMode: false, fontSize: 'default',
   reducedMotion: false, weekStartsOn: 'sunday', defaultPriority: 'medium',
-  defaultCategory: 'Homework', showCompleted: true, reminderDefault: 30,
+  defaultCategory: 'Homework', showCompleted: true, reminderDefault: 30, widgetShowTitles: false,
   dueDateAlerts: true, autoBalance: true, dailyTaskLimit: 2,
 };
 

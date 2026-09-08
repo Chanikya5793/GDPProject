@@ -13,6 +13,8 @@ import { migrateLegacyStorage } from '@/api/storage';
 import { Settings } from '@/types';
 import ActivityLogSection from '@/components/ActivityLogSection';
 import AiPrivacySection from '@/components/AiPrivacySection';
+import NotificationsSection from '@/components/NotificationsSection';
+import WidgetsSiriSection from '@/components/WidgetsSiriSection';
 import RecycleBinSection from '@/components/RecycleBinSection';
 import { apiConfigured, apiRequest } from '@/api/client';
 
@@ -314,16 +316,11 @@ export default function SettingsScreen() {
             </View>
           </SettingsRow>
         )}
-
-        <SettingsRow label="Due Date Alerts" colors={colors}>
-          <Switch
-            value={settings.dueDateAlerts}
-            onValueChange={v => updateSetting('dueDateAlerts', v)}
-            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
-            thumbColor={Platform.OS === 'android' ? (settings.dueDateAlerts ? accent.light : '#f4f3f4') : undefined}
-          />
-        </SettingsRow>
       </View>
+
+      <NotificationsSection />
+
+      <WidgetsSiriSection />
 
       <AiPrivacySection />
 
