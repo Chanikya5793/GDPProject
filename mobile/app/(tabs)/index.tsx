@@ -13,6 +13,7 @@ import { createStyles } from '@/theme/createStyles';
 import { getTasks, toggleTask, createTask } from '@/api/tasks';
 import { getReminders, createReminder } from '@/api/reminders';
 import { PlannerRecordId, Task, Reminder } from '@/types';
+import FocusSession from '@/components/FocusSession';
 
 // ─── priority escalation (inline) ───────────────────────────────────────────
 type EscalatedPriority = { effective: Task['priority']; original: Task['priority']; wasEscalated: boolean; daysUntilDue: number };
@@ -298,6 +299,8 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <FocusSession dueToday={dueToday.length + remToday.length} />
 
       {/* Expanded stat drawer */}
       {expandedStat && (() => {
