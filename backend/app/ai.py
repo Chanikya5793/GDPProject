@@ -34,11 +34,12 @@ SYSTEM_INSTRUCTION = (
     "\"Aug 31 at 10:22 PM\", never \"2026-08-31 22:22\", and prefer \"today\", "
     "\"tomorrow\" and \"Friday\" when the day is close. Do not use dashes to staple "
     "clauses together, do not narrate your own reasoning, and do not restate the "
-    "question before answering it. Never mention the names of the data sections you "
-    "were given or quote them back. When you have nothing useful, say so in a "
+    "question before answering it. When you have nothing useful, say so in a "
     "sentence and offer the next step.\n"
     "\n"
-    "What you can see. PLANNER_BRIEFING is a fresh, complete picture of what is "
+    "What you can see. These are internal names for what you were handed; they are "
+    "not words the student knows, so never name them or quote them back. "
+    "PLANNER_BRIEFING is a fresh, complete picture of what is "
     "overdue, due today, due tomorrow, coming this week, unscheduled, and on the "
     "calendar, with counts and workload findings. Answer straight from it whenever it "
     "already holds the answer; it is computed, not guessed, so counts and dates in it "
@@ -104,12 +105,16 @@ SYSTEM_INSTRUCTION = (
     "in due_date and the clock time in due_time for a task and a reminder alike; "
     "there is no separate date field. A note needs a title and puts its text in body. "
     "Resolve relative dates against TODAY. Nothing you emit is applied on its own: "
-    "they see a before-and-after preview and confirm it, so say what you are about to "
-    "do and never claim it is done.\n"
+    "the student sees a before-and-after preview of every field and a confirm "
+    "control, so never say a change is done, and do not describe in prose what the "
+    "preview already shows. One short line is the whole answer when you are "
+    "proposing changes.\n"
     "\n"
     "Stay on the question. Answer what was asked and stop. Do not volunteer other "
     "records they did not ask about, and never show internal rule identifiers or "
-    "citation IDs in your prose; if a rule matters, say what it means in plain words."
+    "citation IDs in your prose; if a rule matters, say what it means in plain words. "
+    "The app already shows the student every lookup you ran, so never mention having "
+    "searched, checked, pulled or looked at anything -- they can see it."
 )
 
 
@@ -120,6 +125,10 @@ SYSTEM_INSTRUCTION = (
 # because a misread "clear my planner" should not arrive as four hundred
 # confirmations.
 MAX_ACTIONS = 50
+
+# A ceiling, not a target. Reply style decides the real length; this only stops
+# a runaway answer from filling a conversation record.
+MAX_ANSWER_CHARS = 8000
 
 
 class ToolName(str, Enum):
@@ -172,7 +181,7 @@ class GeneratedAnswer(StrictModel):
     # streamed: a turn that only asks for lookups is then recognised before any
     # prose has been forwarded to the student.
     tool_requests: List[ToolRequest] = Field(default_factory=list, max_length=3)
-    answer: str = Field(default="", max_length=8000)
+    answer: str = Field(default="")
     citation_ids: List[str] = Field(default_factory=list, max_length=40)
     # Set when the reply is a question back rather than a claim. It exempts the
     # reply from the citation guard, which would otherwise replace "what should
@@ -182,6 +191,19 @@ class GeneratedAnswer(StrictModel):
     # because the model reaches for the singular form when there is only one.
     actions: List[GeneratedAction] = Field(default_factory=list, max_length=MAX_ACTIONS)
     action: Optional[GeneratedAction] = None
+
+    @field_validator("answer", mode="before")
+    @classmethod
+    def cap_answer(cls, value: Any) -> Any:
+        """Trim an over-long answer rather than throwing the reply away.
+
+        Same trap as `cap_actions` below: a `max_length` on the field is a
+        validation error, so a model that rambled past the cap lost the actions
+        it had correctly produced along with the prose.
+        """
+        if isinstance(value, str) and len(value) > MAX_ANSWER_CHARS:
+            return value[:MAX_ANSWER_CHARS].rstrip()
+        return value
 
     @field_validator("actions", mode="before")
     @classmethod

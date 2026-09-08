@@ -394,6 +394,13 @@ export default function AiSidebar() {
                       {msg.streaming && <span className="ai-caret" aria-hidden="true" />}
                     </div>
                   )}
+                  {msg.unavailable?.length > 0 && (
+                    <div className="ai-unavailable" role="status">
+                      {msg.unavailable.length === 1
+                        ? `Could not set up: ${msg.unavailable[0]}`
+                        : `Could not set up ${msg.unavailable.length}: ${msg.unavailable.join('; ')}`}
+                    </div>
+                  )}
                   <CitationList citations={msg.citations} />
                   {msg.retrieval?.attempted && (
                     <div className="ai-retrieval-disclosure">
