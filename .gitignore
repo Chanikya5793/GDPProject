@@ -45,3 +45,7 @@ mobile/build-*.tar.gz
 .env
 .env.*
 !.env.example
+
+# Local AI assistant tooling: editor-local config, never part of the project
+.claude/
+CLAUDE.md
