@@ -41,7 +41,20 @@ const CAPACITY_CHOICES: { value: number | null; short: string; label: string }[]
   { value: 480, short: '8h', label: '8 hours per day' },
 ];
 
-type PlannerSettings = { max_daily_minutes: number | null };
+type ReplyStyle = 'quiet' | 'brief' | 'normal' | 'detailed';
+type PlannerSettings = { max_daily_minutes: number | null; reply_style: ReplyStyle };
+
+/** How much the assistant says. Server-side, so it is the same on every device. */
+const REPLY_STYLES: { value: ReplyStyle; short: string; label: string; blurb: string }[] = [
+  { value: 'quiet', short: 'Quiet', label: 'Quiet replies',
+    blurb: 'Changes only, with no commentary.' },
+  { value: 'brief', short: 'Brief', label: 'Brief replies',
+    blurb: 'One sentence.' },
+  { value: 'normal', short: 'Normal', label: 'Normal replies',
+    blurb: 'Two or three sentences.' },
+  { value: 'detailed', short: 'Full', label: 'Detailed replies',
+    blurb: 'A short paragraph when there is something to explain.' },
+];
 
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuth();
@@ -52,7 +65,9 @@ export default function SettingsScreen() {
   const [email, setEmail] = useState(user?.email || '');
   // Copilot capacity lives server-side, so it is only offered when a backend is
   // actually configured. The offline demo build has none.
-  const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({ max_daily_minutes: null });
+  const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({
+    max_daily_minutes: null, reply_style: 'brief',
+  });
   const [plannerStatus, setPlannerStatus] =
     useState<'loading' | 'ready' | 'saving' | 'error' | 'unavailable'>('loading');
   useEffect(() => {
@@ -62,18 +77,22 @@ export default function SettingsScreen() {
       .catch(() => setPlannerStatus('error'));
   }, []);
 
-  const updatePlannerCapacity = useCallback(async (minutes: number | null) => {
+  // Sends the whole document, not just the field that changed. The server
+  // replaces the record wholesale, so a partial body would quietly reset every
+  // other setting -- which is what changing capacity used to do to reply style.
+  const updatePlannerSettings = useCallback(async (updates: Partial<PlannerSettings>) => {
     const previous = plannerSettings;
-    setPlannerSettings({ max_daily_minutes: minutes });
+    const next = { ...plannerSettings, ...updates };
+    setPlannerSettings(next);
     setPlannerStatus('saving');
     try {
       const saved = await apiRequest<PlannerSettings>('/v1/planner-settings', {
-        method: 'PUT', body: JSON.stringify({ max_daily_minutes: minutes }),
+        method: 'PUT', body: JSON.stringify(next),
       });
       setPlannerSettings(saved);
       setPlannerStatus('ready');
     } catch (error) {
-      // Put the old value back so the row never shows a capacity the server rejected.
+      // Put the old values back so no row shows something the server rejected.
       setPlannerSettings(previous);
       setPlannerStatus('error');
       Alert.alert('Could not save', (error as Error).message);
@@ -299,7 +318,7 @@ export default function SettingsScreen() {
                     plannerSettings.max_daily_minutes === choice.value && { backgroundColor: accent.primary },
                   ]}
                   disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
-                  onPress={() => updatePlannerCapacity(choice.value)}
+                  onPress={() => updatePlannerSettings({ max_daily_minutes: choice.value })}
                   accessibilityRole="button"
                   accessibilityLabel={choice.label}
                 >
@@ -315,6 +334,44 @@ export default function SettingsScreen() {
               ))}
             </View>
           </SettingsRow>
+        )}
+
+        {plannerStatus !== 'unavailable' && (
+          <View style={s.stackedRow}>
+            <Text style={s.stackedLabel}>Assistant Replies</Text>
+            <Text style={s.stackedDesc}>
+              How much the assistant says back. It proposes the same changes
+              either way — this is only how much it writes about them.
+            </Text>
+            <View style={s.miniSegment}>
+              {REPLY_STYLES.map(choice => (
+                <TouchableOpacity
+                  key={choice.value}
+                  style={[
+                    s.miniSeg,
+                    plannerSettings.reply_style === choice.value && { backgroundColor: accent.primary },
+                  ]}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onPress={() => updatePlannerSettings({ reply_style: choice.value })}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: plannerSettings.reply_style === choice.value }}
+                  accessibilityLabel={choice.label}
+                >
+                  <Text
+                    style={[
+                      s.miniSegText,
+                      plannerSettings.reply_style === choice.value && { color: '#FFF' },
+                    ]}
+                  >
+                    {choice.short}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={s.stackedDesc}>
+              {REPLY_STYLES.find(c => c.value === plannerSettings.reply_style)?.blurb}
+            </Text>
+          </View>
         )}
       </View>
 
@@ -385,6 +442,9 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     accentRow: { flexDirection: 'row', gap: 12 },
     accentDot: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
     accentDotActive: { borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
+    stackedRow: { paddingVertical: 12, gap: 8 },
+    stackedLabel: { fontSize: 15, color: colors.text },
+    stackedDesc: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
     miniSegment: { flexDirection: 'row', gap: 4 },
     miniSeg: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: colors.surfaceVariant },
     miniSegText: { fontSize: 13, fontWeight: '500', color: colors.text },

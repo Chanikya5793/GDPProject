@@ -71,7 +71,7 @@ class TestPlannerSettingsApi:
     def test_defaults_to_no_override(self, client, auth):
         response = client.get("/v1/planner-settings", headers=auth)
         assert response.status_code == 200
-        assert response.json() == {"max_daily_minutes": None}
+        assert response.json() == {"max_daily_minutes": None, "reply_style": "brief"}
 
     def test_round_trips_a_user_value(self, client, auth):
         saved = client.put(

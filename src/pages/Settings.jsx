@@ -69,7 +69,7 @@ export default function Settings() {
   const [privacyError, setPrivacyError] = useState('')
   // Copilot daily capacity lives server-side, so it is only offered when a
   // backend is actually configured. The offline demo build has none.
-  const [plannerSettings, setPlannerSettings] = useState({ max_daily_minutes: null })
+  const [plannerSettings, setPlannerSettings] = useState({ max_daily_minutes: null, reply_style: 'brief' })
   const [plannerStatus, setPlannerStatus] = useState('loading')
   const [plannerError, setPlannerError] = useState('')
   // Who actually processes approved records. Read from the server so this copy
@@ -662,6 +662,30 @@ export default function Settings() {
                       {minutes % 60 === 0 ? `${minutes / 60} hours` : `${minutes} minutes`}
                     </option>
                   ))}
+                </select>
+              </div>
+            )}
+
+            {plannerStatus !== 'unavailable' && (
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <span className="settings-row-label">Assistant Replies</span>
+                  <span className="settings-row-desc">
+                    How much the assistant says back. It proposes the same changes either
+                    way &mdash; this only changes how much it writes about them.
+                    {plannerStatus === 'saving' && ' Saving…'}
+                  </span>
+                </div>
+                <select
+                  className="form-select settings-select"
+                  value={plannerSettings.reply_style ?? 'brief'}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onChange={e => updatePlannerSettings({ reply_style: e.target.value })}
+                >
+                  <option value="quiet">Quiet &mdash; changes only</option>
+                  <option value="brief">Brief &mdash; one sentence</option>
+                  <option value="normal">Normal &mdash; a few sentences</option>
+                  <option value="detailed">Detailed &mdash; a short paragraph</option>
                 </select>
               </div>
             )}

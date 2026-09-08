@@ -67,6 +67,23 @@ def sse_event(event: str, payload: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
+def _rationale(action) -> str:
+    """One line saying what a proposal is, for the card's heading.
+
+    Deliberately mechanical. The card below it already renders every field that
+    changes, and the assistant's own prose used to be pressed into this job --
+    which meant it had to write prose even when the student had asked for a
+    change and wanted nothing said.
+    """
+    verb = {
+        "create": "Add", "update": "Change", "complete": "Complete",
+        "reschedule": "Move", "delete": "Delete",
+    }.get(action.operation.value, "Change")
+    label = (action.title or "").strip()
+    kind = action.entity_type.value
+    return f"{verb} {kind}: {label}" if label else f"{verb} this {kind}"
+
+
 def build_chat_response(services: Container, uid: str, answer, citations, disclosure, generated):
     """Turn every change the model asked for into a preview to confirm.
 
@@ -77,7 +94,11 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
     proposals: list[ActionProposal] = []
     refusals: list[str] = []
     for action in generated.all_actions():
-        prepared = services.proposals.prepare(uid, action, answer)
+        # The preview card carries a before-and-after of every field, so the
+        # rationale only has to say what kind of change this is. It used to be
+        # the whole answer, which is what forced the assistant to write prose
+        # even when the card said it all.
+        prepared = services.proposals.prepare(uid, action, _rationale(action))
         if prepared.proposal:
             proposals.append(prepared.proposal)
         else:
@@ -86,15 +107,9 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
             # was missing, so the reason travels with it.
             label = (action.title or action.record_id or action.entity_type.value).strip()
             refusals.append(f"{label} ({prepared.reason})" if prepared.reason else label)
-    if len(refusals) == 1:
-        answer = f"{answer}\n\nOne thing I could not set up: {refusals[0]}."
-    elif refusals:
-        listed = "; ".join(refusals)
-        answer = (
-            f"{answer}\n\n{len(refusals)} things I could not set up: {listed}."
-        )
     return ChatResponse(
-        answer=answer, citations=citations, retrieval=disclosure, proposals=proposals
+        answer=answer, citations=citations, retrieval=disclosure,
+        proposals=proposals, unavailable=refusals,
     )
 
 

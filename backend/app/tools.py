@@ -157,6 +157,9 @@ class PlannerSession:
         if not self.settings.ai_enabled:
             toolbox.audit.record(uid, "retrieval", "denied", {"reason": "opt_out"})
             raise PermissionError("AI is disabled")
+        # Read once for the turn. The briefing and two of the tools all wanted
+        # the daily capacity out of it, and reply style needs the same document.
+        self.planner_settings = toolbox.repository.get_planner_settings(uid)
         self._records: Optional[List[PlannerRecord]] = None
 
     @property
@@ -270,7 +273,7 @@ class PlannerSession:
                 truncated = truncated or any(buckets.get(rest) for rest in order[order.index(name) + 1:])
                 break
 
-        capacity = self.toolbox.repository.get_planner_settings(self.uid).max_daily_minutes
+        capacity = self.planner_settings.max_daily_minutes
         findings = self.toolbox.planner.analyze(
             records, today=self.today, max_daily_minutes=capacity
         )
@@ -393,7 +396,7 @@ class PlannerSession:
         )
 
     def _workload(self, _request: ToolRequest) -> ToolOutcome:
-        capacity = self.toolbox.repository.get_planner_settings(self.uid).max_daily_minutes
+        capacity = self.planner_settings.max_daily_minutes
         findings = self.toolbox.planner.analyze(
             self.records, today=self.today, max_daily_minutes=capacity
         )
@@ -419,7 +422,7 @@ class PlannerSession:
     def _open_day(self, request: ToolRequest) -> ToolOutcome:
         after = _parse_date(request.start) or self.today
         minutes = request.minutes or 30
-        capacity = self.toolbox.repository.get_planner_settings(self.uid).max_daily_minutes
+        capacity = self.planner_settings.max_daily_minutes
         try:
             day = self.toolbox.planner.next_available_day(
                 self.records, after=after, required_minutes=minutes,
