@@ -60,6 +60,8 @@ def clean_generated_time(value: Optional[str]) -> Optional[str]:
 DEFAULT_PROPOSAL_TTL_HOURS = 24
 
 
+_CITATION_SHAPED = re.compile(r"S\d+")
+
 class InvalidProposal(ValueError):
     pass
 
@@ -105,6 +107,7 @@ class ProposalService:
                 after = TaskContent(
                     title=action.title, due_date=due_date, due_time=at_time,
                     priority=action.priority or "medium", notes=action.notes or "",
+                    keep_scheduled=bool(action.keep_scheduled),
                 )
             elif action.entity_type == EntityType.reminder:
                 # A reminder is meaningless without a day to fire on, so refuse
@@ -131,6 +134,14 @@ class ProposalService:
         else:
             if not record_id:
                 return PreparedAction(reason="it did not say which record to change")
+            # An S-number is a citation id, which points at a record in prose and
+            # is not something that can be changed. It reaches here only if the
+            # model ignored both the id on every record and the instruction
+            # about which one to use -- and "that record no longer exists" would
+            # be a misleading thing to say about it, since the record is
+            # probably fine.
+            if _CITATION_SHAPED.fullmatch(record_id):
+                return PreparedAction(reason="it pointed at a citation rather than a record")
             try:
                 record = self.repository.get_record(uid, action.entity_type, record_id)
             except NotFound:
@@ -159,12 +170,17 @@ class ProposalService:
                 updates = {
                     key: value for key, value in {
                         "title": action.title, "priority": action.priority, "notes": action.notes,
+                        "keep_scheduled": action.keep_scheduled,
                     }.items() if value is not None
                 }
                 if not updates:
                     return PreparedAction(reason="it did not say what to change about it")
                 if isinstance(before, NoteContent) and "priority" in updates:
                     return PreparedAction(reason="a note has no priority to set")
+                # Only a task is ever moved or escalated, so only a task has
+                # anything to pin. model_copy would raise on the others.
+                if "keep_scheduled" in updates and not isinstance(before, TaskContent):
+                    return PreparedAction(reason="only a task can be pinned in place")
                 after = before.model_copy(update=updates)
 
         series: list[ProposedRecord] = []

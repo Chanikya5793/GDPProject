@@ -87,15 +87,18 @@ export function clearWidget(): void {
  * timeline from the records. That is why the widget's optimistic edit has to be
  * something a rebuild can correct rather than something it would contradict.
  */
-export function onWidgetAction(complete: (taskId: string) => Promise<void>): () => void {
+export function onWidgetAction(
+  complete: (kind: 'task' | 'reminder', recordId: string) => Promise<void>,
+): () => void {
   const subscription = addUserInteractionListener(event => {
-    const target = String(event.target || '');
-    const separator = target.indexOf(':');
-    if (separator < 0) return;
-    const action = target.slice(0, separator);
-    const recordId = target.slice(separator + 1);
+    // "done:task:abc123". The kind rides along because a task and a reminder
+    // are completed through different endpoints, and the widget process has no
+    // way to ask which one an id belongs to.
+    const [action, kind, ...rest] = String(event.target || '').split(':');
+    const recordId = rest.join(':');
     if (action !== 'done' || !recordId) return;
-    complete(recordId)
+    if (kind !== 'task' && kind !== 'reminder') return;
+    complete(kind, recordId)
       .then(() => syncWidget())
       .catch(() => {});
   });

@@ -126,8 +126,7 @@ function collect(input: SnapshotInput): WidgetItem[] {
     items.push({
       id: String(reminder.id), kind: 'reminder', title: title(reminder.title), at,
       category: '', priority: '',
-      // Reminders have no completed state; they simply pass.
-      done: false,
+      done: Boolean(reminder.completed),
     });
   }
   return items.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));

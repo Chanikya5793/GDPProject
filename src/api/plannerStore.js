@@ -28,6 +28,7 @@ function fromServer(record) {
     ...common, title: content.title, dueDate: content.due_date || '', dueTime: content.due_time || '',
     priority: content.priority, category: content.category, notes: content.notes,
     completed: content.completed, estimatedMinutes: content.estimated_minutes,
+    keepScheduled: Boolean(content.keep_scheduled),
     seriesId: content.series_id || null, recurrence: content.recurrence || null,
   }
   if (content.entity_type === 'reminder') return {
@@ -51,6 +52,7 @@ function toServer(entityType, item) {
     due_time: item.dueTime || null, priority: item.priority || 'medium',
     category: item.category || 'Other', notes: item.notes || '',
     completed: Boolean(item.completed), estimated_minutes: item.estimatedMinutes || 30,
+    keep_scheduled: Boolean(item.keepScheduled),
     series_id: item.seriesId || null, recurrence: item.recurrence || null,
   }
   if (entityType === 'reminder') return {

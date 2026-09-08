@@ -19,6 +19,8 @@ export interface BalanceableTask {
   priority: 'high' | 'medium' | 'low';
   completed: boolean;
   createdAt: string;
+  /** Set when the student pinned this one. Missing on older records. */
+  keepScheduled?: boolean;
 }
 
 export interface OverloadedDay<T extends BalanceableTask> {
@@ -102,6 +104,9 @@ export function suggestReschedule<T extends BalanceableTask>(
 
     for (const task of ranked.slice(limit)) {
       if (skipIds.has(task.id)) continue;
+      // Pinned by the student. It still counts towards the day being full --
+      // it is genuinely on that day -- but it is never the one that moves.
+      if (task.keepScheduled) continue;
       let target: string | null = null;
       for (let offset = 1; ; offset++) {
         const candidate = shiftDate(day.date, -offset);

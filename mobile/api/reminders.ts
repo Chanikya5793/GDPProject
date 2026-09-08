@@ -40,6 +40,24 @@ export async function updateReminder(id: PlannerRecordId, updates: Partial<Remin
   return updated;
 }
 
+/**
+ * Mark a reminder done, or undo it.
+ *
+ * The server has always stored `completed` on a reminder; this client used to
+ * send a hardcoded false on every write and never read it back, so completing
+ * one on the web was undone by the next edit made on a phone.
+ */
+export async function toggleReminder(id: PlannerRecordId): Promise<Reminder> {
+  const current = (await listPlannerItems<Reminder>('reminder'))
+    .find(reminder => String(reminder.id) === String(id));
+  const done = !(current?.completed ?? false);
+  const updated = await updatePlannerItem<Reminder>('reminder', id, { completed: done });
+  await addLog(done ? 'completed' : 'reopened', 'reminder', updated.title, {
+    entityId: id, before: current, after: updated,
+  });
+  return updated;
+}
+
 export async function deleteReminder(id: PlannerRecordId): Promise<void> {
   const all = await load();
   const rem = all.find(r => r.id === id);

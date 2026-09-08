@@ -49,6 +49,7 @@ const FIELDS = [
   ['notes', 'Notes', value => value],
   ['body', 'Text', value => value],
   ['completed', 'Done', value => (value ? 'yes' : 'no')],
+  ['keep_scheduled', 'Pinned', value => (value ? 'yes' : 'no')],
 ]
 
 /**
@@ -72,6 +73,7 @@ export function changeLines(proposal) {
     if (after.priority && after.priority !== 'medium') {
       lines.push({ label: 'Priority', to: after.priority })
     }
+    if (after.keep_scheduled) lines.push({ label: 'Pinned', to: 'yes' })
     return lines
   }
 

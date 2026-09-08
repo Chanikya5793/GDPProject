@@ -158,19 +158,17 @@ const UpNext = (props: WidgetProps, environment: WidgetEnvironment<UpNextConfig>
             </Text>
           ))}
           <Spacer />
-          {lead.kind === 'task' ? (
-            <Button
-              target={'done:' + lead.id}
-              label="Done"
-              systemImage="checkmark.circle"
-              onPress={() => ({
-                items: (props.items || []).map(i =>
-                  (i.id === lead.id ? { ...i, done: true } : i)),
-                dueToday: props.dueToday > 0 ? props.dueToday - 1 : 0,
-                doneToday: props.doneToday + 1,
-              })}
-            />
-          ) : null}
+          <Button
+            target={'done:' + lead.kind + ':' + lead.id}
+            label="Done"
+            systemImage="checkmark.circle"
+            onPress={() => ({
+              items: (props.items || []).map(i =>
+                (i.id === lead.id ? { ...i, done: true } : i)),
+              dueToday: props.dueToday > 0 ? props.dueToday - 1 : 0,
+              doneToday: props.doneToday + 1,
+            })}
+          />
         </HStack>
       ) : (
         <HStack spacing={6}>
@@ -178,19 +176,17 @@ const UpNext = (props: WidgetProps, environment: WidgetEnvironment<UpNextConfig>
             {props.dueToday + ' today'}
           </Text>
           <Spacer />
-          {lead.kind === 'task' ? (
-            <Button
-              target={'done:' + lead.id}
-              label=""
-              systemImage="checkmark.circle"
-              onPress={() => ({
-                items: (props.items || []).map(i =>
-                  (i.id === lead.id ? { ...i, done: true } : i)),
-                dueToday: props.dueToday > 0 ? props.dueToday - 1 : 0,
-                doneToday: props.doneToday + 1,
-              })}
-            />
-          ) : null}
+          <Button
+            target={'done:' + lead.kind + ':' + lead.id}
+            label=""
+            systemImage="checkmark.circle"
+            onPress={() => ({
+              items: (props.items || []).map(i =>
+                (i.id === lead.id ? { ...i, done: true } : i)),
+              dueToday: props.dueToday > 0 ? props.dueToday - 1 : 0,
+              doneToday: props.doneToday + 1,
+            })}
+          />
         </HStack>
       )}
     </VStack>

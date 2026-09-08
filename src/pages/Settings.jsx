@@ -615,7 +615,7 @@ export default function Settings() {
             <div className="settings-row">
               <div className="settings-row-info">
                 <span className="settings-row-label">Auto-Balance Busy Days</span>
-                <span className="settings-row-desc">Automatically pull lower-priority tasks off overloaded days onto earlier free days. Turn this off to review the suggestions yourself instead.</span>
+                <span className="settings-row-desc">Automatically pull lower-priority tasks off overloaded days onto earlier free days. Turn this off to review the suggestions yourself instead, or tick &ldquo;keep where I put it&rdquo; on an individual task to leave just that one alone.</span>
               </div>
               <Toggle checked={settings.autoBalance !== false} onChange={v => updateSetting('autoBalance', v)} />
             </div>

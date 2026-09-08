@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
 import { modalAnimation } from '@/theme/appearance';
-import { getReminders, createReminder, updateReminder, deleteReminder } from '@/api/reminders';
+import { getReminders, createReminder, updateReminder, deleteReminder, toggleReminder } from '@/api/reminders';
 import { PlannerRecordId, Reminder } from '@/types';
 import { parseTimeInput } from '@/utils/timeInput';
 import { recurrenceLabel } from '@/utils/recurrence';
@@ -80,6 +80,11 @@ export default function RemindersScreen() {
     }
     setModalVisible(false);
     setEditingRem(null);
+  };
+
+  const handleToggle = async (id: PlannerRecordId) => {
+    const updated = await toggleReminder(id);
+    setReminders(prev => prev.map(rem => (rem.id === id ? updated : rem)));
   };
 
   const handleDelete = (id: PlannerRecordId) => {
@@ -172,11 +177,28 @@ export default function RemindersScreen() {
                     borderLeftWidth: isOverdue ? 3 : 1,
                     borderLeftColor: isOverdue ? colors.error : colors.border,
                   }]}>
-                    <View style={[s.bellWrap, { backgroundColor: accent.surface }]}>
-                      <Ionicons name="notifications" size={18} color={accent.primary} />
-                    </View>
+                    <TouchableOpacity
+                      style={[s.bellWrap, {
+                        backgroundColor: rem.completed ? accent.primary : accent.surface,
+                      }]}
+                      onPress={() => handleToggle(rem.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ checked: Boolean(rem.completed) }}
+                      accessibilityLabel={rem.completed
+                        ? `Mark ${rem.title} as not done`
+                        : `Mark ${rem.title} as done`}
+                    >
+                      <Ionicons
+                        name={rem.completed ? 'checkmark' : 'notifications'}
+                        size={18}
+                        color={rem.completed ? '#FFF' : accent.primary}
+                      />
+                    </TouchableOpacity>
                     <View style={s.cardBody}>
-                      <Text style={[s.cardTitle, { color: colors.text }]}>{rem.title}</Text>
+                      <Text style={[s.cardTitle, {
+                        color: rem.completed ? colors.textMuted : colors.text,
+                        textDecorationLine: rem.completed ? 'line-through' : 'none',
+                      }]}>{rem.title}</Text>
                       <Text style={[s.cardTime, { color: colors.textMuted }]}>
                         {formatTime(rem.time) || 'No time set'}
                         {recurrenceLabel(rem.recurrence) ? `  ↻ ${recurrenceLabel(rem.recurrence)}` : ''}
