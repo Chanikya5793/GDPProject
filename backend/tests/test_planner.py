@@ -29,6 +29,39 @@ def test_overdue_and_priority_escalation_rules():
     }
 
 
+def test_a_pinned_task_is_not_nudged_up_to_high_priority():
+    # The student said to leave this one alone; proposing to escalate it is the
+    # assistant arguing with a decision they already made.
+    engine = PlannerEngine()
+    items = [
+        record("soon", TaskContent(
+            title="Soon", due_date=date(2026, 8, 14), priority="low", keep_scheduled=True,
+        )),
+    ]
+    result = engine.analyze(items, today=date(2026, 8, 13))
+    assert "priority.deadline_escalation.v1" not in {item.rule_id for item in result}
+
+
+def test_a_pinned_task_still_counts_towards_an_overloaded_day():
+    # The day is as full as it is whatever is pinned on it, so the finding
+    # stands -- but a pinned task is not offered as the one to move.
+    engine = PlannerEngine(max_daily_minutes=100)
+    items = [
+        record("pinned", TaskContent(
+            title="Exam", due_date=date(2026, 8, 20), estimated_minutes=60,
+            keep_scheduled=True,
+        )),
+        record("movable", TaskContent(
+            title="Reading", due_date=date(2026, 8, 20), estimated_minutes=60,
+        )),
+    ]
+    overload = [i for i in engine.analyze(items, today=date(2026, 8, 13))
+                if i.rule_id == "workload.daily_capacity.v1"]
+    assert len(overload) == 1
+    assert overload[0].facts["total_minutes"] == 120
+    assert overload[0].record_ids == ["movable"]
+
+
 def test_daily_overload_rule():
     engine = PlannerEngine(max_daily_minutes=100)
     items = [

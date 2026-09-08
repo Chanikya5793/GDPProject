@@ -6,7 +6,7 @@ import { getTasks, createTask, updateTask, deleteTask, toggleTask, batchUpdateTa
 import { createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
 
-import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle, ShieldCheck } from 'lucide-react'
+import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle, ShieldCheck, Pin } from 'lucide-react'
 import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
@@ -107,6 +107,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
     category: task?.category || defaultCategory || 'Homework',
     notes: task?.notes || '',
     _approvedForAi: task?._approvedForAi ?? true,
+    keepScheduled: task?.keepScheduled ?? false,
   })
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])
@@ -166,6 +167,12 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
                 onChange={e => set('_approvedForAi', e.target.checked)} />
               <ShieldCheck size={14} />
               <span>Approve this task for AI retrieval</span>
+            </label>
+            <label className="form-checkbox">
+              <input type="checkbox" checked={form.keepScheduled}
+                onChange={e => set('keepScheduled', e.target.checked)} />
+              <Pin size={14} />
+              <span>Keep where I put it &mdash; never move or escalate this one</span>
             </label>
             <div className="form-grid-2">
               <div className="form-group">

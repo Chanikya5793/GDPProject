@@ -93,7 +93,15 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
     """
     proposals: list[ActionProposal] = []
     refusals: list[str] = []
+    # A safety net for the model reaching for the wrong id. Records now carry
+    # both, and the instructions say which is which, but an S-number in
+    # record_id used to mean a duplicate got created instead of an edit -- and
+    # the mapping to fix it is right here, so there is no reason to let that
+    # happen rather than quietly doing what was obviously meant.
+    by_citation = {citation.citation_id: citation.record_id for citation in citations}
     for action in generated.all_actions():
+        if action.record_id in by_citation:
+            action = action.model_copy(update={"record_id": by_citation[action.record_id]})
         # The preview card carries a before-and-after of every field, so the
         # rationale only has to say what kind of change this is. It used to be
         # the whole answer, which is what forced the assistant to write prose
