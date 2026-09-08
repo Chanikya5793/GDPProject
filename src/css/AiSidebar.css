@@ -247,6 +247,18 @@
   padding-left: 7px;
 }
 
+/* Changes the assistant described but could not turn into a proposal. A notice
+   rather than a paragraph welded onto the answer, so a short reply stays short. */
+.ai-unavailable {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--red-soft, #fdecea);
+  border-left: 2px solid var(--red, #b3261e);
+  border-radius: 0 4px 4px 0;
+  padding: 6px 8px;
+}
+
 .ai-proposal {
   background: var(--white);
   border: 1px solid var(--green-mid);

@@ -84,14 +84,36 @@ def strip_citation_markers(answer: str, allowed: Set[str]) -> Tuple[str, List[st
 
 
 def _silent_action_text(count: int) -> str:
-    """What to say when it proposed a change and described it in silence.
+    """What to say when the changes speak for themselves.
 
-    The prose doubles as the proposal's rationale, so an empty one would leave
-    a preview card with nothing above it saying why it is there.
+    Every proposal is rendered as a before-and-after card with a confirm
+    control next to it, so this only has to say how many there are. It used to
+    have to carry the rationale as well, which is why it was a sentence.
     """
-    if count == 1:
-        return "Here's the change I'm proposing. Confirm it and I'll apply it."
-    return f"Here are the {count} changes I'm proposing. Confirm the ones you want."
+    return "1 change to confirm." if count == 1 else f"{count} changes to confirm."
+
+
+# What each reply style asks of the model. Only the prose varies: citation IDs
+# are never trimmed by style, because dropping them would empty the sources
+# list the student uses to check the assistant's work.
+REPLY_STYLE_NOTES: Dict[str, str] = {
+    "quiet": (
+        "REPLY_STYLE=quiet. Say as little as possible. When you are proposing "
+        "changes, leave answer empty entirely -- the app shows them. Answer a "
+        "question in one short sentence."
+    ),
+    "brief": (
+        "REPLY_STYLE=brief. One sentence. When you are proposing changes, that "
+        "sentence is at most a handful of words, or leave answer empty."
+    ),
+    "normal": (
+        "REPLY_STYLE=normal. Two or three sentences at most."
+    ),
+    "detailed": (
+        "REPLY_STYLE=detailed. A short paragraph is welcome, and a list when "
+        "they asked for several things. Still no narrating your own process."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -267,6 +289,7 @@ class CopilotService:
         self, question: str, today: date, history: Optional[Sequence[ChatTurn]],
         briefing: Dict[str, Any], sources: List[Dict[str, Any]],
         observations: List[Dict[str, Any]], rounds_left: int,
+        reply_style: str = "brief",
     ) -> str:
         parts = [
             "Answer the student using the planner data below. PLANNER_BRIEFING is "
@@ -278,7 +301,8 @@ class CopilotService:
             "what the two of you have already said; use it to resolve what they mean "
             "by this or that, but never as evidence about their planner. Cite the "
             "citation_id of every record you make a claim about. If they asked for a "
-            "change, put it in actions and say it needs their confirmation. Resolve "
+            "change, put it in actions; the app shows the student a preview of each "
+            "one and a confirm control, so do not restate either in prose. Resolve "
             "relative dates against TODAY.",
             f"TODAY={json.dumps(today.isoformat())}",
             f"PLANNER_BRIEFING={json.dumps(briefing)}",
@@ -295,6 +319,7 @@ class CopilotService:
         )
         parts.append(f"USER_QUESTION={json.dumps(question)}")
         parts.append(self._tool_note(rounds_left))
+        parts.append(REPLY_STYLE_NOTES.get(reply_style, REPLY_STYLE_NOTES["brief"]))
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
@@ -313,9 +338,17 @@ class CopilotService:
         citations = session.evidence.citations
         allowed = {citation.citation_id: citation for citation in citations}
         actions = generated.all_actions()
-        answer = generated.answer.strip() or (
-            _silent_action_text(len(actions)) if actions else EMPTY_ANSWER
-        )
+        # Quiet is enforced here rather than asked for in the prompt. Five
+        # successive attempts in this file's history to fix tone by rewording
+        # are the argument: an instruction the model can decline is not a
+        # setting. With changes on the table the card says everything, so
+        # whatever prose came back is dropped.
+        if actions and session.planner_settings.reply_style == "quiet":
+            answer = _silent_action_text(len(actions))
+        else:
+            answer = generated.answer.strip() or (
+                _silent_action_text(len(actions)) if actions else EMPTY_ANSWER
+            )
         answer, inline = strip_citation_markers(answer, set(allowed))
         answer = answer or EMPTY_ANSWER
         cited = list(dict.fromkeys([*generated.citation_ids, *inline]))
@@ -452,7 +485,8 @@ class CopilotService:
                     "provider": getattr(self.generator, "provider", "unknown"),
                 })
             prompt = self._prompt(
-                question, today, history, briefing, sources, observations, rounds_left
+                question, today, history, briefing, sources, observations, rounds_left,
+                session.planner_settings.reply_style,
             )
             generated = None
             for item in self._generate_round(uid, prompt, allow_stream):

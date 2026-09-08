@@ -13,6 +13,7 @@ import {
   onNotificationTapped,
 } from '@/api/notifications';
 import { clearWidget, onWidgetAction, syncWidget } from '@/api/widgets';
+import { clearLiveActivities } from '@/api/liveActivity';
 import { updateTask } from '@/api/tasks';
 
 const ASKED_KEY = 'nw_notifications_asked';
@@ -50,6 +51,10 @@ export default function DeviceSync() {
       // this student's work must go before anyone else can sign in.
       cancelAllNotifications().catch(() => {});
       clearWidget();
+      // Not covered by clearWidget: a Live Activity lives in ActivityKit
+      // rather than the App Group, so it would otherwise outlast the session
+      // and put the previous student's work on a shared phone's Lock Screen.
+      clearLiveActivities().catch(() => {});
       return;
     }
 
