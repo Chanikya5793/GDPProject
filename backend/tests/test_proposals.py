@@ -3,7 +3,13 @@ from datetime import date, timedelta
 import pytest
 
 from app.ai import GeneratedAction
-from app.models import EntityType, ProposalOperation, RecordUpsertRequest, TaskContent
+from app.models import (
+    EntityType,
+    ProposalOperation,
+    RecordUpsertRequest,
+    ReminderContent,
+    TaskContent,
+)
 from app.proposals import InvalidProposal
 from app.repository import NotFound, RevisionConflict
 
@@ -173,6 +179,48 @@ def test_a_note_falls_back_to_notes_when_the_model_uses_the_wrong_field(services
 ])
 def test_invalid_generated_actions_do_not_create_proposals(services, action):
     assert services.proposals.from_generated_action("alice", action, "Nope") is None
+
+
+def test_the_assistant_can_pin_a_task_and_unpin_it(services):
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t9",
+        RecordUpsertRequest(
+            content=TaskContent(title="Exam", due_date=date(2026, 9, 10)),
+            idempotency_key="seed-task-t9",
+        ),
+    )
+
+    pinned = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task,
+        record_id="t9", keep_scheduled=True,
+    ), "Pin it").proposal
+    assert pinned is not None
+    assert pinned.after.keep_scheduled is True
+
+    # False is a real instruction, not an absent one -- the tri-state is what
+    # makes "manage this one again" expressible.
+    released = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task,
+        record_id="t9", keep_scheduled=False,
+    ), "Unpin it").proposal
+    assert released is not None
+    assert released.after.keep_scheduled is False
+
+
+def test_only_a_task_can_be_pinned(services):
+    services.repository.upsert_record(
+        "alice", EntityType.reminder, "r9",
+        RecordUpsertRequest(
+            content=ReminderContent(title="Office hours", date=date(2026, 9, 10)),
+            idempotency_key="seed-reminder-r9",
+        ),
+    )
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.reminder,
+        record_id="r9", keep_scheduled=True,
+    ), "Pin it")
+    assert prepared.proposal is None
+    assert "task" in prepared.reason
 
 
 def test_reschedule_and_update_proposals(services):

@@ -179,9 +179,26 @@ class PlannerSession:
         return self.evidence.register(record, record_text(record))
 
     def summarize(self, record: PlannerRecord) -> Dict[str, Any]:
-        """A record as the model sees it: enough to answer with, and a way to cite it."""
+        """A record as the model sees it: enough to answer with, a way to cite
+        it, and the id needed to change it.
+
+        The id was missing for a long time and the consequences were bad. Every
+        record reached the model carrying only a citation id -- S1, S2 -- while
+        the instructions told it that changing a record needs "the record_id of
+        an existing record you were shown". It had been shown none. So a request
+        to edit something ended one of two ways: it guessed "S1" and got back
+        "that record no longer exists", or it played safe and emitted a create,
+        which the server accepted because a create mints its own id. That is
+        where the duplicate records came from.
+
+        Everything the model sees is built here -- the briefing and all five
+        tools -- so this covers all of them at once.
+        """
         content = record.content
         item: Dict[str, Any] = {
+            # For changing this record.
+            "record_id": record.record_id,
+            # For pointing at it in prose. Not interchangeable with the above.
             "citation_id": self.cite(record),
             "type": content.entity_type.value,
             "title": content.title,
@@ -192,6 +209,7 @@ class PlannerSession:
                 "due_time": content.due_time, "priority": content.priority,
                 "category": content.category, "estimated_minutes": content.estimated_minutes,
                 "status": "completed" if content.completed else "open",
+                "keep_scheduled": content.keep_scheduled,
             })
             if content.notes:
                 item["notes"] = safe_excerpt(content.notes, 160)

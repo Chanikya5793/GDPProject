@@ -43,6 +43,12 @@ class TaskContent(StrictModel):
     notes: SafeText = ""
     completed: bool = False
     estimated_minutes: int = Field(default=30, ge=5, le=1440)
+    # "Leave this one where I put it." Auto-balance pulls crowded work onto
+    # earlier days and the deadline rule nudges a near date up to high priority;
+    # both are usually welcome and occasionally wrong, for the appointment that
+    # cannot move or the long read that is deliberately last. False keeps
+    # today's behaviour for every record that predates the field.
+    keep_scheduled: bool = False
     # Set on every record of a repeat. The id ties the series together so it can
     # be found and removed as one; the rule rides along on each record so a row
     # can say what it is without loading its siblings.

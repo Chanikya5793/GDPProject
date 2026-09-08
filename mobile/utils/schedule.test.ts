@@ -59,6 +59,33 @@ describe('detectOverloadedDays', () => {
   });
 });
 
+describe('a task the student pinned', () => {
+  it('still fills the day but is never the one that moves', () => {
+    // It is genuinely on that day, so it counts towards the day being full.
+    // What must not happen is auto-balance picking it up and moving it.
+    const tasks = [
+      task('2026-08-30', 'high', { id: 'keep1' }),
+      task('2026-08-30', 'high', { id: 'keep2' }),
+      task('2026-08-30', 'low', { id: 'pinned', keepScheduled: true }),
+    ];
+    const days = detectOverloadedDays(tasks, 2, TODAY);
+    expect(days[0].tasks).toHaveLength(3);
+
+    const moves = suggestReschedule(days, tasks, 2, TODAY);
+    expect(moves.map(move => move.task.id)).not.toContain('pinned');
+  });
+
+  it('leaves the day alone when the only movable task is pinned', () => {
+    const tasks = [
+      task('2026-08-30', 'high', { id: 'keep1' }),
+      task('2026-08-30', 'high', { id: 'keep2' }),
+      task('2026-08-30', 'low', { id: 'pinned', keepScheduled: true }),
+    ];
+    const moves = suggestReschedule(detectOverloadedDays(tasks, 2, TODAY), tasks, 2, TODAY);
+    expect(moves).toEqual([]);
+  });
+});
+
 describe('suggestReschedule', () => {
   it('keeps the highest-priority tasks and pulls the overflow earlier', () => {
     const tasks = [

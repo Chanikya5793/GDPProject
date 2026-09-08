@@ -54,7 +54,7 @@ class PlannerEngine:
                             rule_id="deadline.overdue.v1", facts={"days_overdue": abs(days)},
                             suggested_operation=ProposalOperation.reschedule,
                         ))
-                    elif days <= 2 and content.priority != "high":
+                    elif days <= 2 and content.priority != "high" and not content.keep_scheduled:
                         recommendations.append(DeterministicRecommendation(
                             kind="priority", record_ids=[record.record_id], severity="warning",
                             rule_id="priority.deadline_escalation.v1",
@@ -72,8 +72,15 @@ class PlannerEngine:
         for due_day, tasks in tasks_by_day.items():
             total = sum(record.content.estimated_minutes for record in tasks)  # type: ignore[union-attr]
             if total > capacity:
+                # The day is overloaded whatever is on it, so the finding stands
+                # and every task still counts towards the total. What changes is
+                # which of them are offered as the ones to move: a task the
+                # student pinned is not a candidate, and naming it as one would
+                # be the assistant arguing with a decision they already made.
+                movable = [r for r in tasks if not r.content.keep_scheduled]  # type: ignore[union-attr]
                 recommendations.append(DeterministicRecommendation(
-                    kind="overload", record_ids=[r.record_id for r in tasks], severity="critical",
+                    kind="overload", record_ids=[r.record_id for r in (movable or tasks)],
+                    severity="critical",
                     rule_id="workload.daily_capacity.v1",
                     facts={"date": due_day.isoformat(), "total_minutes": total,
                            "capacity_minutes": capacity},
