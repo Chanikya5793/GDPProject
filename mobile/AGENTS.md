@@ -1,7 +1,7 @@
 # Expo HAS CHANGED
 
 Read the exact versioned docs before writing any code. This project is on
-**Expo SDK 57** (`expo: ^57.0.20`), so the docs to read are:
+**Expo SDK 57** (`expo: ~57.0.21`), so the docs to read are:
 
 https://docs.expo.dev/versions/v57.0.0/
 
