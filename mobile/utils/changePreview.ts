@@ -113,3 +113,35 @@ export function changeSummary(proposal?: ChangeProposal | null): string {
   const first = changeLines(proposal)[0];
   return first?.from ? `${title} · ${first.label} ${first.from} → ${first.to}` : title;
 }
+
+export interface LongTextChange {
+  field: string;
+  label: string;
+  before: string;
+  after: string;
+}
+
+/** Fields long enough that a from → to row is unreadable and a diff is not. */
+const LONG_TEXT: [string, string][] = [['body', 'Text'], ['notes', 'Notes']];
+
+/**
+ * The long-text field this proposal rewrites, if it rewrites one.
+ *
+ * Separated from `changeLines` because these two want completely different
+ * treatment: a date changing is a from → to row, while a note's body changing
+ * is a paragraph that has to be diffed to mean anything. Returns null for a
+ * create or a delete, where there is no "before" to compare against.
+ */
+export function longTextChange(proposal?: ChangeProposal | null): LongTextChange | null {
+  const before = proposal?.before;
+  const after = proposal?.after;
+  if (!before || !after) return null;
+  for (const [key, label] of LONG_TEXT) {
+    const from = before[key];
+    const to = after[key];
+    if (typeof from !== 'string' && typeof to !== 'string') continue;
+    if ((from || '') === (to || '')) continue;
+    return { field: key, label, before: from || '', after: to || '' };
+  }
+  return null;
+}

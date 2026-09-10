@@ -259,6 +259,64 @@
   padding: 6px 8px;
 }
 
+/* What a rewrite changed, word by word. Colour is never the only signal:
+   an addition also carries weight and a removal also carries a strikethrough,
+   so the diff survives being read in greyscale or by someone colourblind. */
+.ai-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.ai-diff-stat {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ai-diff-body {
+  margin: 0;
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--surface-variant, #f5f6f5);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-diff-add {
+  background: var(--green-soft, #d9efe4);
+  font-weight: 600;
+}
+
+.ai-diff-remove {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.ai-diff-skip {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Present for a screen reader, absent for everyone else. The diff runs are
+   aria-hidden, so this is how the two versions are read linearly. */
+.ai-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .ai-proposal {
   background: var(--white);
   border: 1px solid var(--green-mid);

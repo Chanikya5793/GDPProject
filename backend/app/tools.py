@@ -253,6 +253,13 @@ class PlannerSession:
                     buckets["schedule_ahead"].append(record)
                 continue
             if isinstance(content, NoteContent):
+                # Notes have no date, so they fit none of the day buckets and
+                # used to be dropped here entirely. That left them out of the
+                # briefing, which is where every other record hands its
+                # record_id over unprompted -- so a request to edit a note
+                # reached a model that had never been shown the note, and
+                # creating a second one was the only thing it could express.
+                buckets["notes"].append(record)
                 continue
             if day is None:
                 buckets["unscheduled"].append(record)
@@ -272,6 +279,10 @@ class PlannerSession:
         order = [
             "overdue", "due_today", "due_tomorrow", "schedule_ahead",
             "due_this_week", "unscheduled", "due_later",
+            # Last: dated work is what a briefing is mostly for, and notes
+            # should not crowd it out of the item budget. Present, though, so
+            # the model can edit one without hunting for it first.
+            "notes",
         ]
         remaining = self.briefing_items
         sections: Dict[str, List[Dict[str, Any]]] = {}

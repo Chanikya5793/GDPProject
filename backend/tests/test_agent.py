@@ -11,6 +11,7 @@ import pytest
 from app.ai import GeneratedAction, GeneratedAnswer, ToolName, ToolRequest
 from app.models import (
     EntityType,
+    NoteContent,
     PlannerSettings,
     PrivacySettings,
     ProposalOperation,
@@ -800,6 +801,25 @@ def test_an_unresolvable_citation_id_is_refused_honestly(services, client, auth)
 
     assert body["proposals"] == []
     assert "citation" in body["unavailable"][0]
+
+
+def test_a_note_is_in_the_briefing_so_it_can_be_edited(services):
+    # Notes carry no date, so they fit none of the day buckets and were dropped
+    # from the briefing entirely -- which is where every other record hands its
+    # id over unprompted. A model asked to reword a note had never been shown
+    # the note, and creating a second one was all it could express.
+    services.repository.upsert_record(
+        "alice", EntityType.note, "chem-notes-01",
+        RecordUpsertRequest(
+            content=NoteContent(title="Chem notes", body="Titration steps"),
+            idempotency_key="seed-note-chem", approved_for_ai=True,
+        ),
+    )
+    generator = use(services, GeneratedAnswer(answer="Done."))
+
+    services.copilot.answer("alice", "reword my chem notes", today=TODAY)
+
+    assert "chem-notes-01" in generator.prompts[0]
 
 
 def test_reply_style_reaches_the_model(services):
