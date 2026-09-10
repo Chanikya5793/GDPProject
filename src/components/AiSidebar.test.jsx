@@ -13,6 +13,34 @@ describe('copilot evidence and confirmation UI', () => {
     )
   })
 
+  it('shows a note rewrite as a diff rather than two walls of text', () => {
+    // The complaint this was built for: an edited note showed the whole old
+    // body struck through beside the whole new one, and a student could not
+    // tell what had actually changed.
+    render(<ProposalCard proposal={{
+      proposal_id: 'p9', operation: 'update', entity_type: 'note', status: 'pending',
+      rationale: 'Change note: Chem notes',
+      before: { entity_type: 'note', title: 'Chem notes', body: 'Rinse the burette, fill to zero.' },
+      after: { entity_type: 'note', title: 'Chem notes', body: 'Rinse the burette twice, fill to zero.' },
+    }} onConfirm={vi.fn()} onReject={vi.fn()} />)
+
+    // The stat line is what has to work even when the diff is collapsed.
+    expect(screen.getByText('1 word added')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Text: 1 word added/ })).toBeInTheDocument()
+  })
+
+  it('leaves a create alone, where there is nothing to diff against', () => {
+    render(<ProposalCard proposal={{
+      proposal_id: 'p10', operation: 'create', entity_type: 'note', status: 'pending',
+      rationale: 'Add note: Fresh notes',
+      before: null,
+      after: { entity_type: 'note', title: 'Fresh notes', body: 'All new text' },
+    }} onConfirm={vi.fn()} onReject={vi.fn()} />)
+
+    expect(screen.queryByRole('group', { name: /Text/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Adds')).toBeInTheDocument()
+  })
+
   it('shows before and after but does not confirm until clicked', () => {
     const confirm = vi.fn()
     render(<ProposalCard proposal={{

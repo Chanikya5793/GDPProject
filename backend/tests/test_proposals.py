@@ -5,6 +5,7 @@ import pytest
 from app.ai import GeneratedAction
 from app.models import (
     EntityType,
+    NoteContent,
     ProposalOperation,
     RecordUpsertRequest,
     ReminderContent,
@@ -179,6 +180,80 @@ def test_a_note_falls_back_to_notes_when_the_model_uses_the_wrong_field(services
 ])
 def test_invalid_generated_actions_do_not_create_proposals(services, action):
     assert services.proposals.from_generated_action("alice", action, "Nope") is None
+
+
+def seed_note(services, record_id="n1", title="Chem notes", body="ORIGINAL BODY"):
+    services.repository.upsert_record(
+        "alice", EntityType.note, record_id,
+        RecordUpsertRequest(
+            content=NoteContent(title=title, body=body),
+            idempotency_key=f"seed-note-{record_id}",
+        ),
+    )
+
+
+def test_a_note_body_can_be_rewritten(services):
+    # The bug behind "it always creates a new one instead of editing". A note
+    # keeps its text in `body`, which the update path did not carry, so the
+    # only way the model could express new note text was to create a note.
+    seed_note(services)
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.note,
+        record_id="n1", body="REWRITTEN BODY",
+    ), "Rewrite it")
+
+    assert prepared.proposal is not None, prepared.reason
+    assert prepared.proposal.after.body == "REWRITTEN BODY"
+    assert prepared.proposal.before.body == "ORIGINAL BODY"
+
+
+def test_note_text_offered_as_notes_still_lands_in_the_body(services):
+    # `notes` is where long text goes for a task, and the model reaches for it
+    # on a note often enough that create already accepts either. This used to
+    # be the silent case: model_copy does not validate, so the text was
+    # attached to a phantom attribute, the preview showed no change, and
+    # confirming wrote the note back exactly as it was.
+    seed_note(services)
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.note,
+        record_id="n1", notes="TEXT VIA NOTES",
+    ), "Rewrite it")
+
+    assert prepared.proposal is not None, prepared.reason
+    assert prepared.proposal.after.body == "TEXT VIA NOTES"
+    assert not hasattr(prepared.proposal.after, "notes")
+
+
+def test_a_task_due_date_can_be_changed_by_update_as_well_as_reschedule(services):
+    # "Move my essay to Friday" is naturally an update to the model. Refusing
+    # it with "it did not say what to change about it" is what sent it back
+    # round to create a second essay.
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t20",
+        RecordUpsertRequest(
+            content=TaskContent(title="Essay", due_date=date(2026, 9, 4)),
+            idempotency_key="seed-task-t20",
+        ),
+    )
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task,
+        record_id="t20", due_date="2026-09-11", due_time="17:00",
+    ), "Move it")
+
+    assert prepared.proposal is not None, prepared.reason
+    assert prepared.proposal.after.due_date == date(2026, 9, 11)
+    assert prepared.proposal.after.due_time == "17:00"
+
+
+def test_an_update_naming_nothing_the_record_has_is_refused_not_silently_dropped(services):
+    seed_note(services)
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.note,
+        record_id="n1", priority="high",
+    ), "Prioritise it")
+
+    assert prepared.proposal is None
+    assert "priority" in prepared.reason
 
 
 def test_the_assistant_can_pin_a_task_and_unpin_it(services):

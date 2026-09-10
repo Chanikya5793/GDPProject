@@ -4,7 +4,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .ai import GeneratedAction
 from .audit import AuditLogger
@@ -61,6 +61,79 @@ DEFAULT_PROPOSAL_TTL_HOURS = 24
 
 
 _CITATION_SHAPED = re.compile(r"S\d+")
+
+
+def _apply_update(
+    before: PlannerContent, action: GeneratedAction,
+) -> tuple[Optional[PlannerContent], Optional[str]]:
+    """The record as an update would leave it, or why it cannot be one.
+
+    Built per content type rather than by filtering one dict of every field,
+    because `model_copy` does not validate: handed a key the type does not
+    have, it silently attaches a stray attribute that is dropped again on
+    serialization. That is not a hypothetical. A note keeps its text in `body`
+    and has no `notes` field, so a model rewriting a note through `notes` --
+    the only long-text key the old dict carried -- produced a proposal whose
+    preview showed the body unchanged, and confirming it wrote the note back
+    exactly as it was. The assistant appeared to do nothing, which is precisely
+    what a student reported.
+
+    So each branch names the fields that type actually has, and anything else
+    is refused with a reason rather than quietly discarded.
+    """
+    updates: Dict[str, Any] = {}
+
+    def offered(*names: str) -> Dict[str, Any]:
+        return {
+            name: getattr(action, name) for name in names
+            if getattr(action, name, None) is not None
+        }
+
+    if isinstance(before, NoteContent):
+        updates.update(offered("title"))
+        # `notes` is where the model puts long text for a task, and it reaches
+        # for the same field on a note often enough that create already accepts
+        # either. Treating them the same here keeps the two paths honest.
+        text = action.body if action.body is not None else action.notes
+        if text is not None:
+            updates["body"] = text
+        if action.priority is not None:
+            return None, "a note has no priority to set"
+        if action.keep_scheduled is not None:
+            return None, "only a task can be pinned in place"
+
+    elif isinstance(before, TaskContent):
+        updates.update(offered("title", "priority", "notes", "keep_scheduled", "category"))
+        if action.body is not None and action.notes is None:
+            # A task has no body. The text was still meant for it.
+            updates["notes"] = action.body
+        due_date, embedded_time = split_generated_datetime(action.due_date)
+        if due_date is not None:
+            updates["due_date"] = due_date
+        at_time = clean_generated_time(action.due_time) or embedded_time
+        if at_time is not None:
+            updates["due_time"] = at_time
+
+    elif isinstance(before, ReminderContent):
+        updates.update(offered("title", "notes"))
+        if action.priority is not None:
+            return None, "a reminder has no priority to set"
+        if action.keep_scheduled is not None:
+            return None, "only a task can be pinned in place"
+        due_date, embedded_time = split_generated_datetime(action.due_date)
+        if due_date is not None:
+            updates["date"] = due_date
+        at_time = clean_generated_time(action.due_time) or embedded_time
+        if at_time is not None:
+            updates["time"] = at_time
+
+    else:
+        return None, "that kind of record cannot be edited"
+
+    if not updates:
+        return None, "it did not say what to change about it"
+    return before.model_copy(update=updates), None
+
 
 class InvalidProposal(ValueError):
     pass
@@ -167,21 +240,9 @@ class ProposalService:
                 else:
                     return PreparedAction(reason="only tasks and reminders have a day to move")
             elif action.operation == ProposalOperation.update:
-                updates = {
-                    key: value for key, value in {
-                        "title": action.title, "priority": action.priority, "notes": action.notes,
-                        "keep_scheduled": action.keep_scheduled,
-                    }.items() if value is not None
-                }
-                if not updates:
-                    return PreparedAction(reason="it did not say what to change about it")
-                if isinstance(before, NoteContent) and "priority" in updates:
-                    return PreparedAction(reason="a note has no priority to set")
-                # Only a task is ever moved or escalated, so only a task has
-                # anything to pin. model_copy would raise on the others.
-                if "keep_scheduled" in updates and not isinstance(before, TaskContent):
-                    return PreparedAction(reason="only a task can be pinned in place")
-                after = before.model_copy(update=updates)
+                after, reason = _apply_update(before, action)
+                if after is None:
+                    return PreparedAction(reason=reason or "it did not say what to change about it")
 
         series: list[ProposedRecord] = []
         if action.operation == ProposalOperation.create and after is not None:

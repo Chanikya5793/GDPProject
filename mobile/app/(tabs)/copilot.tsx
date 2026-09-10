@@ -28,7 +28,10 @@ const KEPT_MESSAGES = 60;
 
 import { toHistory } from '@/utils/chatHistory';
 import { seriesSummary } from '@/utils/series';
-import { changeLines, changeSummary } from '@/utils/changePreview';
+import {
+  changeLines, changeSummary, LongTextChange, longTextChange,
+} from '@/utils/changePreview';
+import { diffSentence, diffStat, diffWords } from '@/utils/textDiff';
 
 interface Citation {
   citation_id: string;
@@ -383,6 +386,52 @@ export default function CopilotScreen() {
     }
   };
 
+
+  /**
+   * A rewrite, word by word.
+   *
+   * Nested Text spans rather than Views: a View between words breaks reflow, so
+   * the whole diff is one paragraph with styled runs inside it. Colour is never
+   * the only signal — an addition also carries weight, a removal a strikethrough
+   * — so it survives greyscale and colourblindness.
+   *
+   * The runs themselves are hidden from the screen reader, which would read
+   * them as disconnected fragments; the group carries the sentence instead.
+   */
+  const renderDiff = (change: LongTextChange | null) => {
+    if (!change) return null;
+    const stat = diffStat(change.before, change.after);
+    const sentence = diffSentence(stat);
+    if (!stat.added && !stat.removed) return null;
+
+    return (
+      <View
+        style={styles.diff}
+        accessible
+        accessibilityLabel={`${change.label}: ${sentence}. Before: ${change.before || 'empty'}. After: ${change.after || 'empty'}.`}
+      >
+        <Text style={styles.diffStat}>{change.label} · {sentence}</Text>
+        <Text style={styles.diffBody} accessibilityElementsHidden>
+          {diffWords(change.before, change.after).map((run, index) => {
+            if (run.type === 'skip') {
+              return (
+                <Text key={index} style={styles.diffSkip}>… {run.words} unchanged words … </Text>
+              );
+            }
+            if (run.type === 'truncated') return <Text key={index} style={styles.diffSkip}>…</Text>;
+            return (
+              <Text
+                key={index}
+                style={run.type === 'add' ? styles.diffAdd : run.type === 'remove' ? styles.diffRemove : undefined}
+              >
+                {run.text}
+              </Text>
+            );
+          })}
+        </Text>
+      </View>
+    );
+  };
   const proposalCard = (proposal: Proposal) => (
     <View key={proposal.proposal_id} style={styles.proposal}>
       <Text style={styles.proposalTitle}>{proposal.operation} {proposal.entity_type} · {proposal.status}</Text>
@@ -391,15 +440,20 @@ export default function CopilotScreen() {
         <Text style={styles.proposalSeries}>↻ {seriesSummary(proposal)}</Text>
       ) : null}
       <View style={styles.changeList}>
-        {changeLines(proposal).map(line => (
-          <View key={line.label} style={styles.changeRow}>
-            <Text style={styles.changeLabel}>{line.label}</Text>
-            {line.from !== undefined && <Text style={styles.changeFrom}>{line.from}</Text>}
-            {line.from !== undefined && <Text style={styles.changeArrow}>→</Text>}
-            <Text style={styles.changeTo}>{line.to}</Text>
-          </View>
-        ))}
+        {changeLines(proposal)
+          .filter(line => line.label !== longTextChange(proposal)?.label)
+          .map(line => (
+            <View key={line.label} style={styles.changeRow}>
+              <Text style={styles.changeLabel}>{line.label}</Text>
+              {line.from !== undefined && <Text style={styles.changeFrom}>{line.from}</Text>}
+              {line.from !== undefined && (
+                <Text style={styles.changeArrow} accessibilityElementsHidden>→</Text>
+              )}
+              <Text style={styles.changeTo}>{line.to}</Text>
+            </View>
+          ))}
       </View>
+      {renderDiff(longTextChange(proposal))}
       {proposal.status === 'pending' && (
         <View style={styles.actions}>
           <TouchableOpacity style={styles.reject} onPress={() => actOnProposal(proposal, 'reject')}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity>
@@ -662,6 +716,17 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     changeLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.4, minWidth: 52, textTransform: 'uppercase' },
     changeFrom: { color: colors.textMuted, fontSize: 12, textDecorationLine: 'line-through' },
     changeArrow: { color: accent.primary, fontSize: 12 },
+    diff: { gap: 4, marginTop: 4 },
+    diffStat: { color: colors.textMuted, fontSize: 11 },
+    diffBody: {
+      color: colors.text, fontSize: 12, lineHeight: 18,
+      backgroundColor: colors.surfaceVariant, borderRadius: 6, padding: 8,
+    },
+    // Never colour alone: an addition also carries weight and a removal a
+    // strikethrough, so the diff survives greyscale and colourblindness.
+    diffAdd: { backgroundColor: accent.surface, fontWeight: '600' },
+    diffRemove: { color: colors.textMuted, textDecorationLine: 'line-through' },
+    diffSkip: { color: colors.textMuted, fontStyle: 'italic' },
     changeTo: { color: colors.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
     previewRow: { flexDirection: 'row', gap: 6 }, preview: { flex: 1, backgroundColor: colors.surfaceVariant, padding: 6, borderRadius: 6, maxHeight: 140 },
     previewLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700' }, previewText: { color: colors.text, fontSize: 9 },

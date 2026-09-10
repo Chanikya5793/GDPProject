@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat, Plus, MessageSquare, Pencil } from 'lucide-react'
 import { useAi } from '../context/AiContext'
-import { changeLines, changeSummary } from '../utils/changePreview'
+import { changeLines, changeSummary, longTextChange } from '../utils/changePreview'
+import { diffSentence, diffStat, diffWords } from '../utils/textDiff'
 import '../css/AiSidebar.css'
 
 const SUGGESTIONS = [
@@ -96,6 +97,60 @@ export function CitationList({ citations }) {
 }
 
 /** The span a repeat covers, so one preview can stand for the whole series. */
+/**
+ * What a rewrite actually changed, word by word.
+ *
+ * The old preview put the whole previous text next to the whole new one and
+ * left the student to spot the difference, which for a note body meant two
+ * near-identical walls of small type. The stat line is the part that has to
+ * work even when the diff is collapsed, so it comes first and doubles as the
+ * label a screen reader hears.
+ */
+export function ChangeDiff({ change }) {
+  const [open, setOpen] = useState(false)
+  const stat = diffStat(change.before, change.after)
+  const sentence = diffSentence(stat)
+  const runs = diffWords(change.before, change.after, open ? { maxChars: Infinity } : undefined)
+  const clipped = runs.some(run => run.type === 'truncated' || run.type === 'skip')
+
+  return (
+    <div className="ai-diff" role="group" aria-label={`${change.label}: ${sentence}`}>
+      <div className="ai-diff-stat">
+        <span className="ai-change-label">{change.label}</span>
+        <span>{sentence}</span>
+      </div>
+      {stat.added || stat.removed ? (
+        <p className="ai-diff-body" aria-hidden="true">
+          {runs.map((run, index) => {
+            if (run.type === 'skip') {
+              return <span key={index} className="ai-diff-skip">… {run.words} unchanged words … </span>
+            }
+            if (run.type === 'truncated') {
+              return <span key={index} className="ai-diff-skip">…</span>
+            }
+            return <span key={index} className={`ai-diff-${run.type}`}>{run.text}</span>
+          })}
+        </p>
+      ) : null}
+      {/* Read linearly rather than as interleaved fragments, which is what a
+          screen reader would otherwise make of the runs above. */}
+      <span className="ai-visually-hidden">
+        Before: {change.before || 'empty'}. After: {change.after || 'empty'}.
+      </span>
+      {clipped && (
+        <button
+          type="button"
+          className="ai-proposal-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen(value => !value)}
+        >
+          {open ? 'Show less' : 'Show the full text'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function seriesSummary(proposal) {
   const series = proposal?.series
   if (!series || series.length < 2) return null
@@ -106,6 +161,7 @@ export function seriesSummary(proposal) {
 export function ProposalCard({ proposal, onConfirm, onReject }) {
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
+  const long = longTextChange(proposal)
   const act = async callback => {
     setWorking(true)
     setError('')
@@ -127,7 +183,7 @@ export function ProposalCard({ proposal, onConfirm, onReject }) {
         </div>
       )}
       <ul className="ai-proposal-change">
-        {changeLines(proposal).map(line => (
+        {changeLines(proposal).filter(line => line.label !== long?.label).map(line => (
           <li key={line.label}>
             <span className="ai-change-label">{line.label}</span>
             {line.from !== undefined && <span className="ai-change-from">{line.from}</span>}
@@ -136,6 +192,7 @@ export function ProposalCard({ proposal, onConfirm, onReject }) {
           </li>
         ))}
       </ul>
+      {long && <ChangeDiff change={long} />}
       {error && <div className="ai-proposal-error">{error}</div>}
       {proposal.status === 'pending' && (
         <div className="ai-proposal-actions">
