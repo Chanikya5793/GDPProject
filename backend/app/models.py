@@ -287,6 +287,23 @@ class RenameConversationRequest(StrictModel):
     title: Title
 
 
+class FocusRecordRef(StrictModel):
+    """The one record a question is explicitly about.
+
+    Set when the student opened the assistant from a task, reminder or note
+    rather than from the chat itself. Both halves are needed to fetch it, so
+    they travel as a pair rather than as two fields that could arrive apart.
+
+    Per-turn and never persisted: the client re-sends it while its chip is on
+    screen and stops when the student dismisses it. Keeping it server-side
+    would mean a thread silently pinned to a record three questions later, with
+    no way to see or clear it.
+    """
+
+    record_id: RecordId
+    entity_type: EntityType
+
+
 class ChatRequest(StrictModel):
     message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
     request_id: IdempotencyKey
@@ -294,6 +311,10 @@ class ChatRequest(StrictModel):
     # The thread this belongs to. Given one, the server assembles the history
     # itself and `history` below is ignored; omitted, a new thread is started.
     conversation_id: Optional[RecordId] = None
+    # The record the student opened the assistant from, if any. Note the replay
+    # cache is keyed on request_id alone, so a focused and an unfocused ask must
+    # not share one.
+    focus: Optional[FocusRecordRef] = None
     # Client-sent history, still honoured when no conversation is named so an
     # older client keeps working. Capped because it is replayed into the prompt.
     history: List[ChatTurn] = Field(default_factory=list, max_length=20)
