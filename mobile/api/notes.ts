@@ -37,6 +37,10 @@ export async function createNote(note: Partial<Note> & { userId: string }): Prom
     tagIds: note.tagIds || [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    // Rebuilt field by field above, so anything not named here is dropped --
+    // which is how the assistant-visibility flag went missing on every task
+    // created from this client.
+    _approvedForAi: note._approvedForAi ?? true,
   };
   const created = await createPlannerItem('note', newNote);
   await addLog('created', 'note', created.title, { entityId: created.id, after: created });
