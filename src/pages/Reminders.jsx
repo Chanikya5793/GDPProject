@@ -4,6 +4,7 @@ import { getReminders, createReminder, updateReminder, deleteReminder } from '..
 import { Bell, Pencil, Trash2, List, LayoutGrid, X, ShieldCheck } from 'lucide-react'
 import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
+import AskAiButton from '../components/AskAiButton'
 import '../css/Reminders.css'
 
 function localDateStr(d = new Date()) {
@@ -137,6 +138,7 @@ function ReminderCard({ reminder, onEdit, onDelete }) {
         {reminder.notes && <div className="rem-notes">{reminder.notes}</div>}
       </div>
       <div className="rem-card-actions">
+        <AskAiButton record={reminder} kind="reminder" />
         <button className="btn-icon" title="Edit" onClick={() => onEdit(reminder)}>
           <Pencil size={14} />
         </button>

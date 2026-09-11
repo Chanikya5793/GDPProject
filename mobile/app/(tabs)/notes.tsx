@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image,
+  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AskAiButton from '@/components/AskAiButton';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
@@ -169,6 +170,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [preview, setPreview] = useState(false);
   const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
+  const [approvedForAi, setApprovedForAi] = useState(true);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -178,13 +180,14 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
       setTagIds(note.tagIds);
       setPreview(false);
       setAttachments(note.attachments || []);
+      setApprovedForAi(note._approvedForAi ?? true);
       setDirty(false);
     }
   }, [visible, note?.id]);
 
   const handleSave = () => {
     if (!note) return;
-    onSave(note.id, { title, body, tagIds, attachments });
+    onSave(note.id, { title, body, tagIds, attachments, _approvedForAi: approvedForAi });
     setDirty(false);
   };
 
@@ -240,7 +243,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
 
   const handleClose = () => {
     if (dirty && note) {
-      onSave(note.id, { title, body, tagIds, attachments });
+      onSave(note.id, { title, body, tagIds, attachments, _approvedForAi: approvedForAi });
     }
     onClose();
   };
@@ -251,6 +254,12 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
     headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
     titleInput: { fontSize: 22, fontWeight: '700', color: colors.text, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
     bodyInput: { flex: 1, fontSize: 16, color: colors.text, paddingHorizontal: 20, textAlignVertical: 'top', lineHeight: 24 },
+    aiRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 20, paddingBottom: 10,
+    },
+    aiLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
+    aiHint: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 17 },
     tagsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 6, paddingBottom: 8 },
     tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
     tagText: { fontSize: 12, fontWeight: '600', color: '#374151' },
@@ -280,6 +289,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
             <Ionicons name="chevron-back" size={24} color={accent.primary} />
           </TouchableOpacity>
           <View style={es.headerActions}>
+            {note && <AskAiButton record={note} kind="note" size={20} />}
             {hasMarkdown(body) && (
               <TouchableOpacity
                 onPress={() => setPreview(value => !value)}
@@ -311,6 +321,26 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
           placeholder="Note title..."
           placeholderTextColor={colors.textMuted}
         />
+
+        {/* Gated on the note alone, not on its tags: a note with no tags still
+            needs a way to say whether the assistant may read it. */}
+        {note && (
+          <View style={es.aiRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={es.aiLabel}>Visible to the assistant</Text>
+              <Text style={es.aiHint}>
+                Lets the copilot read this note when you ask about it. Turn it off
+                to keep this one out of the index.
+              </Text>
+            </View>
+            <Switch
+              value={approvedForAi}
+              onValueChange={value => { setApprovedForAi(value); setDirty(true); }}
+              trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+              accessibilityLabel="Visible to the assistant"
+            />
+          </View>
+        )}
 
         {note && tags.length > 0 && (
           <View style={es.tagsRow}>

@@ -27,6 +27,21 @@ const WELCOME = {
 
 export function AiProvider({ children }) {
   const { user } = useAuth()
+  // The record the student opened the assistant from, if any. Deliberately not
+  // persisted alongside the transcript: reopening the app days later and
+  // finding a note silently attached would be a surprise, and the server treats
+  // focus as per-turn anyway.
+  const [attachment, setAttachment] = useState(null)
+
+  // Lifted out of the sidebar so a page can open the assistant. It stayed local
+  // for as long as nothing else needed to open it, which is no longer true.
+  const [collapsed, setCollapsed] = useState(() =>
+    localStorage.getItem('nw_ai_sidebar') === 'collapsed'
+  )
+  useEffect(() => {
+    localStorage.setItem('nw_ai_sidebar', collapsed ? 'collapsed' : 'expanded')
+  }, [collapsed])
+
   const [poppedOut, setPoppedOut] = useState(() =>
     localStorage.getItem('nw_ai_popped') === 'true'
   )
@@ -43,6 +58,8 @@ export function AiProvider({ children }) {
   // one.
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
+  const attachmentRef = useRef(attachment)
+  useEffect(() => { attachmentRef.current = attachment }, [attachment])
   // Who processes approved records, read from the server so this copy cannot
   // drift from whatever provider is actually deployed.
   const [aiInfo, setAiInfo] = useState(null)
@@ -148,6 +165,7 @@ export function AiProvider({ children }) {
 
   /** Open a stored thread, replacing what is on screen with its transcript. */
   const openConversation = useCallback(async id => {
+    setAttachment(null)
     controllerRef.current?.abort()
     generationRef.current += 1
     setTyping(false)
@@ -173,6 +191,7 @@ export function AiProvider({ children }) {
 
   /** Start a fresh thread. Nothing is written until the first message. */
   const newConversation = useCallback(() => {
+    setAttachment(null)
     controllerRef.current?.abort()
     generationRef.current += 1
     setMessages([WELCOME])
@@ -206,6 +225,21 @@ export function AiProvider({ children }) {
     })
     return () => { cancelled = true }
   }, [user?.uid, loadConversations, openConversation])
+
+  /**
+   * Open the assistant on a specific record.
+   *
+   * The record is attached rather than written into the message box: prefilled
+   * text gets half-deleted, and it hides *that* something is attached behind
+   * *what* was typed. The chip says what the assistant can see, and can be
+   * taken off.
+   */
+  const askAbout = useCallback(record => {
+    setAttachment(record)
+    setCollapsed(false)
+  }, [])
+
+  const detachRecord = useCallback(() => setAttachment(null), [])
 
   const sendMessage = useCallback(async text => {
     const trimmed = text.trim()
@@ -246,6 +280,14 @@ export function AiProvider({ children }) {
           message: trimmed,
           request_id: idempotencyKey('chat'),
           conversation_id: conversationIdRef.current,
+          // Re-sent each turn while the chip is on screen, so "shorten it" still
+          // knows what "it" is. The server keeps none of it.
+          ...(attachmentRef.current ? {
+            focus: {
+              record_id: String(attachmentRef.current.id),
+              entity_type: attachmentRef.current.kind,
+            },
+          } : {}),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           // Everything said before this message, so a clarifying question can be
           // answered and picked up from.
@@ -380,6 +422,7 @@ export function AiProvider({ children }) {
       conversationId, conversations, openConversation, newConversation,
       renameConversation, deleteConversation, loadConversations,
       aiInfo, noticeAcknowledged, acknowledgeNotice,
+      attachment, askAbout, detachRecord, collapsed, setCollapsed,
       // Whether a backend exists at all. The sidebar uses this to explain the
       // copilot is unavailable instead of letting people send doomed requests.
       available: apiConfigured(),

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AskAiButton from '@/components/AskAiButton';
 import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -431,6 +432,7 @@ export default function TasksScreen() {
 
                   {/* Actions */}
                   <View style={s.cardActions}>
+                    <AskAiButton record={task} kind="task" />
                     <TouchableOpacity onPress={() => { setEditingTask(task); setModalVisible(true); }}>
                       <Ionicons name="pencil" size={18} color={colors.textMuted} />
                     </TouchableOpacity>

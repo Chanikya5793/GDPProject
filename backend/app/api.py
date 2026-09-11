@@ -408,6 +408,7 @@ def create_app(container: Container | None = None) -> FastAPI:
             answer, citations, disclosure, generated = services.copilot.answer(
                 user.uid, body.message,
                 history=thread_history(services, user.uid, body, privacy),
+                focus=body.focus,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -461,6 +462,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         stream = services.copilot.answer_stream(
             user.uid, body.message,
             history=thread_history(services, user.uid, body, privacy),
+            focus=body.focus,
         )
         # Pull the first item here rather than inside the response body. Once a
         # streaming body starts the status line is already 200, so retrieval

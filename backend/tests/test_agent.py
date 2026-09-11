@@ -11,6 +11,7 @@ import pytest
 from app.ai import GeneratedAction, GeneratedAnswer, ToolName, ToolRequest
 from app.models import (
     EntityType,
+    FocusRecordRef,
     NoteContent,
     PlannerSettings,
     PrivacySettings,
@@ -820,6 +821,145 @@ def test_a_note_is_in_the_briefing_so_it_can_be_edited(services):
     services.copilot.answer("alice", "reword my chem notes", today=TODAY)
 
     assert "chem-notes-01" in generator.prompts[0]
+
+
+def test_a_focused_record_reaches_the_model_with_its_real_id(services):
+    # The whole point of resolving it server-side. Told only the title, the
+    # model has to find the record by string match in a briefing that is capped
+    # at forty items -- so a busy week pushes it out and the edit becomes a
+    # create, which is the bug this feature exists to avoid.
+    add_task(services, "lab-report-77", "Lab report", date(2026, 9, 4))
+    generator = use(services, GeneratedAnswer(answer="Friday."))
+
+    services.copilot.answer(
+        "alice", "when is this due?", today=TODAY,
+        focus=FocusRecordRef(record_id="lab-report-77", entity_type=EntityType.task),
+    )
+
+    block = section_from(generator.prompts[0], "FOCUS_RECORD=")
+    assert block["record_id"] == "lab-report-77"
+    assert block["title"] == "Lab report"
+
+
+def test_without_a_focus_the_prompt_is_unchanged(services):
+    add_task(services, "lab-report-78", "Lab report", date(2026, 9, 4))
+    generator = use(services, GeneratedAnswer(answer="Friday."))
+
+    services.copilot.answer("alice", "when is the lab report due?", today=TODAY)
+
+    assert "FOCUS_RECORD=" not in generator.prompts[0]
+
+
+def test_the_focused_record_sits_beside_the_question_not_in_the_briefing(services):
+    # The briefing is the largest stable block and is cached by its prefix.
+    # Splicing a per-tap record into it would invalidate that cache on every
+    # focused turn, and on every plain turn after one.
+    add_task(services, "lab-report-79", "Lab report", date(2026, 9, 4))
+    generator = use(services, GeneratedAnswer(answer="Friday."))
+
+    services.copilot.answer(
+        "alice", "when is this due?", today=TODAY,
+        focus=FocusRecordRef(record_id="lab-report-79", entity_type=EntityType.task),
+    )
+
+    prompt = generator.prompts[0]
+    assert prompt.index("PLANNER_BRIEFING=") < prompt.index("FOCUS_RECORD=")
+    assert prompt.index("FOCUS_RECORD=") < prompt.index("USER_QUESTION=")
+
+
+def test_a_record_kept_from_the_assistant_is_still_answered_when_pointed_at(services):
+    # The flag keeps records out of the ambient view -- the index, search, the
+    # briefing, every tool -- which are the cases where the assistant reaches
+    # for things nobody named. This is the opposite: one record, named by the
+    # student, for one turn.
+    add_task(services, "private-01", "Therapy appointment", date(2026, 9, 4), approved=False)
+    generator = use(services, GeneratedAnswer(answer="Friday."))
+
+    services.copilot.answer(
+        "alice", "when is this?", today=TODAY,
+        focus=FocusRecordRef(record_id="private-01", entity_type=EntityType.task),
+    )
+
+    prompt = generator.prompts[0]
+    assert section_from(prompt, "FOCUS_RECORD=")["record_id"] == "private-01"
+    # Still absent from the ambient view: one block, not a hole in the gate.
+    assert "Therapy appointment" not in json.dumps(briefing_from(prompt))
+    # And the stored flag is untouched by having been asked about.
+    assert services.repository.get_record("alice", EntityType.task, "private-01").approved_for_ai is False
+
+
+def test_focus_on_a_kind_the_student_excluded_is_refused(services):
+    # A whole category they turned off is a blanket rule, and a button in the
+    # corner of a card must not overrule it.
+    add_task(services, "lab-report-80", "Lab report", date(2026, 9, 4))
+    services.repository.set_privacy("alice", PrivacySettings(
+        indexed_entity_types=[EntityType.reminder],
+    ))
+    generator = use(services, GeneratedAnswer(answer="Friday."))
+
+    services.copilot.answer(
+        "alice", "when is this due?", today=TODAY,
+        focus=FocusRecordRef(record_id="lab-report-80", entity_type=EntityType.task),
+    )
+
+    prompt = generator.prompts[0]
+    assert "FOCUS_RECORD=" not in prompt
+    assert "lab-report-80" not in prompt
+
+
+def test_focus_on_a_deleted_record_still_answers_the_question(services):
+    # A stale pin must not take the student's whole question down with it.
+    generator = use(services, GeneratedAnswer(answer="I can't see that one."))
+
+    answer, _, _, _ = services.copilot.answer(
+        "alice", "what is this about?", today=TODAY,
+        focus=FocusRecordRef(record_id="gone-forever", entity_type=EntityType.task),
+    )
+
+    assert answer == "I can't see that one."
+    assert "FOCUS_RECORD_UNAVAILABLE=" in generator.prompts[0]
+
+
+def test_a_focused_record_is_not_also_quoted_as_a_search_hit(services):
+    # The same text twice reads to the model as two records agreeing.
+    add_task(services, "lab-report-81", "Lab report", date(2026, 9, 4))
+    generator = use(services, GeneratedAnswer(answer="Friday."))
+
+    services.copilot.answer(
+        "alice", "lab report", today=TODAY,
+        focus=FocusRecordRef(record_id="lab-report-81", entity_type=EntityType.task),
+    )
+
+    assert "lab-report-81" not in section_from(generator.prompts[0], "UNTRUSTED_SOURCES=")
+
+
+def test_asking_about_a_focused_record_edits_it_rather_than_copying_it(services, client, auth):
+    # The feature's reason for existing, end to end.
+    add_task(services, "essay-90", "Essay draft", date(2026, 9, 4))
+    use(services, GeneratedAnswer(
+        answer="Raised.",
+        actions=[GeneratedAction(
+            operation=ProposalOperation.update, entity_type=EntityType.task,
+            record_id="essay-90", priority="high",
+        )],
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "make this high priority", "request_id": "focused-00001",
+        "focus": {"record_id": "essay-90", "entity_type": "task"},
+    }).json()
+
+    assert len(body["proposals"]) == 1
+    assert body["proposals"][0]["operation"] == "update"
+    assert body["proposals"][0]["record_id"] == "essay-90"
+
+
+def test_a_focus_naming_only_half_a_record_is_rejected(services, client, auth):
+    response = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "what is this?", "request_id": "focused-00002",
+        "focus": {"record_id": "essay-90"},
+    })
+    assert response.status_code == 422
 
 
 def test_reply_style_reaches_the_model(services):

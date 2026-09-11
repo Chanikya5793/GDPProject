@@ -317,6 +317,65 @@
   border: 0;
 }
 
+/* What the assistant can see, above the box where you type. */
+.ai-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface-variant, #f5f6f5);
+  border: 1px solid var(--green-mid, #cfe3d8);
+  border-radius: 999px;
+  padding: 4px 6px 4px 10px;
+  margin-bottom: 6px;
+}
+
+/* Kept out of the assistant, and being shared anyway for this one question.
+   Carries a border and an icon as well as colour, so the distinction survives
+   greyscale. */
+.ai-attachment-shared {
+  border-color: var(--amber, #b45309);
+  background: var(--amber-soft, #fdf3e3);
+}
+
+.ai-attachment-kind {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.ai-attachment-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.ai-attachment-note {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 10px;
+  padding-left: 2px;
+}
+
+.ai-attachment-remove {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  padding: 2px;
+  border-radius: 50%;
+}
+
+.ai-attachment-remove:hover { color: var(--text); }
+
 .ai-proposal {
   background: var(--white);
   border: 1px solid var(--green-mid);

@@ -74,6 +74,13 @@ HORIZON_DAYS = 7
 # the question itself.
 DEFAULT_BRIEFING_ITEMS = 40
 
+# How much of a focused record's text goes into the prompt. A note may hold a
+# hundred thousand characters, and the excerpt `summarize` gives it -- two
+# hundred -- is nowhere near enough to answer a question *about* the note. This
+# is the middle: enough to reason over a real note, bounded well inside any
+# prompt budget.
+FOCUS_TEXT_CHARS = 4000
+
 
 @dataclass
 class ToolOutcome:
@@ -177,6 +184,30 @@ class PlannerSession:
 
     def cite(self, record: PlannerRecord) -> str:
         return self.evidence.register(record, record_text(record))
+
+    def may_focus(self, entity_type: EntityType) -> bool:
+        """Whether the student allows this kind of record near the assistant.
+
+        A category they excluded is a blanket rule, not a per-record one, so
+        opening the assistant from such a record must not override it.
+        """
+        return entity_type in self.settings.indexed_entity_types
+
+    def focus(self, record: PlannerRecord) -> Dict[str, Any]:
+        """The one record the student opened the assistant from.
+
+        Shaped like a search hit rather than a briefing line: a question *about*
+        a note needs the note's text, and the same injection flag every other
+        path attaches to record text. Going through `summarize` is what gets it
+        a citation id and its real record_id, so the model can cite it and edit
+        it rather than making a second copy.
+        """
+        text = record_text(record, include_attachments=self.settings.index_attachments)
+        return {
+            **self.summarize(record),
+            "untrusted_content": safe_excerpt(text, FOCUS_TEXT_CHARS),
+            "injection_suspected": assess_untrusted_text(text).suspicious,
+        }
 
     def summarize(self, record: PlannerRecord) -> Dict[str, Any]:
         """A record as the model sees it: enough to answer with, a way to cite

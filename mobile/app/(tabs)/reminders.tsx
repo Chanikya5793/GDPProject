@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AskAiButton from '@/components/AskAiButton';
 import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -206,6 +207,7 @@ export default function RemindersScreen() {
                       {rem.notes ? <Text style={[s.cardNotes, { color: colors.textMuted }]} numberOfLines={2}>{rem.notes}</Text> : null}
                     </View>
                     <View style={s.cardActions}>
+                      <AskAiButton record={rem} kind="reminder" />
                       <TouchableOpacity onPress={() => { setEditingRem(rem); setModalVisible(true); }}>
                         <Ionicons name="pencil" size={18} color={colors.textMuted} />
                       </TouchableOpacity>
@@ -357,7 +359,10 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     cardTitle: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
     cardTime: { fontSize: 13 },
     cardNotes: { fontSize: 13, marginTop: 4 },
-    cardActions: { gap: 12 },
+    // A row, not the column this was: a third control would otherwise stack
+    // and stretch a card that already carries a title, a time and two lines of
+    // notes. Matches the task card.
+    cardActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
     empty: { alignItems: 'center', paddingTop: 60 },
     emptyTitle: { fontSize: 18, fontWeight: '600', marginTop: 12 },
     emptyText: { color: colors.textMuted, fontSize: 14, marginTop: 4 },
