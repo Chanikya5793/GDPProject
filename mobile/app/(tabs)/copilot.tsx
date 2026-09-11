@@ -4,6 +4,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tabBarSpace } from '@/utils/tabBarSpace';
 import { useToast } from '@/components/Toast';
@@ -28,6 +29,7 @@ const KEPT_MESSAGES = 60;
 
 import { toHistory } from '@/utils/chatHistory';
 import { seriesSummary } from '@/utils/series';
+import { contextFromLink, LinkContext } from '@/utils/draftFromLink';
 import {
   changeLines, changeSummary, LongTextChange, longTextChange,
 } from '@/utils/changePreview';
@@ -105,6 +107,28 @@ export default function CopilotScreen() {
   const conversationIdRef = useRef<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showThreads, setShowThreads] = useState(false);
+  // The record the student opened the assistant from. Held only for the
+  // session: reopening the app to find a note silently attached would be a
+  // surprise, and the server treats focus as per-turn regardless.
+  const [attachment, setAttachment] = useState<LinkContext | null>(null);
+  const attachmentRef = useRef<LinkContext | null>(null);
+  useEffect(() => { attachmentRef.current = attachment; }, [attachment]);
+
+  // Arrives from an Ask AI tap, or from a nwplanner://copilot link. Cleared
+  // once read, or returning to the tab would silently re-attach a record the
+  // student already finished with.
+  const params = useLocalSearchParams<{
+    about?: string; kind?: string; title?: string; approved?: string;
+  }>();
+
+  useEffect(() => {
+    const context = contextFromLink(params);
+    if (!context) return;
+    setAttachment(context);
+    router.setParams({
+      about: undefined, kind: undefined, title: undefined, approved: undefined,
+    });
+  }, [params.about]);
 
   useEffect(() => {
     if (!apiConfigured()) return;
@@ -162,6 +186,7 @@ export default function CopilotScreen() {
 
   /** Open a stored thread, replacing what is on screen with its transcript. */
   const openConversation = async (id: string) => {
+    setAttachment(null);
     controllerRef.current?.abort();
     generationRef.current += 1;
     setShowThreads(false);
@@ -187,6 +212,7 @@ export default function CopilotScreen() {
 
   /** Start a fresh thread. Nothing is written until the first message. */
   const newConversation = () => {
+    setAttachment(null);
     controllerRef.current?.abort();
     generationRef.current += 1;
     setShowThreads(false);
@@ -272,6 +298,14 @@ export default function CopilotScreen() {
         body: JSON.stringify({
           message: text, request_id: idempotencyKey('mobile-chat'),
           conversation_id: conversationIdRef.current,
+          // Re-sent each turn while the chip is on screen, so "shorten it"
+          // still knows what "it" is. The server keeps none of it.
+          ...(attachmentRef.current ? {
+            focus: {
+              record_id: String(attachmentRef.current.id),
+              entity_type: attachmentRef.current.kind,
+            },
+          } : {}),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           history,
         }),
@@ -630,6 +664,41 @@ export default function CopilotScreen() {
         </View>
       )}
 
+      {attachment && (
+        <View
+          style={[
+            styles.attachment,
+            attachment.approvedForAi ? null : styles.attachmentShared,
+          ]}
+          accessible
+          accessibilityLabel={
+            `Attached ${attachment.kind}: ${attachment.title}. ` +
+            (attachment.approvedForAi
+              ? 'The assistant can read this record.'
+              : 'This record is kept out of the assistant, and is being shared for this question only.')
+          }
+        >
+          <Ionicons
+            name={attachment.approvedForAi ? 'sparkles' : 'alert-circle-outline'}
+            size={14}
+            color={attachment.approvedForAi ? accent.primary : colors.error}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.attachmentTitle} numberOfLines={1}>{attachment.title}</Text>
+            {!attachment.approvedForAi && (
+              <Text style={styles.attachmentNote}>Shared for this question only</Text>
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={() => setAttachment(null)}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${attachment.title} from this question`}
+          >
+            <Ionicons name="close" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={[styles.inputRow, { paddingBottom: 12 + bottomSpace }]}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
           editable={apiConfigured()}
@@ -716,6 +785,17 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     changeLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.4, minWidth: 52, textTransform: 'uppercase' },
     changeFrom: { color: colors.textMuted, fontSize: 12, textDecorationLine: 'line-through' },
     changeArrow: { color: accent.primary, fontSize: 12 },
+    attachment: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      marginHorizontal: 12, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 8,
+      backgroundColor: colors.surfaceVariant, borderRadius: 10,
+      borderWidth: 1, borderColor: accent.primary,
+    },
+    // Kept out of the assistant and shared anyway for this one question. Border
+    // and icon carry it as well as colour, so it survives greyscale.
+    attachmentShared: { borderColor: colors.error },
+    attachmentTitle: { fontSize: 13, fontWeight: '600', color: colors.text },
+    attachmentNote: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
     diff: { gap: 4, marginTop: 4 },
     diffStat: { color: colors.textMuted, fontSize: 11 },
     diffBody: {

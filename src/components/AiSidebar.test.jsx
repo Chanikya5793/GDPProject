@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import AttachedRecordChip from './AttachedRecordChip'
 import { AgentSteps, CitationList, ConversationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator, seriesSummary } from './AiSidebar'
 
 describe('copilot evidence and confirmation UI', () => {
@@ -11,6 +12,36 @@ describe('copilot evidence and confirmation UI', () => {
     expect(screen.getByRole('link', { name: /Lab report · rev 4/ })).toHaveAttribute(
       'href', expect.stringContaining('focus=task-1'),
     )
+  })
+
+  it('says what the assistant can see, and lets it be taken off', () => {
+    const detach = vi.fn()
+    render(<AttachedRecordChip
+      attachment={{ id: 'n1', kind: 'note', title: 'Chem notes', approvedForAi: true }}
+      onDetach={detach}
+    />)
+
+    expect(screen.getByText('Chem notes')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: /The assistant can read this record/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Remove Chem notes/ }))
+    expect(detach).toHaveBeenCalled()
+  })
+
+  it('says plainly when a record kept out of the assistant is being shared', () => {
+    // The student set that flag deliberately. Attaching it for one question is
+    // defensible; doing it without saying so is not.
+    render(<AttachedRecordChip
+      attachment={{ id: 'n2', kind: 'note', title: 'Private', approvedForAi: false }}
+      onDetach={vi.fn()}
+    />)
+
+    expect(screen.getByText('Shared for this question only')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: /kept out of the assistant/ })).toBeInTheDocument()
+  })
+
+  it('renders nothing when no record is attached', () => {
+    const { container } = render(<AttachedRecordChip attachment={null} onDetach={vi.fn()} />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('shows a note rewrite as a diff rather than two walls of text', () => {

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat, Plus, MessageSquare, Pencil } from 'lucide-react'
 import { useAi } from '../context/AiContext'
+import AttachedRecordChip from './AttachedRecordChip'
 import { changeLines, changeSummary, longTextChange } from '../utils/changePreview'
 import { diffSentence, diffStat, diffWords } from '../utils/textDiff'
 import '../css/AiSidebar.css'
@@ -326,6 +327,7 @@ export default function AiSidebar() {
     aiInfo, noticeAcknowledged, acknowledgeNotice,
     conversationId, conversations, openConversation, newConversation,
     renameConversation, deleteConversation,
+    attachment, detachRecord, collapsed, setCollapsed,
   } = useAi()
   const [showThreads, setShowThreads] = useState(false)
   const location = useLocation()
@@ -334,9 +336,6 @@ export default function AiSidebar() {
   // sidebar (collapsible/expandable) regardless of the popped-out preference.
   const isDashboard = location.pathname === '/'
   const effectivePopped = poppedOut && isDashboard
-  const [collapsed, setCollapsed] = useState(() =>
-    localStorage.getItem('nw_ai_sidebar') === 'collapsed'
-  )
   const [input, setInput] = useState('')
   // Once the answer starts arriving there is something to read, so the
   // thinking indicator would just be noise sitting under live text.
@@ -370,11 +369,7 @@ export default function AiSidebar() {
   /* When popped out on the dashboard, render nothing — chat lives in the grid */
   if (effectivePopped) return null
 
-  const toggle = () => {
-    const next = !collapsed
-    setCollapsed(next)
-    localStorage.setItem('nw_ai_sidebar', next ? 'collapsed' : 'expanded')
-  }
+  const toggle = () => setCollapsed(!collapsed)
 
   const handleSend = () => {
     sendMessage(input)
@@ -494,6 +489,7 @@ export default function AiSidebar() {
           </div>
 
           <div className="ai-input-bar">
+            <AttachedRecordChip attachment={attachment} onDetach={detachRecord} />
             <textarea
               ref={inputRef}
               className="ai-input"

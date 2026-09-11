@@ -4,6 +4,7 @@ import {
   Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AskAiButton from '@/components/AskAiButton';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
@@ -288,6 +289,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
             <Ionicons name="chevron-back" size={24} color={accent.primary} />
           </TouchableOpacity>
           <View style={es.headerActions}>
+            {note && <AskAiButton record={note} kind="note" size={20} />}
             {hasMarkdown(body) && (
               <TouchableOpacity
                 onPress={() => setPreview(value => !value)}

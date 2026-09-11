@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  contextFromLink,
   draftFromLink,
   EMPTY_DRAFT,
   focusFromLink,
@@ -105,5 +106,43 @@ describe('focusFromLink', () => {
     expect(focusFromLink('../../etc/passwd')).toBe('etcpasswd');
     expect(focusFromLink('a'.repeat(200)).length).toBe(64);
     expect(focusFromLink(undefined)).toBe('');
+  });
+});
+
+describe('contextFromLink', () => {
+  it('reads a record handed over by an Ask AI tap', () => {
+    expect(contextFromLink({ about: 'task_12', kind: 'task', title: 'Lab report' })).toEqual({
+      id: 'task_12', kind: 'task', title: 'Lab report', approvedForAi: true,
+    });
+  });
+
+  it('sanitises the id the same way a focus link is sanitised', () => {
+    expect(contextFromLink({ about: '../../etc/passwd', kind: 'note', title: 'x' })?.id)
+      .toBe('etcpasswd');
+    expect(contextFromLink({ about: 'a'.repeat(200), kind: 'note', title: 'x' })?.id.length)
+      .toBe(64);
+  });
+
+  it('refuses a kind that is not a record type', () => {
+    expect(contextFromLink({ about: 'x1', kind: 'schedule', title: 'x' })).toBeNull();
+    expect(contextFromLink({ about: 'x1', kind: 'wat', title: 'x' })).toBeNull();
+  });
+
+  it('is null without a record to point at', () => {
+    expect(contextFromLink({ kind: 'task', title: 'Lab report' })).toBeNull();
+    expect(contextFromLink({})).toBeNull();
+  });
+
+  it('cleans and caps the title, which is only ever shown on a chip', () => {
+    const title = contextFromLink({
+      about: 't1', kind: 'task', title: 'Lab  report\nwith a newline',
+    })?.title;
+    expect(title).toBe('Lab report with a newline');
+  });
+
+  it('treats a missing approval flag as approved, and only "false" as not', () => {
+    expect(contextFromLink({ about: 't1', kind: 'task', title: 'x' })?.approvedForAi).toBe(true);
+    expect(contextFromLink({ about: 't1', kind: 'task', title: 'x', approved: 'false' })?.approvedForAi)
+      .toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, updateTag, deleteTag } from '../api/notes'
 import { Search, Trash2, X, PinIcon, Paperclip, Download, File as FileIcon, ShieldCheck } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
+import AskAiButton from '../components/AskAiButton'
 import '../css/Notes.css'
 
 const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
@@ -396,6 +397,7 @@ export default function Notes() {
                   placeholder="Note title..."
                 />
                 <div className="note-editor-actions">
+                  <AskAiButton record={selectedNote} kind="note" className="note-pin-btn" />
                   <button
                     className={`note-pin-btn${selectedNote._approvedForAi ? ' pinned' : ''}`}
                     onClick={() => handleNoteApproval(!selectedNote._approvedForAi)}

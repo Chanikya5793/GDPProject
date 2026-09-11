@@ -9,6 +9,7 @@ import { getCategories } from '../api/categories'
 import { Pencil, Trash2, List, LayoutGrid, Check, X, Bell, ChevronDown, AlertTriangle, Shuffle, ShieldCheck, Pin } from 'lucide-react'
 import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
+import AskAiButton from '../components/AskAiButton'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } from '../utils/schedule'
 import '../css/Tasks.css'
@@ -305,6 +306,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
                 </div>
               </div>
               <div className="task-card-actions">
+                <AskAiButton record={task} kind="task" />
                 <button className="btn-icon" title="Edit" onClick={() => onEdit(task)}><Pencil size={14} /></button>
                 <button className="btn-icon btn-icon-danger" title="Delete" onClick={() => onDelete(task.id)}><Trash2 size={14} /></button>
               </div>

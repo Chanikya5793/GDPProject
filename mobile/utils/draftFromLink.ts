@@ -102,3 +102,35 @@ export function focusFromLink(value: Param): string {
   const raw = first(value);
   return raw === undefined ? '' : raw.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
 }
+
+/** A record the student opened the assistant from. */
+export interface LinkContext {
+  id: string;
+  kind: 'task' | 'reminder' | 'note';
+  title: string;
+  /** False when the student keeps this one out of the assistant. */
+  approvedForAi: boolean;
+}
+
+/**
+ * The record an "Ask AI" tap was about, or null.
+ *
+ * The id is sanitised the same way `focusFromLink` does, because it ends up in
+ * a request the server turns into a document lookup. The title is only for the
+ * chip -- the server resolves the record from the id -- so it is cleaned and
+ * capped like any other text arriving from a link.
+ */
+export function contextFromLink(params: Record<string, Param>): LinkContext | null {
+  const id = focusFromLink(params.about);
+  if (!id) return null;
+  const kind = (first(params.kind) || '').toLowerCase();
+  if (kind !== 'task' && kind !== 'reminder' && kind !== 'note') return null;
+  return {
+    id,
+    kind,
+    title: clean(first(params.title) || '', MAX_DRAFT_LENGTH),
+    // Absent means approved: the flag defaults on, and a link that forgot to
+    // say should not imply the student opted out.
+    approvedForAi: (first(params.approved) || 'true') !== 'false',
+  };
+}
