@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { DEFAULT_DAILY_TASK_LIMIT } from '../utils/schedule'
 
 const SettingsContext = createContext()
 
@@ -7,13 +8,14 @@ const DEFAULTS = {
   accentColor: 'green',
   compactMode: false,
   fontSize: 'default',
-  reducedMotion: false,
   weekStartsOn: 'sunday',
   defaultPriority: 'medium',
   defaultCategory: 'Homework',
   showCompleted: true,
   reminderDefault: 30,
   dueDateAlerts: true,
+  autoBalance: true,
+  dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 }
 
 function loadSettings() {
@@ -47,12 +49,6 @@ export function SettingsProvider({ children }) {
     // Compact mode
     root.setAttribute('data-compact', settings.compactMode ? 'true' : 'false')
 
-    // Reduced motion
-    if (settings.reducedMotion) {
-      root.setAttribute('data-reduced-motion', 'true')
-    } else {
-      root.removeAttribute('data-reduced-motion')
-    }
   }, [settings])
 
   /* Listen for system theme changes when theme='system' */

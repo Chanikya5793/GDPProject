@@ -640,7 +640,6 @@ export default function Calendar() {
   const [showReminders, setShowReminders] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const dropdownRef = useRef(null)
-  const hoverTimeoutRef = useRef(null)
   const calRef = useRef(null)
   const [hoverTip, setHoverTip] = useState(null)
   const [autoEditItem, setAutoEditItem] = useState(null)

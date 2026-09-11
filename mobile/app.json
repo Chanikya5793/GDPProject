@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nwmissouri.studentplanner",
-      "buildNumber": "1",
+      "buildNumber": "3",
       "infoPlist": {
         "CFBundleDisplayName": "NW Planner",
         "ITSAppUsesNonExemptEncryption": false
@@ -32,13 +32,292 @@
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ],
       "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-font",
+      "expo-status-bar",
+      "expo-web-browser",
+      "./plugins/withUISceneLifecycle",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device."
+        }
+      ],
+      "./plugins/withoutPushEntitlement",
+      "./plugins/withSiriShortcuts",
+      [
+        "expo-widgets",
+        {
+          "bundleIdentifier": "com.nwmissouri.studentplanner.widgets",
+          "groupIdentifier": "group.com.nwmissouri.studentplanner",
+          "widgets": [
+            {
+              "name": "DueToday",
+              "displayName": "Due Today",
+              "description": "How much is due, and what is next.",
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryRectangular",
+                "accessoryInline"
+              ],
+              "configuration": {
+                "title": "Due Today",
+                "description": "Choose what this widget counts and how it looks.",
+                "parameters": {
+                  "horizon": {
+                    "title": "Look ahead",
+                    "type": "enum",
+                    "default": "today",
+                    "values": [
+                      {
+                        "name": "Today",
+                        "value": "today"
+                      },
+                      {
+                        "name": "Next 3 days",
+                        "value": "next3"
+                      },
+                      {
+                        "name": "This week",
+                        "value": "week"
+                      }
+                    ]
+                  },
+                  "include": {
+                    "title": "Include",
+                    "type": "enum",
+                    "default": "all",
+                    "values": [
+                      {
+                        "name": "Tasks and reminders",
+                        "value": "all"
+                      },
+                      {
+                        "name": "Tasks only",
+                        "value": "tasks"
+                      },
+                      {
+                        "name": "Reminders only",
+                        "value": "reminders"
+                      }
+                    ]
+                  },
+                  "onlyHigh": {
+                    "title": "High priority only",
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "density": {
+                    "title": "Density",
+                    "type": "enum",
+                    "default": "comfortable",
+                    "values": [
+                      {
+                        "name": "Comfortable",
+                        "value": "comfortable"
+                      },
+                      {
+                        "name": "Compact",
+                        "value": "compact"
+                      }
+                    ]
+                  },
+                  "accent": {
+                    "title": "Accent",
+                    "type": "enum",
+                    "default": "green",
+                    "values": [
+                      {
+                        "name": "Northwest Green",
+                        "value": "green"
+                      },
+                      {
+                        "name": "Blue",
+                        "value": "blue"
+                      },
+                      {
+                        "name": "Plum",
+                        "value": "plum"
+                      },
+                      {
+                        "name": "Amber",
+                        "value": "amber"
+                      }
+                    ]
+                  },
+                  "showTitles": {
+                    "title": "Show titles",
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            },
+            {
+              "name": "UpNext",
+              "displayName": "Up Next",
+              "description": "The next thing due, counting down.",
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryRectangular",
+                "accessoryInline"
+              ],
+              "configuration": {
+                "title": "Up Next",
+                "description": "Choose what counts as next.",
+                "parameters": {
+                  "include": {
+                    "title": "Include",
+                    "type": "enum",
+                    "default": "all",
+                    "values": [
+                      {
+                        "name": "Tasks and reminders",
+                        "value": "all"
+                      },
+                      {
+                        "name": "Tasks only",
+                        "value": "tasks"
+                      },
+                      {
+                        "name": "Reminders only",
+                        "value": "reminders"
+                      }
+                    ]
+                  },
+                  "countdown": {
+                    "title": "Show a countdown",
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "accent": {
+                    "title": "Accent",
+                    "type": "enum",
+                    "default": "green",
+                    "values": [
+                      {
+                        "name": "Northwest Green",
+                        "value": "green"
+                      },
+                      {
+                        "name": "Blue",
+                        "value": "blue"
+                      },
+                      {
+                        "name": "Plum",
+                        "value": "plum"
+                      },
+                      {
+                        "name": "Amber",
+                        "value": "amber"
+                      }
+                    ]
+                  },
+                  "showTitles": {
+                    "title": "Show titles",
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            },
+            {
+              "name": "ThisWeek",
+              "displayName": "This Week",
+              "description": "How the next seven days are loaded.",
+              "supportedFamilies": [
+                "systemMedium",
+                "systemLarge"
+              ],
+              "configuration": {
+                "title": "This Week",
+                "description": "Choose what the bars count.",
+                "parameters": {
+                  "include": {
+                    "title": "Include",
+                    "type": "enum",
+                    "default": "all",
+                    "values": [
+                      {
+                        "name": "Tasks and reminders",
+                        "value": "all"
+                      },
+                      {
+                        "name": "Tasks only",
+                        "value": "tasks"
+                      },
+                      {
+                        "name": "Reminders only",
+                        "value": "reminders"
+                      }
+                    ]
+                  },
+                  "hideDone": {
+                    "title": "Hide finished work",
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "accent": {
+                    "title": "Accent",
+                    "type": "enum",
+                    "default": "green",
+                    "values": [
+                      {
+                        "name": "Northwest Green",
+                        "value": "green"
+                      },
+                      {
+                        "name": "Blue",
+                        "value": "blue"
+                      },
+                      {
+                        "name": "Plum",
+                        "value": "plum"
+                      },
+                      {
+                        "name": "Amber",
+                        "value": "amber"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "name": "Progress",
+              "displayName": "Today\u2019s Progress",
+              "description": "How much of today is done.",
+              "supportedFamilies": [
+                "accessoryCircular",
+                "accessoryRectangular",
+                "accessoryInline"
+              ]
+            }
+          ]
         }
       ]
     ],

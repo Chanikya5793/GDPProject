@@ -1,0 +1,454 @@
+from datetime import date, timedelta
+
+import pytest
+
+from app.ai import GeneratedAction
+from app.models import (
+    EntityType,
+    NoteContent,
+    ProposalOperation,
+    RecordUpsertRequest,
+    ReminderContent,
+    TaskContent,
+)
+from app.proposals import InvalidProposal
+from app.repository import NotFound, RevisionConflict
+
+
+def existing_task(services):
+    return services.repository.upsert_record(
+        "alice", EntityType.task, "t1",
+        RecordUpsertRequest(
+            content=TaskContent(title="Write essay", due_date=date(2026, 8, 20)),
+            idempotency_key="create-task-001",
+        ),
+    )
+
+
+def test_complete_proposal_has_before_after_preview(services):
+    existing_task(services)
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.complete, entity_type=EntityType.task, record_id="t1"
+        ), "Mark it done",
+    )
+    assert proposal.before.completed is False
+    assert proposal.after.completed is True
+    assert services.repository.get_record("alice", EntityType.task, "t1").content.completed is False
+
+
+def test_confirmation_applies_only_after_matching_revision(services):
+    existing_task(services)
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.complete, entity_type=EntityType.task, record_id="t1"
+        ), "Done",
+    )
+    with pytest.raises(InvalidProposal):
+        services.proposals.confirm("alice", proposal.proposal_id, "confirm-0001", 2)
+    confirmed = services.proposals.confirm("alice", proposal.proposal_id, "confirm-0001", 1)
+    assert confirmed.status == "confirmed"
+    assert services.repository.get_record("alice", EntityType.task, "t1").content.completed
+
+
+def test_confirmation_is_idempotent(services):
+    existing_task(services)
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.complete, entity_type=EntityType.task, record_id="t1"
+        ), "Done",
+    )
+    first = services.proposals.confirm("alice", proposal.proposal_id, "confirm-0001", 1)
+    second = services.proposals.confirm("alice", proposal.proposal_id, "confirm-0001", 1)
+    assert first == second
+    assert services.repository.get_record("alice", EntityType.task, "t1").revision == 2
+
+
+def test_stale_write_between_preview_and_confirmation_is_rejected(services):
+    current = existing_task(services)
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.delete, entity_type=EntityType.task, record_id="t1"
+        ), "Delete",
+    )
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t1",
+        RecordUpsertRequest(
+            content=current.content.model_copy(update={"title": "Changed"}), expected_revision=1,
+            idempotency_key="outside-update-1",
+        ),
+    )
+    with pytest.raises(RevisionConflict):
+        services.proposals.confirm("alice", proposal.proposal_id, "confirm-0001", 1)
+
+
+def test_reject_and_cancel_never_mutate(services):
+    existing_task(services)
+    reject = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.delete, entity_type=EntityType.task, record_id="t1"
+        ), "Delete",
+    )
+    assert services.proposals.reject("alice", reject.proposal_id).status == "rejected"
+    cancel = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.complete, entity_type=EntityType.task, record_id="t1"
+        ), "Done",
+    )
+    assert services.proposals.cancel("alice", cancel.proposal_id).status == "cancelled"
+    assert not services.repository.get_record("alice", EntityType.task, "t1").content.completed
+
+
+def test_create_proposal_does_not_create_until_confirmed(services):
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="New task", due_date="2026-08-30",
+        ), "Create",
+    )
+    assert services.repository.list_records("alice", EntityType.task) == []
+    services.proposals.confirm("alice", proposal.proposal_id, "confirm-0001", None)
+    assert len(services.repository.list_records("alice", EntityType.task)) == 1
+
+
+def test_a_confirmed_creation_is_visible_to_the_assistant(services):
+    # The user asked the assistant to create it, so hiding it from the assistant
+    # would leave it unable to answer about its own work a moment later.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="Lab report", due_date="2026-09-01",
+        ), "Create",
+    )
+    services.proposals.confirm("alice", proposal.proposal_id, "confirm-vis-1", None)
+    created = services.repository.list_records("alice", EntityType.task)[0]
+    assert created.approved_for_ai is True
+
+
+def test_a_reminder_can_be_created(services):
+    # create used to accept tasks only, so the assistant could not make a
+    # reminder at all however clearly it was asked.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.reminder,
+            title="Call the advisor", due_date="2026-09-04", due_time="09:15",
+        ), "Create",
+    )
+    assert proposal is not None
+    assert proposal.after.date == date(2026, 9, 4)
+    assert proposal.after.time == "09:15"
+
+
+def test_a_reminder_without_a_day_is_refused(services):
+    # A reminder with no date has nothing to fire on; inventing one would be
+    # worse than asking.
+    assert services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.reminder,
+            title="Call the advisor",
+        ), "Create",
+    ) is None
+
+
+def test_a_note_can_be_created_with_its_text(services):
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="Lecture 4", body="Recursion, trees, Big-O.",
+        ), "Create",
+    )
+    assert proposal is not None
+    assert proposal.after.title == "Lecture 4"
+    assert proposal.after.body == "Recursion, trees, Big-O."
+
+
+def test_a_note_falls_back_to_notes_when_the_model_uses_the_wrong_field(services):
+    # body is the note's own field, but the model reaches for notes by habit.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="Lecture 5", notes="Graphs.",
+        ), "Create",
+    )
+    assert proposal.after.body == "Graphs."
+
+
+@pytest.mark.parametrize("action", [
+    GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.note),
+    GeneratedAction(operation=ProposalOperation.complete, entity_type=EntityType.task),
+    GeneratedAction(operation=ProposalOperation.reschedule, entity_type=EntityType.task, record_id="missing"),
+])
+def test_invalid_generated_actions_do_not_create_proposals(services, action):
+    assert services.proposals.from_generated_action("alice", action, "Nope") is None
+
+
+def seed_note(services, record_id="n1", title="Chem notes", body="ORIGINAL BODY"):
+    services.repository.upsert_record(
+        "alice", EntityType.note, record_id,
+        RecordUpsertRequest(
+            content=NoteContent(title=title, body=body),
+            idempotency_key=f"seed-note-{record_id}",
+        ),
+    )
+
+
+def test_a_note_body_can_be_rewritten(services):
+    # The bug behind "it always creates a new one instead of editing". A note
+    # keeps its text in `body`, which the update path did not carry, so the
+    # only way the model could express new note text was to create a note.
+    seed_note(services)
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.note,
+        record_id="n1", body="REWRITTEN BODY",
+    ), "Rewrite it")
+
+    assert prepared.proposal is not None, prepared.reason
+    assert prepared.proposal.after.body == "REWRITTEN BODY"
+    assert prepared.proposal.before.body == "ORIGINAL BODY"
+
+
+def test_note_text_offered_as_notes_still_lands_in_the_body(services):
+    # `notes` is where long text goes for a task, and the model reaches for it
+    # on a note often enough that create already accepts either. This used to
+    # be the silent case: model_copy does not validate, so the text was
+    # attached to a phantom attribute, the preview showed no change, and
+    # confirming wrote the note back exactly as it was.
+    seed_note(services)
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.note,
+        record_id="n1", notes="TEXT VIA NOTES",
+    ), "Rewrite it")
+
+    assert prepared.proposal is not None, prepared.reason
+    assert prepared.proposal.after.body == "TEXT VIA NOTES"
+    assert not hasattr(prepared.proposal.after, "notes")
+
+
+def test_a_task_due_date_can_be_changed_by_update_as_well_as_reschedule(services):
+    # "Move my essay to Friday" is naturally an update to the model. Refusing
+    # it with "it did not say what to change about it" is what sent it back
+    # round to create a second essay.
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t20",
+        RecordUpsertRequest(
+            content=TaskContent(title="Essay", due_date=date(2026, 9, 4)),
+            idempotency_key="seed-task-t20",
+        ),
+    )
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task,
+        record_id="t20", due_date="2026-09-11", due_time="17:00",
+    ), "Move it")
+
+    assert prepared.proposal is not None, prepared.reason
+    assert prepared.proposal.after.due_date == date(2026, 9, 11)
+    assert prepared.proposal.after.due_time == "17:00"
+
+
+def test_an_update_naming_nothing_the_record_has_is_refused_not_silently_dropped(services):
+    seed_note(services)
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.note,
+        record_id="n1", priority="high",
+    ), "Prioritise it")
+
+    assert prepared.proposal is None
+    assert "priority" in prepared.reason
+
+
+def test_the_assistant_can_pin_a_task_and_unpin_it(services):
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t9",
+        RecordUpsertRequest(
+            content=TaskContent(title="Exam", due_date=date(2026, 9, 10)),
+            idempotency_key="seed-task-t9",
+        ),
+    )
+
+    pinned = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task,
+        record_id="t9", keep_scheduled=True,
+    ), "Pin it").proposal
+    assert pinned is not None
+    assert pinned.after.keep_scheduled is True
+
+    # False is a real instruction, not an absent one -- the tri-state is what
+    # makes "manage this one again" expressible.
+    released = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task,
+        record_id="t9", keep_scheduled=False,
+    ), "Unpin it").proposal
+    assert released is not None
+    assert released.after.keep_scheduled is False
+
+
+def test_only_a_task_can_be_pinned(services):
+    services.repository.upsert_record(
+        "alice", EntityType.reminder, "r9",
+        RecordUpsertRequest(
+            content=ReminderContent(title="Office hours", date=date(2026, 9, 10)),
+            idempotency_key="seed-reminder-r9",
+        ),
+    )
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.reminder,
+        record_id="r9", keep_scheduled=True,
+    ), "Pin it")
+    assert prepared.proposal is None
+    assert "task" in prepared.reason
+
+
+def test_reschedule_and_update_proposals(services):
+    existing_task(services)
+    reschedule = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.reschedule, entity_type=EntityType.task,
+            record_id="t1", due_date="2026-09-01", due_time="09:30",
+        ), "Move it",
+    )
+    assert reschedule.after.due_date == date(2026, 9, 1)
+    update = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.update, entity_type=EntityType.task,
+            record_id="t1", priority="high",
+        ), "Escalate",
+    )
+    assert update.after.priority == "high"
+
+
+def test_delete_proposal_requires_confirmation(services):
+    existing_task(services)
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.delete, entity_type=EntityType.task, record_id="t1"
+        ), "Delete",
+    )
+    assert services.repository.get_record("alice", EntityType.task, "t1")
+    services.proposals.confirm("alice", proposal.proposal_id, "delete-confirm-1", 1)
+    with pytest.raises(NotFound):
+        services.repository.get_record("alice", EntityType.task, "t1")
+
+
+class TestGeneratedDateParsing:
+    """The model fills these fields, so they are untrusted input."""
+
+    def test_a_full_datetime_becomes_a_date_and_a_time(self):
+        # "next Friday at 5pm" came back as 2026-09-04T17:00:00 and crashed the
+        # endpoint with an unhandled ValueError.
+        from app.proposals import split_generated_datetime
+        assert split_generated_datetime("2026-09-04T17:00:00") == (date(2026, 9, 4), "17:00")
+
+    def test_a_plain_date_has_no_time(self):
+        from app.proposals import split_generated_datetime
+        assert split_generated_datetime("2026-09-04") == (date(2026, 9, 4), None)
+
+    @pytest.mark.parametrize("value", [None, "", "   ", "next friday", "2026-13-40", "garbage"])
+    def test_unreadable_values_are_treated_as_absent(self, value):
+        from app.proposals import split_generated_datetime
+        assert split_generated_datetime(value) == (None, None)
+
+    def test_an_out_of_range_time_is_dropped_but_the_date_survives(self):
+        from app.proposals import split_generated_datetime
+        assert split_generated_datetime("2026-09-04T99:99") == (date(2026, 9, 4), None)
+
+    @pytest.mark.parametrize("value,expected", [
+        ("17:00", "17:00"), ("09:30", "09:30"), ("9:30", None),
+        ("25:00", None), ("abc", None), (None, None), ("", None),
+    ])
+    def test_only_times_the_record_models_accept_survive(self, value, expected):
+        from app.proposals import clean_generated_time
+        assert clean_generated_time(value) == expected
+
+
+def test_a_datetime_in_the_date_field_still_produces_a_proposal(services):
+    # End to end: this exact input returned HTTP 500 before.
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="Physics problem set", due_date="2026-09-04T17:00:00",
+        ), "Create",
+    )
+    assert proposal is not None
+    assert proposal.after.due_date == date(2026, 9, 4)
+    assert proposal.after.due_time == "17:00"
+
+
+def test_a_junk_date_from_the_model_refuses_rather_than_raising(services):
+    proposal = services.proposals.from_generated_action(
+        "alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="Whatever", due_date="sometime next week",
+        ), "Create",
+    )
+    # The title is enough to build a task; the unusable date is simply dropped.
+    assert proposal is not None
+    assert proposal.after.due_date is None
+
+
+def test_a_preview_outlives_the_conversation_it_belongs_to(services):
+    # Thirty minutes was shorter than the thread. The chat survives a reload
+    # now, so a student coming back found every change in it already dead.
+    from app.ai import GeneratedAction
+    from app.models import EntityType, ProposalOperation
+
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.task, title="Essay",
+    ), "because you asked")
+
+    window = prepared.proposal.expires_at - prepared.proposal.created_at
+    assert window >= timedelta(hours=24)
+
+
+def test_the_window_is_deployment_configurable(services):
+    from app.ai import GeneratedAction
+    from app.audit import AuditLogger, MemoryAuditSink
+    from app.models import EntityType, ProposalOperation
+    from app.proposals import ProposalService
+
+    brief = ProposalService(
+        services.repository, AuditLogger(MemoryAuditSink(), b"salt"), ttl_hours=2
+    )
+    prepared = brief.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.task, title="Essay",
+    ), "because you asked")
+
+    assert prepared.proposal.expires_at - prepared.proposal.created_at == timedelta(hours=2)
+
+
+def test_a_calendar_block_is_refused_with_a_reason_not_in_silence(services):
+    # The reproduction: "office hours from 10 to 2" is a schedule, nothing in
+    # either client renders one, and the refusal said only that something
+    # failed. Twice in a row, in the same conversation.
+    from app.ai import GeneratedAction
+    from app.models import EntityType, ProposalOperation
+
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation=ProposalOperation.create, entity_type=EntityType.schedule,
+        title="GA office hours", due_date="2026-09-04", due_time="10:00",
+    ), "because you asked")
+
+    assert prepared.proposal is None
+    assert "tasks, reminders and notes" in prepared.reason
+    assert "task with a time" in prepared.reason
+
+
+def test_every_refusal_says_something_useful(services):
+    # Eleven paths returned None with no explanation between them.
+    from app.ai import GeneratedAction
+    from app.models import EntityType, ProposalOperation
+
+    cases = [
+        GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.task),
+        GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.reminder,
+                        title="Email advisor"),
+        GeneratedAction(operation=ProposalOperation.create, entity_type=EntityType.schedule,
+                        title="Office hours"),
+        GeneratedAction(operation=ProposalOperation.complete, entity_type=EntityType.task),
+        GeneratedAction(operation=ProposalOperation.reschedule, entity_type=EntityType.task,
+                        record_id="missing", due_date="2026-09-04"),
+    ]
+
+    for action in cases:
+        prepared = services.proposals.prepare("alice", action, "because you asked")
+        assert prepared.proposal is None
+        assert prepared.reason, f"{action.operation} {action.entity_type} refused in silence"

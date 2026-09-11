@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Strip assistant attribution from commit messages.
+#
+# Several coding assistants append a Co-Authored-By trailer or a session link by
+# default. This project does not carry them, and once such a trailer is pushed
+# the only way to remove it is rewriting published history, so it is cheaper to
+# catch it here than to fix it later.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+message_file="$1"
+[ -f "$message_file" ] || exit 0
+
+filtered="$(mktemp)"
+trap 'rm -f "$filtered"' EXIT
+
+grep -viE \
+  -e '^[[:space:]]*co-authored-by:.*(claude|anthropic|copilot|codex|chatgpt|openai)' \
+  -e 'generated with .*(claude|codex|chatgpt|copilot)' \
+  -e 'https?://claude\.ai' \
+  -e '^[[:space:]]*🤖' \
+  "$message_file" > "$filtered" || true
+
+if ! cmp -s "$message_file" "$filtered"; then
+  echo "commit-msg: removed assistant attribution from the commit message." >&2
+  # Collapse the blank lines the removed lines leave behind.
+  awk 'BEGIN { blank = 0 }
+       /^[[:space:]]*$/ { blank++; next }
+       { while (blank > 0 && NR > 1) { print ""; blank = (blank > 1 ? 1 : 0); if (blank == 0) break }
+         blank = 0; print }' "$filtered" > "$message_file"
+fi

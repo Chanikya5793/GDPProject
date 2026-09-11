@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getReminders, createReminder, updateReminder, deleteReminder } from '../api/reminders'
-import { Bell, Pencil, Trash2, List, LayoutGrid, X } from 'lucide-react'
+import { Bell, Pencil, Trash2, List, LayoutGrid, X, ShieldCheck } from 'lucide-react'
+import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import '../css/Reminders.css'
 
@@ -36,15 +37,24 @@ function ReminderModal({ reminder, onSave, onClose }) {
     date: reminder?.date || today(),
     time: reminder?.time || '',
     notes: reminder?.notes || '',
+    _approvedForAi: reminder?._approvedForAi ?? true,
   })
+
+  const [titleError, setTitleError] = useState(false)
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   const handleSubmit = (e) => {
-    e.preventDefault()
-    if (!form.title.trim()) return
-    onSave(form)
+  e.preventDefault()
+
+  if (!form.title.trim()) {
+    setTitleError(true)
+    return
   }
+
+  setTitleError(false)
+  onSave(form)
+}
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -57,12 +67,20 @@ function ReminderModal({ reminder, onSave, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="form-group">
               <label className="form-label">Title</label>
-              <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)} placeholder="What do you need to remember?" autoFocus />
+              <input className={`form-input${titleError ? ' input-error' : ''}`} value={form.title}
+                onChange={e => {
+                  set('title', e.target.value)
+                  if (e.target.value.trim()) setTitleError(false)
+                }}
+                placeholder="What do you need to remember?"
+                autoFocus
+              />{titleError && (
+              <div className="form-error">* This is a required field</div>)}
             </div>
             <div className="form-grid-2">
               <div className="form-group">
                 <label className="form-label">Date</label>
-                <input className="form-input" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+                <input className="form-input" type="date" value={form.date} onChange={e => set('date', e.target.value)}/>
               </div>
               <div className="form-group">
                 <label className="form-label">Time</label>
@@ -73,6 +91,12 @@ function ReminderModal({ reminder, onSave, onClose }) {
               <label className="form-label">Notes</label>
               <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />
             </div>
+            <label className="form-checkbox">
+              <input type="checkbox" checked={form._approvedForAi}
+                onChange={e => set('_approvedForAi', e.target.checked)} />
+              <ShieldCheck size={14} />
+              <span>Approve this reminder for AI retrieval</span>
+            </label>
           </div>
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -108,6 +132,7 @@ function ReminderCard({ reminder, onEdit, onDelete }) {
           {isOverdue && <span style={{ color: 'var(--red)', fontWeight: 600, fontSize: '12px' }}>⚠ Overdue</span>}
           {isToday && !isOverdue && <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: '12px' }}>📅 Today</span>}
           {!isOverdue && !isToday && <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Upcoming</span>}
+          <RepeatBadge recurrence={reminder.recurrence} />
         </div>
         {reminder.notes && <div className="rem-notes">{reminder.notes}</div>}
       </div>

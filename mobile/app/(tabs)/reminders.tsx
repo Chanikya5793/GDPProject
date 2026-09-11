@@ -1,13 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform,
+  Modal, RefreshControl, Alert, Platform, Switch,
 } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
-import { getReminders, createReminder, updateReminder, deleteReminder } from '@/api/reminders';
-import { Reminder } from '@/types';
+import { createStyles } from '@/theme/createStyles';
+import { modalAnimation } from '@/theme/appearance';
+import { getReminders, createReminder, updateReminder, deleteReminder, toggleReminder } from '@/api/reminders';
+import { PlannerRecordId, Reminder } from '@/types';
+import { parseTimeInput } from '@/utils/timeInput';
+import { recurrenceLabel } from '@/utils/recurrence';
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -29,12 +35,28 @@ function formatGroupDate(dateStr: string) {
 
 export default function RemindersScreen() {
   const { user } = useAuth();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const [modalVisible, setModalVisible] = useState(false);
+  // Seeded by a `?new=` link — Siri, the Shortcuts app, or a tapped alert,
+  // which may also carry a day, a time and notes. The parameters are cleared
+  // once consumed, or navigating back here would reopen the form on a phrase
+  // the student already dealt with.
+  const [draft, setDraft] = useState<LinkDraft>(EMPTY_DRAFT);
+  const params = useLocalSearchParams<{
+    new?: string; due?: string; at?: string; notes?: string;
+  }>();
+
+  useEffect(() => {
+    if (!wantsNewRecord(params.new)) return;
+    setDraft(fullDraftFromLink(params));
+    setEditingRem(null);
+    setModalVisible(true);
+    router.setParams({ new: undefined, due: undefined, at: undefined, notes: undefined });
+  }, [params.new]);
   const [editingRem, setEditingRem] = useState<Reminder | null>(null);
 
   const loadData = useCallback(async () => {
@@ -60,7 +82,12 @@ export default function RemindersScreen() {
     setEditingRem(null);
   };
 
-  const handleDelete = (id: number) => {
+  const handleToggle = async (id: PlannerRecordId) => {
+    const updated = await toggleReminder(id);
+    setReminders(prev => prev.map(rem => (rem.id === id ? updated : rem)));
+  };
+
+  const handleDelete = (id: PlannerRecordId) => {
     Alert.alert('Delete Reminder', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -91,7 +118,7 @@ export default function RemindersScreen() {
   const totalToday = reminders.filter(r => r.date === todayStr).length;
   const totalUpcoming = reminders.filter(r => r.date > todayStr).length;
 
-  const s = makeStyles(colors, accent);
+  const s = makeStyles(colors, accent, appearance);
 
   return (
     <View style={s.container}>
@@ -150,13 +177,31 @@ export default function RemindersScreen() {
                     borderLeftWidth: isOverdue ? 3 : 1,
                     borderLeftColor: isOverdue ? colors.error : colors.border,
                   }]}>
-                    <View style={[s.bellWrap, { backgroundColor: accent.surface }]}>
-                      <Ionicons name="notifications" size={18} color={accent.primary} />
-                    </View>
+                    <TouchableOpacity
+                      style={[s.bellWrap, {
+                        backgroundColor: rem.completed ? accent.primary : accent.surface,
+                      }]}
+                      onPress={() => handleToggle(rem.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ checked: Boolean(rem.completed) }}
+                      accessibilityLabel={rem.completed
+                        ? `Mark ${rem.title} as not done`
+                        : `Mark ${rem.title} as done`}
+                    >
+                      <Ionicons
+                        name={rem.completed ? 'checkmark' : 'notifications'}
+                        size={18}
+                        color={rem.completed ? '#FFF' : accent.primary}
+                      />
+                    </TouchableOpacity>
                     <View style={s.cardBody}>
-                      <Text style={[s.cardTitle, { color: colors.text }]}>{rem.title}</Text>
+                      <Text style={[s.cardTitle, {
+                        color: rem.completed ? colors.textMuted : colors.text,
+                        textDecorationLine: rem.completed ? 'line-through' : 'none',
+                      }]}>{rem.title}</Text>
                       <Text style={[s.cardTime, { color: colors.textMuted }]}>
                         {formatTime(rem.time) || 'No time set'}
+                        {recurrenceLabel(rem.recurrence) ? `  ↻ ${recurrenceLabel(rem.recurrence)}` : ''}
                       </Text>
                       {rem.notes ? <Text style={[s.cardNotes, { color: colors.textMuted }]} numberOfLines={2}>{rem.notes}</Text> : null}
                     </View>
@@ -179,39 +224,51 @@ export default function RemindersScreen() {
 
       <ReminderModal
         visible={modalVisible}
+        draft={draft}
         reminder={editingRem}
         colors={colors}
         accent={accent}
+          appearance={appearance}
         onSave={handleSave}
-        onClose={() => { setModalVisible(false); setEditingRem(null); }}
+        onClose={() => { setModalVisible(false); setDraft(EMPTY_DRAFT); setEditingRem(null); }}
       />
     </View>
   );
 }
 
-function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
+function ReminderModal({
+  visible, reminder, draft, colors, accent, appearance, onSave, onClose,
+}: {
   visible: boolean;
   reminder: Reminder | null;
+  /** What a link arrived with, used only when creating. */
+  draft: LinkDraft;
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
+  appearance: ReturnType<typeof useAppTheme>['appearance'];
   onSave: (form: Partial<Reminder>) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [approvedForAi, setApprovedForAi] = useState(true);
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (visible) {
-      setTitle(reminder?.title || '');
-      setDate(reminder?.date || localDateStr());
-      setTime(reminder?.time || '');
-      setNotes(reminder?.notes || '');
+      setTitle(reminder?.title || draft.title);
+      setDate(reminder?.date || draft.date || localDateStr());
+      setTime(reminder?.time || draft.time);
+      setApprovedForAi(reminder?._approvedForAi ?? true);
+      setNotes(reminder?.notes || draft.notes);
     }
   }, [visible, reminder]);
 
-  const ms = StyleSheet.create({
+  // Normalise on save so "9:30" becomes "09:30" rather than a 422 from the API.
+  const parsedTime = parseTimeInput(time);
+
+  const ms = createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
@@ -221,15 +278,24 @@ function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
   });
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={ms.container}>
         <View style={ms.header}>
           <TouchableOpacity onPress={onClose}>
             <Text style={{ fontSize: 16, color: colors.textSecondary }}>Cancel</Text>
           </TouchableOpacity>
           <Text style={ms.headerTitle}>{reminder ? 'Edit Reminder' : 'New Reminder'}</Text>
-          <TouchableOpacity onPress={() => { if (title.trim()) onSave({ title, date, time, notes }); }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: accent.primary }}>{reminder ? 'Save' : 'Add'}</Text>
+          <TouchableOpacity
+            disabled={Boolean(parsedTime.error)}
+            onPress={() => {
+              if (!title.trim() || parsedTime.error) return;
+              onSave({ title, date, time: parsedTime.value ?? '', notes, _approvedForAi: approvedForAi });
+            }}
+          >
+            <Text style={{
+              fontSize: 16, fontWeight: '600',
+              color: parsedTime.error ? colors.textMuted : accent.primary,
+            }}>{reminder ? 'Save' : 'Add'}</Text>
           </TouchableOpacity>
         </View>
         <ScrollView style={ms.form} keyboardShouldPersistTaps="handled">
@@ -238,7 +304,33 @@ function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
           <Text style={ms.label}>Date</Text>
           <TextInput style={ms.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted} />
           <Text style={ms.label}>Time</Text>
-          <TextInput style={ms.input} value={time} onChangeText={setTime} placeholder="HH:MM (24h)" placeholderTextColor={colors.textMuted} />
+          <TextInput
+            style={[ms.input, parsedTime.error ? { borderColor: colors.error } : null]}
+            value={time}
+            onChangeText={setTime}
+            placeholder="HH:MM (24h), optional"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numbers-and-punctuation"
+            accessibilityLabel="Reminder time, 24-hour HH:MM"
+          />
+          {parsedTime.error ? (
+            <Text style={{ fontSize: 12, marginTop: 6, color: colors.error }}>{parsedTime.error}</Text>
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={ms.label}>Visible to the assistant</Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 }}>
+                Lets the copilot read this reminder when you ask about it.
+              </Text>
+            </View>
+            <Switch
+              value={approvedForAi}
+              onValueChange={setApprovedForAi}
+              trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+              accessibilityLabel="Visible to the assistant"
+            />
+          </View>
+
           <Text style={ms.label}>Notes</Text>
           <TextInput style={[ms.input, { height: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Details..." placeholderTextColor={colors.textMuted} multiline />
         </ScrollView>
@@ -247,8 +339,8 @@ function ReminderModal({ visible, reminder, colors, accent, onSave, onClose }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
     subtitle: { fontSize: 13, color: colors.textSecondary },

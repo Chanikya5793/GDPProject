@@ -1,0 +1,117 @@
+name: Secure copilot CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, "feature/**"]
+  # Lets a build be started without pushing something to provoke one, which is
+  # what you want when the last merge predates a token or a credential change
+  # rather than a code change.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-assistant-attribution:
+    # Assistants add a Co-Authored-By trailer or a session link by default, and
+    # once one is pushed the only way to remove it is rewriting published
+    # history. The commit-msg hook in .githooks catches it locally; this catches
+    # it on a fresh clone where the hook was never enabled.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No assistant attribution in commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+            range="HEAD~1..HEAD"
+          else
+            range="HEAD"
+          fi
+          echo "Checking commits in $range"
+          # The product feature is called the copilot, so the word alone is not a
+          # match; only an attribution trailer naming an assistant is.
+          if git log "$range" --format='%H%n%B' | grep -inE \
+               -e '^[[:space:]]*co-authored-by:.*(claude|anthropic|codex|chatgpt|openai)' \
+               -e 'generated with .*(claude|codex|chatgpt)' \
+               -e 'https?://claude\.ai'; then
+            echo "::error::Commit message carries assistant attribution. Enable the hook with 'git config core.hooksPath .githooks' and amend."
+            exit 1
+          fi
+          echo "Clean."
+      - name: No assistant tooling files tracked
+        run: |
+          if git ls-files | grep -iE '(^|/)\.claude/|(^|/)CLAUDE\.md$|(^|/)\.codex/'; then
+            echo "::error::Assistant tooling config is tracked. It belongs in .gitignore, not the repository."
+            exit 1
+          fi
+          echo "Clean."
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run lint
+      - run: npm run test:coverage
+      - run: npm run build
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=critical
+      - run: npm run typecheck
+      - run: npm run test
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: ruff check app tests evals
+      - run: pytest --cov=app --cov-branch --cov-report=term --cov-report=xml
+      - run: python evals/run_eval.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          tags: gdp-planner-api:ci

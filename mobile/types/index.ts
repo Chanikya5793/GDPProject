@@ -1,12 +1,16 @@
 export interface User {
-  id: number;
+  id: string;
+  uid: string;
   name: string;
   email: string;
+  emailVerified: boolean;
 }
 
+export type PlannerRecordId = string | number;
+
 export interface Task {
-  id: number;
-  userId: number;
+  id: PlannerRecordId;
+  userId: string;
   title: string;
   dueDate: string;
   dueTime: string;
@@ -15,26 +19,59 @@ export interface Task {
   notes: string;
   completed: boolean;
   createdAt: string;
+  /**
+   * "Leave this one where I put it." Auto-balance never moves a pinned task to
+   * an earlier day, and its priority is not escalated as the date nears.
+   */
+  keepScheduled?: boolean;
+  _revision?: number;
+  _approvedForAi?: boolean;
+  _pending?: boolean;
+  /** Set on every record of a repeat, tying the series together. */
+  seriesId?: string | null;
+  recurrence?: { frequency: string; interval: number; count: number } | null;
 }
 
 export interface Reminder {
-  id: number;
-  userId: number;
+  id: PlannerRecordId;
+  userId: string;
   title: string;
   date: string;
   time: string;
   notes: string;
+  /** The server has always stored this; the mobile client used to discard it. */
+  completed?: boolean;
   createdAt: string;
+  _revision?: number;
+  _approvedForAi?: boolean;
+  _pending?: boolean;
+  /** Set on every record of a repeat, tying the series together. */
+  seriesId?: string | null;
+  recurrence?: { frequency: string; interval: number; count: number } | null;
+}
+
+export interface NoteAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  /** data: URI. Stays on the device — never sent to the planner backend. */
+  dataUrl: string;
+  approvedForAi: boolean;
 }
 
 export interface Note {
-  id: number;
-  userId: number;
+  id: PlannerRecordId;
+  userId: string;
   title: string;
   body: string;
   tagIds: number[];
+  attachments?: NoteAttachment[];
   updatedAt: string;
   createdAt: string;
+  _revision?: number;
+  _approvedForAi?: boolean;
+  _pending?: boolean;
 }
 
 export interface Tag {
@@ -48,7 +85,7 @@ export interface Category {
   name: string;
   color: string;
   builtin: boolean;
-  userId?: number;
+  userId?: string;
 }
 
 export interface Settings {
@@ -63,11 +100,37 @@ export interface Settings {
   showCompleted: boolean;
   reminderDefault: number;
   dueDateAlerts: boolean;
+  /** Whether the home screen widget may show record titles. Off by default. */
+  widgetShowTitles: boolean;
+  autoBalance: boolean;
+  dailyTaskLimit: number;
 }
 
 export interface TrashItem {
-  _trashId: number;
+  _trashId: string;
   _trashType: 'task' | 'reminder' | 'note';
   _deletedAt: string;
   [key: string]: unknown;
+}
+
+export type LogAction =
+  | 'created' | 'updated' | 'deleted' | 'completed' | 'reopened' | 'reverted';
+
+export type LogEntity = 'task' | 'reminder' | 'note' | 'tag';
+
+export interface LogEntry {
+  id: string;
+  ts: string;
+  sessionId: string;
+  sessionStart: string;
+  action: LogAction;
+  entity: LogEntity;
+  title: string;
+  entityId?: string | number;
+  before?: unknown;
+  after?: unknown;
+  trashId?: number | string;
+  revertOf?: string;
+  reverted?: boolean;
+  revertedAt?: string;
 }

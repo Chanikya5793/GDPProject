@@ -1,0 +1,145 @@
+name: Deploy backend to Cloud Run
+
+# The copilot's prompt, its tools and every rule it follows live in backend/,
+# and none of that reaches a student until this service is redeployed. That was
+# not obvious: the Pages workflow next door ships the web client on every merge,
+# so a backend fix looks shipped when it has only been merged. A fix for the
+# assistant duplicating records instead of editing them sat merged and undeployed
+# for two days for exactly that reason, and the bug report that followed was
+# correct.
+#
+# ─── One-time setup ────────────────────────────────────────────────────────
+# This authenticates with Workload Identity Federation, so no service account
+# key is ever created, downloaded or stored in a repository secret.
+#
+#   PROJECT=nw-student-planner
+#   PROJECT_NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+#
+#   gcloud iam service-accounts create github-deployer \
+#     --project=$PROJECT --display-name="GitHub Actions deployer"
+#
+#   gcloud iam workload-identity-pools create github \
+#     --project=$PROJECT --location=global --display-name="GitHub Actions"
+#
+#   gcloud iam workload-identity-pools providers create-oidc github \
+#     --project=$PROJECT --location=global --workload-identity-pool=github \
+#     --issuer-uri="https://token.actions.githubusercontent.com" \
+#     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+#     --attribute-condition="assertion.repository=='Chanikya5793/GDPProject'"
+#
+#   # Only this repository may impersonate the deployer.
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     github-deployer@$PROJECT.iam.gserviceaccount.com --project=$PROJECT \
+#     --role=roles/iam.workloadIdentityUser \
+#     --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/Chanikya5793/GDPProject"
+#
+#   # What a deploy actually needs, and nothing more.
+#   for ROLE in roles/run.developer roles/cloudbuild.builds.editor \
+#               roles/artifactregistry.writer roles/storage.admin; do
+#     gcloud projects add-iam-policy-binding $PROJECT \
+#       --member="serviceAccount:github-deployer@$PROJECT.iam.gserviceaccount.com" --role=$ROLE
+#   done
+#
+#   # The deployer has to be allowed to hand the service its own runtime identity.
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     $PROJECT_NUMBER-compute@developer.gserviceaccount.com --project=$PROJECT \
+#     --role=roles/iam.serviceAccountUser \
+#     --member="serviceAccount:github-deployer@$PROJECT.iam.gserviceaccount.com"
+#
+#   gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER \
+#     --body "projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github"
+#   gh variable set GCP_DEPLOY_SERVICE_ACCOUNT \
+#     --body "github-deployer@$PROJECT.iam.gserviceaccount.com"
+#
+# Until those variables exist the job skips rather than fails, so an
+# unconfigured fork does not show a permanently red workflow.
+# ───────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    # Only when the service itself changed. A mobile-only merge redeploying the
+    # API would be noise, and every deploy is a new revision.
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for Workload Identity Federation to mint the OIDC token.
+  id-token: write
+
+concurrency:
+  # Deploys are not interruptible: cancelling one mid-rollout would leave the
+  # service on whichever revision happened to be serving.
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the deploy is configured
+        id: configured
+        run: |
+          if [ -n "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ] && [ -n "${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Backend deploy skipped — set GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_DEPLOY_SERVICE_ACCOUNT (see the header of this workflow)."
+          fi
+
+      # The tests gate the deploy. Cloud Run has no staging environment here, so
+      # this is the last chance to catch a broken build before it is the one
+      # answering students.
+      - uses: actions/setup-python@v5
+        if: steps.configured.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - if: steps.configured.outputs.ready == 'true'
+        run: pip install -e '.[dev]'
+
+      - if: steps.configured.outputs.ready == 'true'
+        run: ruff check app tests evals
+
+      - if: steps.configured.outputs.ready == 'true'
+        run: pytest -q
+
+      - name: Authenticate to Google Cloud
+        if: steps.configured.outputs.ready == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.configured.outputs.ready == 'true'
+
+      # Deliberately no --set-env-vars: the service's configuration is managed
+      # on Cloud Run, and passing a partial set here would silently drop every
+      # variable this file does not happen to know about, including the secret
+      # references the copilot needs to answer at all.
+      - name: Deploy
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          gcloud run deploy planner-api \
+            --source . \
+            --region=us-central1 \
+            --platform=managed \
+            --quiet
+
+      - name: Report the live revision
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          REVISION=$(gcloud run services describe planner-api --region=us-central1 \
+            --format='value(status.latestReadyRevisionName)')
+          echo "### Backend deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Live revision: \`$REVISION\` (from ${GITHUB_SHA::7})" >> "$GITHUB_STEP_SUMMARY"

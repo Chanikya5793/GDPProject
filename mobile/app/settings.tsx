@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   Switch, Alert, Platform,
@@ -8,6 +8,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { createStyles } from '@/theme/createStyles';
+import { migrateLegacyStorage } from '@/api/storage';
+import { Settings } from '@/types';
+import ActivityLogSection from '@/components/ActivityLogSection';
+import AiPrivacySection from '@/components/AiPrivacySection';
+import NotificationsSection from '@/components/NotificationsSection';
+import WidgetsSiriSection from '@/components/WidgetsSiriSection';
+import RecycleBinSection from '@/components/RecycleBinSection';
+import { apiConfigured, apiRequest } from '@/api/client';
 
 const ACCENT_COLORS = [
   { id: 'green' as const, label: 'Green', color: '#006A4E' },
@@ -16,13 +25,79 @@ const ACCENT_COLORS = [
   { id: 'amber' as const, label: 'Amber', color: '#D97706' },
 ];
 
+/** Matches web's Font Size select. */
+const FONT_SIZES: { value: Settings['fontSize']; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'large', label: 'Large' },
+  { value: 'larger', label: 'Larger' },
+];
+
+/** Copilot capacity choices. `null` defers to the deployment default. */
+const CAPACITY_CHOICES: { value: number | null; short: string; label: string }[] = [
+  { value: null, short: 'Auto', label: 'Use service default' },
+  { value: 180, short: '3h', label: '3 hours per day' },
+  { value: 240, short: '4h', label: '4 hours per day' },
+  { value: 360, short: '6h', label: '6 hours per day' },
+  { value: 480, short: '8h', label: '8 hours per day' },
+];
+
+type ReplyStyle = 'quiet' | 'brief' | 'normal' | 'detailed';
+type PlannerSettings = { max_daily_minutes: number | null; reply_style: ReplyStyle };
+
+/** How much the assistant says. Server-side, so it is the same on every device. */
+const REPLY_STYLES: { value: ReplyStyle; short: string; label: string; blurb: string }[] = [
+  { value: 'quiet', short: 'Quiet', label: 'Quiet replies',
+    blurb: 'Changes only, with no commentary.' },
+  { value: 'brief', short: 'Brief', label: 'Brief replies',
+    blurb: 'One sentence.' },
+  { value: 'normal', short: 'Normal', label: 'Normal replies',
+    blurb: 'Two or three sentences.' },
+  { value: 'detailed', short: 'Full', label: 'Detailed replies',
+    blurb: 'A short paragraph when there is something to explain.' },
+];
+
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuth();
   const { settings, updateSetting, resetSettings } = useSettings();
-  const { colors, accent } = useAppTheme();
+  const { colors, accent, appearance } = useAppTheme();
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  // Copilot capacity lives server-side, so it is only offered when a backend is
+  // actually configured. The offline demo build has none.
+  const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({
+    max_daily_minutes: null, reply_style: 'brief',
+  });
+  const [plannerStatus, setPlannerStatus] =
+    useState<'loading' | 'ready' | 'saving' | 'error' | 'unavailable'>('loading');
+  useEffect(() => {
+    if (!apiConfigured()) { setPlannerStatus('unavailable'); return; }
+    apiRequest<PlannerSettings>('/v1/planner-settings')
+      .then(value => { setPlannerSettings(value); setPlannerStatus('ready'); })
+      .catch(() => setPlannerStatus('error'));
+  }, []);
+
+  // Sends the whole document, not just the field that changed. The server
+  // replaces the record wholesale, so a partial body would quietly reset every
+  // other setting -- which is what changing capacity used to do to reply style.
+  const updatePlannerSettings = useCallback(async (updates: Partial<PlannerSettings>) => {
+    const previous = plannerSettings;
+    const next = { ...plannerSettings, ...updates };
+    setPlannerSettings(next);
+    setPlannerStatus('saving');
+    try {
+      const saved = await apiRequest<PlannerSettings>('/v1/planner-settings', {
+        method: 'PUT', body: JSON.stringify(next),
+      });
+      setPlannerSettings(saved);
+      setPlannerStatus('ready');
+    } catch (error) {
+      // Put the old values back so no row shows something the server rejected.
+      setPlannerSettings(previous);
+      setPlannerStatus('error');
+      Alert.alert('Could not save', (error as Error).message);
+    }
+  }, [plannerSettings]);
 
   const saveProfile = () => {
     if (!name.trim()) return;
@@ -40,7 +115,19 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const s = makeStyles(colors, accent);
+  const handleLegacyMigration = async () => {
+    if (!user) return;
+    try {
+      const count = await migrateLegacyStorage(user.uid);
+      Alert.alert('Migration complete', count
+        ? `Encrypted and moved ${count} legacy local data stores.`
+        : 'No legacy plaintext planner data was found.');
+    } catch (error) {
+      Alert.alert('Migration failed', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const s = makeStyles(colors, accent, appearance);
   const profileChanged = name !== user?.name || email !== user?.email;
 
   const initials = (user?.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -108,6 +195,41 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <Text style={s.rowLabel}>Font Size</Text>
+        <View style={s.segmentRow}>
+          {FONT_SIZES.map(option => (
+            <TouchableOpacity
+              key={option.value}
+              style={[s.segment, settings.fontSize === option.value && { backgroundColor: accent.primary }]}
+              onPress={() => updateSetting('fontSize', option.value)}
+              accessibilityRole="button"
+              accessibilityLabel={`${option.label} text`}
+            >
+              <Text style={[s.segmentText, settings.fontSize === option.value && { color: '#FFF' }]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <SettingsRow label="Compact Mode" colors={colors}>
+          <Switch
+            value={settings.compactMode}
+            onValueChange={v => updateSetting('compactMode', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.compactMode ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
+
+        <SettingsRow label="Reduced Motion" colors={colors}>
+          <Switch
+            value={settings.reducedMotion}
+            onValueChange={v => updateSetting('reducedMotion', v)}
+            trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
+            thumbColor={Platform.OS === 'android' ? (settings.reducedMotion ? accent.light : '#f4f3f4') : undefined}
+          />
+        </SettingsRow>
       </View>
 
       {/* Planner Preferences */}
@@ -158,18 +280,117 @@ export default function SettingsScreen() {
           />
         </SettingsRow>
 
-        <SettingsRow label="Due Date Alerts" colors={colors}>
+        <SettingsRow label="Auto-Balance Busy Days" colors={colors}>
           <Switch
-            value={settings.dueDateAlerts}
-            onValueChange={v => updateSetting('dueDateAlerts', v)}
+            value={settings.autoBalance}
+            onValueChange={v => updateSetting('autoBalance', v)}
             trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
-            thumbColor={Platform.OS === 'android' ? (settings.dueDateAlerts ? accent.light : '#f4f3f4') : undefined}
+            thumbColor={Platform.OS === 'android' ? (settings.autoBalance ? accent.light : '#f4f3f4') : undefined}
           />
         </SettingsRow>
+
+        <SettingsRow label="Max Tasks Per Day" colors={colors}>
+          <View style={s.miniSegment}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <TouchableOpacity
+                key={n}
+                style={[s.miniSeg, settings.dailyTaskLimit === n && { backgroundColor: accent.primary }]}
+                onPress={() => updateSetting('dailyTaskLimit', n)}
+                accessibilityRole="button"
+                accessibilityLabel={`Maximum ${n} tasks per day`}
+              >
+                <Text style={[s.miniSegText, settings.dailyTaskLimit === n && { color: '#FFF' }]}>
+                  {n}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SettingsRow>
+
+        {plannerStatus !== 'unavailable' && (
+          <SettingsRow label="Copilot Daily Capacity" colors={colors}>
+            <View style={s.miniSegment}>
+              {CAPACITY_CHOICES.map(choice => (
+                <TouchableOpacity
+                  key={String(choice.value)}
+                  style={[
+                    s.miniSeg,
+                    plannerSettings.max_daily_minutes === choice.value && { backgroundColor: accent.primary },
+                  ]}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onPress={() => updatePlannerSettings({ max_daily_minutes: choice.value })}
+                  accessibilityRole="button"
+                  accessibilityLabel={choice.label}
+                >
+                  <Text
+                    style={[
+                      s.miniSegText,
+                      plannerSettings.max_daily_minutes === choice.value && { color: '#FFF' },
+                    ]}
+                  >
+                    {choice.short}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </SettingsRow>
+        )}
+
+        {plannerStatus !== 'unavailable' && (
+          <View style={s.stackedRow}>
+            <Text style={s.stackedLabel}>Assistant Replies</Text>
+            <Text style={s.stackedDesc}>
+              How much the assistant says back. It proposes the same changes
+              either way — this is only how much it writes about them.
+            </Text>
+            <View style={s.miniSegment}>
+              {REPLY_STYLES.map(choice => (
+                <TouchableOpacity
+                  key={choice.value}
+                  style={[
+                    s.miniSeg,
+                    plannerSettings.reply_style === choice.value && { backgroundColor: accent.primary },
+                  ]}
+                  disabled={plannerStatus === 'loading' || plannerStatus === 'error'}
+                  onPress={() => updatePlannerSettings({ reply_style: choice.value })}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: plannerSettings.reply_style === choice.value }}
+                  accessibilityLabel={choice.label}
+                >
+                  <Text
+                    style={[
+                      s.miniSegText,
+                      plannerSettings.reply_style === choice.value && { color: '#FFF' },
+                    ]}
+                  >
+                    {choice.short}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={s.stackedDesc}>
+              {REPLY_STYLES.find(c => c.value === plannerSettings.reply_style)?.blurb}
+            </Text>
+          </View>
+        )}
       </View>
+
+      <NotificationsSection />
+
+      <WidgetsSiriSection />
+
+      <AiPrivacySection />
+
+      <ActivityLogSection />
+
+      {user && <RecycleBinSection userId={user.id} />}
 
       {/* Actions */}
       <View style={s.section}>
+        <TouchableOpacity style={s.actionRow} onPress={handleLegacyMigration}>
+          <Ionicons name="shield-checkmark" size={18} color={accent.primary} />
+          <Text style={[s.actionText, { color: colors.text }]}>Migrate legacy data securely</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={s.actionRow} onPress={resetSettings}>
           <Ionicons name="refresh" size={18} color={colors.textSecondary} />
           <Text style={[s.actionText, { color: colors.text }]}>Reset All Settings</Text>
@@ -181,7 +402,7 @@ export default function SettingsScreen() {
       </View>
 
       <Text style={s.footer}>
-        Northwest Student Planner{'\n'}Data stored locally on device.
+        Northwest Student Planner{'\n'}Encrypted offline data · Firebase account identity
       </Text>
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -201,8 +422,8 @@ function SettingsRow({ label, colors, children }: {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent']) {
-  return StyleSheet.create({
+function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: ReturnType<typeof useAppTheme>['accent'], appearance: ReturnType<typeof useAppTheme>['appearance']) {
+  return createStyles(appearance)({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 20 },
     section: { backgroundColor: colors.card, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border },
@@ -221,6 +442,9 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     accentRow: { flexDirection: 'row', gap: 12 },
     accentDot: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
     accentDotActive: { borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
+    stackedRow: { paddingVertical: 12, gap: 8 },
+    stackedLabel: { fontSize: 15, color: colors.text },
+    stackedDesc: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
     miniSegment: { flexDirection: 'row', gap: 4 },
     miniSeg: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: colors.surfaceVariant },
     miniSegText: { fontSize: 13, fontWeight: '500', color: colors.text },

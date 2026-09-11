@@ -18,7 +18,9 @@ export function getDaysUntilDue(dueDateStr) {
  *   2–4 days                              →  low            →  MEDIUM
  */
 export function getEffectivePriority(task) {
-  if (task.completed || !task.dueDate) {
+  // Pinned by the student. Escalating the badge anyway would read as the app
+  // ignoring the toggle they just set, even though nothing actually moved.
+  if (task.keepScheduled || task.completed || !task.dueDate) {
     const p = task.priority || 'medium'
     return { effective: p, original: p, wasEscalated: false, daysUntilDue: Infinity }
   }

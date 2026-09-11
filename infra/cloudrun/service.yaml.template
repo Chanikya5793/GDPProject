@@ -1,0 +1,105 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ${GDP_SERVICE}
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # One warm instance. Scaling to zero cost 15.8 seconds on the first
+        # request after any idle period, which is most of a student's first
+        # question of the day. This bills for an idle instance; drop it back to
+        # "0" if that is not worth it.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "true"
+    spec:
+      serviceAccountName: ${GDP_SERVICE_ACCOUNT}
+      containerConcurrency: 40
+      # Must stay above the worst case one chat request can take, which is no
+      # longer a single model call: the assistant may spend a round looking
+      # things up before it answers. That is bounded by
+      # PLANNER_AGENT_DEADLINE_SECONDS (no new round starts after 90s) plus one
+      # more PLANNER_MUSE_TIMEOUT_SECONDS generation, so 210s of model time and
+      # headroom for Firestore either side. When this and the model timeout were
+      # both 60 the platform killed the request at the same instant the model
+      # client would have given up, and a slow generation surfaced as a bare 500
+      # instead of the app's own explained timeout.
+      timeoutSeconds: 300
+      containers:
+        - image: ${GDP_IMAGE}
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          env:
+            - name: PLANNER_ENVIRONMENT
+              value: production
+            - name: PLANNER_GOOGLE_CLOUD_PROJECT
+              value: ${GDP_GCP_PROJECT}
+            - name: PLANNER_GOOGLE_CLOUD_LOCATION
+              value: ${GDP_VERTEX_LOCATION}
+            - name: PLANNER_FIREBASE_PROJECT_ID
+              value: ${GDP_FIREBASE_PROJECT_ID}
+            - name: PLANNER_KMS_KEY_NAME
+              value: ${GDP_KMS_KEY_NAME}
+            - name: PLANNER_MCP_SESSION_SECRET_RESOURCE
+              value: ${GDP_MCP_SECRET_RESOURCE}
+            # Quoted: the value is a JSON array, which YAML would otherwise
+            # read as a sequence, and Cloud Run rejects a non-string env value.
+            - name: PLANNER_ALLOWED_ORIGINS
+              value: '${GDP_ALLOWED_ORIGINS}'
+            - name: PLANNER_ANSWER_PROVIDER
+              value: muse
+            # The -contributor tier was withdrawn by Meta and now answers
+            # model_not_found, taking the whole assistant down with it. The
+            # standard tier also does not train on prompts, which the Settings
+            # screen and the first-run notice report from /v1/ai-info.
+            # The assistant chooses its own lookups and can propose several
+            # changes at once, and that choosing is the reasoning step, so it is
+            # not starved here. Muse Spark bills reasoning cheaply enough that
+            # the constraint is wall-clock, not spend, which is what the two
+            # timeouts below are for.
+            - name: PLANNER_MUSE_REASONING_EFFORT
+              value: medium
+            # Per model call. Stays under the request timeout above.
+            - name: PLANNER_MUSE_TIMEOUT_SECONDS
+              value: "120"
+            # No new round of lookups starts after this much of the turn has
+            # gone, so a slow provider costs a thinner answer rather than a
+            # request that dies past the platform ceiling.
+            - name: PLANNER_AGENT_DEADLINE_SECONDS
+              value: "90"
+            - name: PLANNER_MUSE_MODEL
+              value: muse-spark-1.2
+            - name: PLANNER_MUSE_API_KEY_RESOURCE
+              value: ${GDP_MUSE_SECRET_RESOURCE}
+            # How long a previewed change stays confirmable. The conversation
+            # now survives a reload, so this has to outlive a browser restart or
+            # the student comes back to a thread of dead previews.
+            - name: PLANNER_PROPOSAL_TTL_HOURS
+              value: "24"
+            # Default daily task capacity the planner treats as a full day.
+            # Users may override it for themselves via /v1/planner-settings.
+            - name: PLANNER_MAX_DAILY_MINUTES
+              value: "360"
+            # Per-user copilot chat budget. Literal values rather than envsubst
+            # placeholders: an unset variable would render empty and fail startup.
+            - name: PLANNER_CHAT_RATE_LIMIT_REQUESTS
+              value: "20"
+            - name: PLANNER_CHAT_RATE_LIMIT_WINDOW_SECONDS
+              value: "3600"
+          startupProbe:
+            httpGet:
+              path: /healthz
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+            periodSeconds: 30
