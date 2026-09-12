@@ -962,6 +962,202 @@ def test_a_focus_naming_only_half_a_record_is_rejected(services, client, auth):
     assert response.status_code == 422
 
 
+# ---------------------------------------------------------------------------
+# A real conversation that went wrong, one failure per test. The student asked
+# to edit "the latest note", was shown [S46], typed "46" and then "S46" and was
+# told neither existed, picked the note by name, and finally got two new notes
+# created instead of the one they had edited. Backend revision 00051, with the
+# record_id fix already deployed.
+# ---------------------------------------------------------------------------
+
+def add_note(services, record_id, title, body="", uid="alice", approved=True):
+    return services.repository.upsert_record(
+        uid, EntityType.note, record_id,
+        RecordUpsertRequest(
+            content=NoteContent(title=title, body=body),
+            idempotency_key=f"seed-note-{record_id}", approved_for_ai=approved,
+        ),
+    )
+
+
+def test_notes_survive_a_briefing_full_of_dated_work(services):
+    # Forty-nine records: the briefing budget of forty was spent on dated work
+    # before the loop reached the notes bucket, which was last. So the note the
+    # student wanted to edit was never in the prompt, and with no record_id in
+    # front of it the model created a second copy.
+    for index in range(45):
+        add_task(services, f"t{index:02d}", f"Task {index}", date(2026, 9, 20 + index % 8))
+    add_note(services, "chem-1", "Chem notes", "Titration steps")
+    generator = use(services, GeneratedAnswer(answer="Sure."))
+
+    services.copilot.answer("alice", "rewrite my chem notes", today=TODAY)
+
+    briefing = briefing_from(generator.prompts[0])
+    assert "notes" in briefing
+    assert briefing["notes"][0]["record_id"] == "chem-1"
+
+
+def test_a_citation_id_keeps_its_number_across_turns(services, client, auth):
+    # [S46] shown in one reply meant nothing in the next, because numbers were
+    # minted fresh per turn. The same note went S46, S46, S50. Numbers are
+    # carried across the thread now, so what a student was shown still holds.
+    add_note(services, "chem-2", "Chem notes", "Titration steps")
+    use(services,
+        GeneratedAnswer(answer="Here it is.", citation_ids=["S1"]),
+        GeneratedAnswer(answer="Still here.", citation_ids=["S1"]))
+
+    first = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "show my chem notes", "request_id": "stable-00001",
+    }).json()
+    number = next(c["citation_id"] for c in first["citations"] if c["record_id"] == "chem-2")
+
+    second = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "and again", "request_id": "stable-00002",
+        "conversation_id": first["conversation_id"],
+    }).json()
+    again = next(c["citation_id"] for c in second["citations"] if c["record_id"] == "chem-2")
+    assert again == number
+
+
+def test_typing_a_citation_id_back_points_at_that_record(services, client, auth):
+    # "46" on its own was run as a date lookup; "S46" got four empty lookups
+    # and "I can't see a record labeled S46". Both are the student pointing at
+    # something they were just shown, and both now resolve to it.
+    add_note(services, "chem-3", "Chem notes", "Titration steps")
+    use(services,
+        GeneratedAnswer(answer="Here it is.", citation_ids=["S1"]),
+        GeneratedAnswer(answer="That one."),
+        GeneratedAnswer(answer="That one."))
+
+    first = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "show my chem notes", "request_id": "ref-00001",
+    }).json()
+    number = next(c["citation_id"] for c in first["citations"] if c["record_id"] == "chem-3")
+    generator = services.copilot.generator
+
+    for message, request_id in ((number, "ref-00002"), (number[1:], "ref-00003")):
+        client.post("/v1/copilot/chat", headers=auth, json={
+            "message": message, "request_id": request_id,
+            "conversation_id": first["conversation_id"],
+        })
+        focus = section_from(generator.prompts[-1], "FOCUS_RECORD=")
+        assert focus["record_id"] == "chem-3", message
+
+
+def test_a_create_naming_an_existing_note_becomes_an_edit_of_it(services, client, auth):
+    # The failure that mattered. Five turns about "AI in the workplace", then
+    # create with that exact title -- and the server minted a second note.
+    # A create that names an open note is an edit that lost its id.
+    add_note(services, "ai-1", "AI in the workplace", "CLEAR framework")
+    use(services, GeneratedAnswer(
+        answer="Expanded.",
+        actions=[GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="AI in the workplace", body="CLEAR framework, expanded with limits.",
+        )],
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "expand it", "request_id": "coerce-00001",
+    }).json()
+
+    assert len(body["proposals"]) == 1
+    proposal = body["proposals"][0]
+    assert proposal["operation"] == "update"
+    assert proposal["record_id"] == "ai-1"
+    assert proposal["after"]["body"] == "CLEAR framework, expanded with limits."
+
+
+def test_a_task_create_is_only_coerced_when_the_thread_was_about_that_task(services, client, auth):
+    # "Read chapter 4" next Tuesday is a new task, not an edit of last week's.
+    # Only when the thread has cited the existing one, and the create carries
+    # no repeat and no different date, is it read as an edit.
+    add_task(services, "read-1", "Read chapter 4", date(2026, 9, 4))
+    use(services, GeneratedAnswer(
+        answer="Added.",
+        actions=[GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.task,
+            title="Read chapter 4", due_date="2026-09-11",
+        )],
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "add read chapter 4 for next friday", "request_id": "coerce-00002",
+    }).json()
+
+    assert body["proposals"][0]["operation"] == "create"
+
+
+def test_the_singular_action_is_ignored_when_the_plural_is_filled(services, client, auth):
+    # Two notes came out of one request: `actions` carried the create, and
+    # `action` restated it under a shortened title, which dedupe by key let
+    # through as a second create.
+    use(services, GeneratedAnswer(
+        answer="Added.",
+        actions=[GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="Study plan - expanded draft", body="Week by week.",
+        )],
+        action=GeneratedAction(
+            operation=ProposalOperation.create, entity_type=EntityType.note,
+            title="Study plan", body="Week by week.",
+        ),
+    ))
+
+    body = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "make me a study plan", "request_id": "pair-00001",
+    }).json()
+
+    assert len(body["proposals"]) == 1
+
+
+def test_a_turn_cannot_spend_more_than_four_lookups(services):
+    # One turn was seen running four lookups for a record no lookup can find.
+    add_task(services, "t-cap", "Lab report", date(2026, 9, 4))
+    generator = use(services,
+        GeneratedAnswer(tool_requests=[
+            ToolRequest(tool=ToolName.find, query="a"),
+            ToolRequest(tool=ToolName.find, query="b"),
+            ToolRequest(tool=ToolName.find, query="c"),
+        ]),
+        GeneratedAnswer(tool_requests=[
+            ToolRequest(tool=ToolName.find, query="d"),
+            ToolRequest(tool=ToolName.find, query="e"),
+        ]),
+        GeneratedAnswer(answer="Gave up."))
+    services.copilot.max_tool_rounds = 3
+
+    _, _, _, _ = services.copilot.answer("alice", "find it", today=TODAY)
+
+    # Opening search + three + one more, then told it has none left.
+    assert "TOOLS_AVAILABLE=false" in generator.prompts[-1]
+
+
+def test_looking_for_a_note_by_date_says_why_it_found_nothing(services):
+    add_note(services, "n-date", "Chem notes", "Titration steps")
+    session = services.copilot.toolbox.session("alice", TODAY)
+
+    outcome = session.run(ToolRequest(
+        tool=ToolName.find, entity_type=EntityType.note, start="2026-09-12", end="2026-09-12",
+    ))
+
+    assert outcome.payload["count"] == 0
+    assert "no dates" in outcome.payload["error"]
+
+
+def test_undated_records_come_back_newest_first(services):
+    # "The first one" was the alphabetically first note, not the latest.
+    add_note(services, "older", "Alpha notes")
+    add_note(services, "newer", "Zeta notes")
+    session = services.copilot.toolbox.session("alice", TODAY)
+
+    outcome = session.run(ToolRequest(tool=ToolName.find, entity_type=EntityType.note))
+
+    ids = [item["record_id"] for item in outcome.payload["results"]]
+    assert ids.index("newer") < ids.index("older")
+    assert all("updated_at" in item for item in outcome.payload["results"])
+
+
 def test_reply_style_reaches_the_model(services):
     generator = use(services, GeneratedAnswer(answer="Two left."))
     services.repository.set_planner_settings("alice", PlannerSettings(reply_style="detailed"))

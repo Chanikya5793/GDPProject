@@ -21,13 +21,17 @@ spec:
       # Must stay above the worst case one chat request can take, which is no
       # longer a single model call: the assistant may spend a round looking
       # things up before it answers. That is bounded by
-      # PLANNER_AGENT_DEADLINE_SECONDS (no new round starts after 90s) plus one
-      # more PLANNER_MUSE_TIMEOUT_SECONDS generation, so 210s of model time and
-      # headroom for Firestore either side. When this and the model timeout were
+      # The deadline only stops a new lookup round from *starting*. A round
+      # already in flight completes, and the mandatory answer round still runs
+      # after it, so the worst case is the deadline plus two full generations:
+      # 89s + 120s + 120s = 329s. The old figure of 210s counted one generation
+      # and would have let the platform kill a slow turn a few seconds before
+      # the app could explain it. Raising reasoning effort to "high" makes the
+      # slow case likelier, not rarer. When this and the model timeout were
       # both 60 the platform killed the request at the same instant the model
-      # client would have given up, and a slow generation surfaced as a bare 500
-      # instead of the app's own explained timeout.
-      timeoutSeconds: 300
+      # client would have given up, and a slow generation surfaced as a bare
+      # 500 instead of the app's own explained timeout.
+      timeoutSeconds: 420
       containers:
         - image: ${GDP_IMAGE}
           ports:
@@ -66,7 +70,7 @@ spec:
             # the constraint is wall-clock, not spend, which is what the two
             # timeouts below are for.
             - name: PLANNER_MUSE_REASONING_EFFORT
-              value: medium
+              value: high
             # Per model call. Stays under the request timeout above.
             - name: PLANNER_MUSE_TIMEOUT_SECONDS
               value: "120"
@@ -76,7 +80,7 @@ spec:
             - name: PLANNER_AGENT_DEADLINE_SECONDS
               value: "90"
             - name: PLANNER_MUSE_MODEL
-              value: muse-spark-1.2
+              value: muse-spark-1.3-contributor
             - name: PLANNER_MUSE_API_KEY_RESOURCE
               value: ${GDP_MUSE_SECRET_RESOURCE}
             # How long a previewed change stays confirmable. The conversation

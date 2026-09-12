@@ -31,6 +31,7 @@ from .models import (
     PlannerRecord,
     PlannerSettings,
     PrivacySettings,
+    ProposalOperation,
     RecordDeleteRequest,
     RecordUpsertRequest,
     RejectProposalRequest,
@@ -84,6 +85,63 @@ def _rationale(action) -> str:
     return f"{verb} {kind}: {label}" if label else f"{verb} this {kind}"
 
 
+def _same_title(a: str, b: str) -> bool:
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+
+def coerce_creates_of_existing_records(
+    services: Container, uid: str, actions: list, referenced: set[str],
+) -> list:
+    """Turn a create that names an existing record into an update on it.
+
+    The deterministic end of the duplicate-record bug. Everything upstream --
+    the ids in the briefing, the instruction, the focus -- makes the right
+    answer available; this is what makes the wrong one unreachable. A model
+    that has been talking about "AI in the workplace" for five turns and then
+    emits create with that exact title did not want a second note.
+
+    Notes are coerced on a title match alone: two open notes with the same
+    title are near-zero legitimate, and the preview shows before and after
+    with a reject button, which is the escape if this is ever wrong. Tasks and
+    reminders are held to more, because "Read chapter 4" next week is a new
+    task: the existing record must be one the thread has cited, the create
+    must not repeat, and its date must be absent or the same.
+    """
+    return [_coerced(services, uid, action, referenced) for action in actions]
+
+
+def _coerced(services: Container, uid: str, action, referenced: set[str]):
+    """One action, rewritten to an update if it is really one. See above."""
+    if action.operation != ProposalOperation.create or not action.title:
+        return action
+    if action.entity_type not in (EntityType.note, EntityType.task, EntityType.reminder):
+        return action
+
+    candidates = [
+        record for record in services.repository.list_records(uid, action.entity_type)
+        if _same_title(record.content.title, action.title)
+        and not getattr(record.content, "completed", False)
+    ]
+    if len(candidates) != 1:
+        return action
+    existing = candidates[0]
+
+    if action.entity_type != EntityType.note:
+        if existing.record_id not in referenced or action.repeat_frequency:
+            return action
+        wanted_day = (action.due_date or "")[:10]
+        have_day = getattr(existing.content, "due_date", None) or getattr(existing.content, "date", None)
+        if wanted_day and have_day and wanted_day != have_day.isoformat():
+            return action
+
+    return action.model_copy(update={
+        "operation": ProposalOperation.update,
+        "record_id": existing.record_id,
+        # The title matched; carrying it would be a no-op field in the diff.
+        "title": None,
+    })
+
+
 def build_chat_response(services: Container, uid: str, answer, citations, disclosure, generated):
     """Turn every change the model asked for into a preview to confirm.
 
@@ -99,7 +157,13 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
     # the mapping to fix it is right here, so there is no reason to let that
     # happen rather than quietly doing what was obviously meant.
     by_citation = {citation.citation_id: citation.record_id for citation in citations}
-    for action in generated.all_actions():
+    # Records the thread has been talking about. A create whose title matches
+    # one of these is an edit that lost its id, not a new record.
+    referenced = {citation.record_id for citation in citations}
+    actions = coerce_creates_of_existing_records(
+        services, uid, list(generated.all_actions()), referenced,
+    )
+    for action in actions:
         if action.record_id in by_citation:
             action = action.model_copy(update={"record_id": by_citation[action.record_id]})
         # The preview card carries a before-and-after of every field, so the
@@ -136,6 +200,27 @@ def thread_history(services: Container, uid: str, body, privacy):
             return list(body.history)
         return [ChatTurn(role=m.role, text=m.text) for m in detail.messages][-20:]
     return list(body.history)
+
+
+def thread_citations(services: Container, uid: str, body, privacy) -> list:
+    """Every record the thread has already cited, with the number it was shown as.
+
+    This is what lets a citation id keep working across turns. Each assistant
+    turn is stored with its citations, record ids included, so the [S46] a
+    student was shown last time can be looked up rather than re-minted as
+    something else. All of the thread, not the twenty-turn replay slice: a
+    number seen ten turns ago is still the number they will type.
+    """
+    if not (body.conversation_id and privacy.retain_chat):
+        return []
+    try:
+        detail = services.repository.get_conversation(uid, body.conversation_id)
+    except NotFound:
+        return []
+    seen = []
+    for message in detail.messages:
+        seen.extend(message.citations or [])
+    return seen
 
 
 def remember_turn(services: Container, uid: str, privacy, body, response) -> ChatResponse:
@@ -409,6 +494,7 @@ def create_app(container: Container | None = None) -> FastAPI:
                 user.uid, body.message,
                 history=thread_history(services, user.uid, body, privacy),
                 focus=body.focus,
+                prior_citations=thread_citations(services, user.uid, body, privacy),
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -463,6 +549,7 @@ def create_app(container: Container | None = None) -> FastAPI:
             user.uid, body.message,
             history=thread_history(services, user.uid, body, privacy),
             focus=body.focus,
+            prior_citations=thread_citations(services, user.uid, body, privacy),
         )
         # Pull the first item here rather than inside the response body. Once a
         # streaming body starts the status line is already 200, so retrieval
