@@ -197,6 +197,8 @@ class IndexingService:
 # planner on every turn, so a record missed here is still in front of the model.
 # A wrong record in the prompt is worse than a missing one.
 DEFAULT_MAX_DISTANCE = 0.7
+# How many more neighbours to pull when the search is narrowed to one kind.
+KIND_OVERFETCH = 5
 
 
 class RetrievalService:
@@ -212,14 +214,21 @@ class RetrievalService:
         self.limit = limit
         self.max_distance = max_distance
 
-    def retrieve(self, uid: str, query: str) -> Tuple[List[PlannerRecord], List[Citation]]:
+    def retrieve(
+        self, uid: str, query: str, entity_type: Optional[EntityType] = None,
+    ) -> Tuple[List[PlannerRecord], List[Citation]]:
         settings = self.repository.get_privacy(uid)
         if not settings.ai_enabled:
             self.audit.record(uid, "retrieval", "denied", {"reason": "opt_out"})
             raise PermissionError("AI is disabled")
+        # A kind is a filter on the neighbours, not on the index, so the store
+        # is asked for more than will be kept. The model narrowing a search to
+        # notes and getting five tasks back was what sent it on to a second and
+        # third lookup for the same thing.
+        wanted = self.limit * KIND_OVERFETCH if entity_type else self.limit
         try:
             query_vector = self.embeddings.embed_query(query)
-            hits = self.vector_store.search(uid, query_vector, self.limit)
+            hits = self.vector_store.search(uid, query_vector, wanted)
         except Exception as exc:
             self.audit.record(uid, "failure", "failed", {
                 "stage": "retrieval", "error_type": type(exc).__name__,
@@ -228,9 +237,13 @@ class RetrievalService:
         records: List[PlannerRecord] = []
         citations: List[Citation] = []
         for index, hit in enumerate(hits, start=1):
+            if len(records) >= self.limit:
+                break
             if hit.distance > self.max_distance:
                 continue
             if hit.entity_type not in settings.indexed_entity_types:
+                continue
+            if entity_type and hit.entity_type != entity_type:
                 continue
             try:
                 record = self.repository.get_record(uid, hit.entity_type, hit.record_id)
@@ -249,6 +262,20 @@ class RetrievalService:
             "result_count": len(citations), "requested_k": self.limit,
         })
         return records, citations
+
+
+def _turn_for_prompt(turn: ChatTurn) -> Dict[str, Any]:
+    """A transcript turn as the model reads it.
+
+    A proposing turn's text is a few words, so what it proposed rides along:
+    the record a follow-up is about is otherwise nowhere in the prompt.
+    """
+    rendered: Dict[str, Any] = {"role": turn.role, "text": turn.text}
+    if turn.proposed:
+        rendered["proposed"] = [
+            change.model_dump(mode="json", exclude_none=True) for change in turn.proposed
+        ]
+    return rendered
 
 
 class CopilotService:
@@ -330,9 +357,7 @@ class CopilotService:
         # change on every single turn: with the conversation and the question up
         # front, the briefing behind them was re-read from scratch every time
         # even though it is byte-identical until a record changes.
-        parts.append(
-            f"CONVERSATION={json.dumps([{'role': t.role, 'text': t.text} for t in (history or [])])}"
-        )
+        parts.append(f"CONVERSATION={json.dumps([_turn_for_prompt(t) for t in (history or [])])}")
         # Beside the question, not inside the briefing. The briefing is the
         # largest stable block and is cached by prefix; making it vary per tap
         # would invalidate that on every focused turn and every plain one after.

@@ -432,7 +432,7 @@ class PlannerSession:
         if not query:
             return ToolOutcome("search", "Skipped a search with no terms",
                                {"error": "search needs a query.", "count": 0})
-        records, _ = self.toolbox.retrieval.retrieve(self.uid, query)
+        records, _ = self.toolbox.retrieval.retrieve(self.uid, query, request.entity_type)
         results = []
         for record in records:
             text = record_text(record)

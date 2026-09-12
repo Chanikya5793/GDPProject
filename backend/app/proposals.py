@@ -132,7 +132,13 @@ def _apply_update(
 
     if not updates:
         return None, "it did not say what to change about it"
-    return before.model_copy(update=updates), None
+    after = before.model_copy(update=updates)
+    # An update that restates the record as it stands -- the model carrying a
+    # record forward from an earlier turn with only its title filled in --
+    # would preview as a card with nothing on it. Say so instead.
+    if after == before:
+        return None, "it would leave it exactly as it is"
+    return after, None
 
 
 class InvalidProposal(ValueError):

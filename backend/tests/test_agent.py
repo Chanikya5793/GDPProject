@@ -1522,3 +1522,84 @@ def test_a_real_change_is_still_kept(services):
     )])
     assert len(named.all_actions()) == 1
     assert len(targeted.all_actions()) == 1
+
+
+def test_a_search_narrowed_to_notes_returns_notes(services):
+    # The model asked for notes about a topic and got five tasks back, because
+    # the kind on a search request was never applied. It then spent the rest
+    # of its lookups asking again in other ways.
+    for index in range(6):
+        record = add_task(services, f"ai-t{index}", f"AI in the workplace task {index}", date(2026, 9, 20))
+        services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+    record = add_note(services, "ai-n1", "AI in the workplace", "CLEAR framework")
+    services.indexing.index("alice", EntityType.note, record.record_id, record.revision)
+    session = services.copilot.toolbox.session("alice", TODAY)
+
+    outcome = session.run(ToolRequest(
+        tool=ToolName.search, query="AI in the workplace", entity_type=EntityType.note,
+    ))
+
+    assert [item["record_id"] for item in outcome.payload["results"]] == ["ai-n1"]
+
+
+def test_a_search_with_no_kind_still_returns_the_nearest_of_any_kind(services):
+    record = add_task(services, "mix-t", "Titration lab", date(2026, 9, 20))
+    services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
+    record = add_note(services, "mix-n", "Titration lab", "steps")
+    services.indexing.index("alice", EntityType.note, record.record_id, record.revision)
+    session = services.copilot.toolbox.session("alice", TODAY)
+
+    outcome = session.run(ToolRequest(tool=ToolName.search, query="titration lab"))
+
+    assert {item["record_id"] for item in outcome.payload["results"]} == {"mix-t", "mix-n"}
+
+
+def test_the_next_turn_is_told_which_record_the_last_one_proposed_on(services, client, auth):
+    # "1 change to confirm." was the whole of what the transcript kept of a
+    # proposing turn, so "you write it" a moment later had nothing to say which
+    # of three similar notes was on the table; the model searched again and
+    # picked a different one. The proposed records ride on the turn now.
+    add_note(services, "ai-1", "AI in the workplace", "old")
+    add_note(services, "ai-2", "AI in the workplace - example", "old")
+    use(services,
+        GeneratedAnswer(answer="", citation_ids=["S1"], actions=[GeneratedAction(
+            operation="update", entity_type="note", record_id="ai-2", body="new text",
+        )]),
+        GeneratedAnswer(answer="Done."))
+
+    first = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "expand the second one", "request_id": "carry-00001",
+    }).json()
+    assert [p["record_id"] for p in first["proposals"]] == ["ai-2"]
+    cited = next((c["citation_id"] for c in first["citations"] if c["record_id"] == "ai-2"), None)
+
+    client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "you generate and fill it", "request_id": "carry-00002",
+        "conversation_id": first["conversation_id"],
+    })
+
+    turns = section_from(services.copilot.generator.prompts[-1], "CONVERSATION=")
+    proposing = [t for t in turns if t["role"] == "assistant" and t.get("proposed")]
+    assert len(proposing) == 1
+    assert proposing[0]["proposed"] == [{
+        "operation": "update", "entity_type": "note", "record_id": "ai-2",
+        "title": "AI in the workplace - example",
+        **({"citation_id": cited} if cited else {}),
+    }]
+
+
+def test_a_turn_that_proposed_nothing_carries_no_proposed_field(services, client, auth):
+    add_note(services, "plain-1", "Plain note", "text")
+    use(services, GeneratedAnswer(answer="Here it is.", citation_ids=["S1"]),
+        GeneratedAnswer(answer="Still here."))
+
+    first = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "show my note", "request_id": "noprop-00001",
+    }).json()
+    client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "thanks", "request_id": "noprop-00002",
+        "conversation_id": first["conversation_id"],
+    })
+
+    turns = section_from(services.copilot.generator.prompts[-1], "CONVERSATION=")
+    assert all("proposed" not in t for t in turns)
