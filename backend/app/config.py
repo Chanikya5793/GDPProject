@@ -67,9 +67,14 @@ class Settings(BaseSettings):
     # failure that prompted the move was the model ignoring an explicit rule
     # while creating duplicate records. That is the kind of failure more
     # reasoning is for. The extra seconds are accepted on purpose; the student
-    # asked for the assistant to be right rather than quick. 1.3 accepts
-    # "xhigh" as well; kept in reserve.
-    muse_reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = "high"
+    # asked for the assistant to be right rather than quick.
+    #
+    # Raised again to "xhigh" the same day, on request. Probed against the live
+    # API first: "xhigh" answers correctly (update, right id, 8.9s on an
+    # edit-shaped turn); "max" is refused with "requires an active Muse Code
+    # subscription"; "ultra" is not a variant the API knows. So xhigh is the
+    # ceiling this key can reach, not a step short of one.
+    muse_reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = "xhigh"
     # Per model call, not per turn. Kept under the platform request timeout in
     # infra/cloudrun/service.yaml.template, which has to stay above it so a slow
     # generation surfaces as this app's own explained 504 rather than a bare
