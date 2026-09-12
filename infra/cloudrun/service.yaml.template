@@ -70,7 +70,7 @@ spec:
             # the constraint is wall-clock, not spend, which is what the two
             # timeouts below are for.
             - name: PLANNER_MUSE_REASONING_EFFORT
-              value: high
+              value: xhigh
             # Per model call. Stays under the request timeout above.
             - name: PLANNER_MUSE_TIMEOUT_SECONDS
               value: "120"
