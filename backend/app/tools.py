@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from .ai import ToolRequest
 from .audit import AuditLogger
@@ -81,6 +81,10 @@ DEFAULT_BRIEFING_ITEMS = 40
 # prompt budget.
 FOCUS_TEXT_CHARS = 4000
 
+# Briefing slots held back for notes, newest first, whatever the dated work
+# takes. Eight covers what a student is realistically editing this week.
+NOTES_RESERVED_ITEMS = 8
+
 
 @dataclass
 class ToolOutcome:
@@ -97,19 +101,52 @@ class Evidence:
     A record cited from the briefing and again from a search has to keep the
     same ID, otherwise the same task appears twice under two names and the
     answer reads as though it found two.
+
+    Numbers are also kept stable across a thread. They used to be minted fresh
+    every turn, so the [S46] a student saw in one reply meant nothing in the
+    next -- typing "S46" back got "I can't see a record labeled S46", and the
+    same note was shown as S46, then S46 again, then S50. An id a person is
+    shown is an id they will use, so it has to keep working.
     """
 
     def __init__(self) -> None:
         self._ids: Dict[Tuple[EntityType, str], str] = {}
         self._citations: List[Citation] = []
+        self._next = 1
+
+    def seed(self, prior: Sequence[Citation]) -> None:
+        """Carry the numbering forward from earlier turns of the thread.
+
+        Only the mapping is carried, not the citations themselves: a record
+        cited three turns ago is not evidence for this one unless it is shown
+        again, in which case it gets its old number back.
+        """
+        for citation in prior:
+            key = (citation.entity_type, citation.record_id)
+            if key in self._ids:
+                continue
+            self._ids[key] = citation.citation_id
+            digits = citation.citation_id[1:]
+            if digits.isdigit():
+                self._next = max(self._next, int(digits) + 1)
+
+    def lookup(self, citation_id: str) -> Optional[Tuple[EntityType, str]]:
+        """The record a citation id names, whether shown this turn or earlier."""
+        wanted = citation_id.strip().upper()
+        for key, known in self._ids.items():
+            if known == wanted:
+                return key
+        return None
 
     def register(self, record: PlannerRecord, text: str) -> str:
         key = (record.content.entity_type, record.record_id)
-        existing = self._ids.get(key)
-        if existing:
-            return existing
-        citation_id = f"S{len(self._citations) + 1}"
-        self._ids[key] = citation_id
+        citation_id = self._ids.get(key)
+        if citation_id and any(c.citation_id == citation_id for c in self._citations):
+            return citation_id
+        if not citation_id:
+            citation_id = f"S{self._next}"
+            self._next += 1
+            self._ids[key] = citation_id
         self._citations.append(Citation(
             citation_id=citation_id, entity_type=record.content.entity_type,
             record_id=record.record_id, revision=record.revision,
@@ -233,6 +270,9 @@ class PlannerSession:
             "citation_id": self.cite(record),
             "type": content.entity_type.value,
             "title": content.title,
+            # So "the latest note" is answerable. Without it the model had no
+            # way to pick the newest of four and asked which one instead.
+            "updated_at": record.updated_at.date().isoformat(),
         }
         if isinstance(content, TaskContent):
             item.update({
@@ -310,14 +350,20 @@ class PlannerSession:
         order = [
             "overdue", "due_today", "due_tomorrow", "schedule_ahead",
             "due_this_week", "unscheduled", "due_later",
-            # Last: dated work is what a briefing is mostly for, and notes
-            # should not crowd it out of the item budget. Present, though, so
-            # the model can edit one without hunting for it first.
-            "notes",
         ]
-        remaining = self.briefing_items
+        # Notes get a reserved slice rather than a place in the queue. They
+        # were last, on the reasoning that dated work is what a briefing is
+        # for -- and with forty-odd dated records the budget was spent before
+        # the loop ever reached them. A model asked to rewrite a note it had
+        # never been shown could only create a second one. The newest notes
+        # are the ones worth the slots: they are what a student is working on.
+        notes = sorted(
+            buckets.get("notes", []), key=lambda record: record.updated_at, reverse=True,
+        )
+        notes_slots = min(len(notes), NOTES_RESERVED_ITEMS, self.briefing_items)
+        remaining = self.briefing_items - notes_slots
         sections: Dict[str, List[Dict[str, Any]]] = {}
-        truncated = False
+        truncated = len(notes) > notes_slots
         for name in order:
             entries = sorted(
                 buckets.get(name, []),
@@ -332,6 +378,8 @@ class PlannerSession:
             if remaining <= 0:
                 truncated = truncated or any(buckets.get(rest) for rest in order[order.index(name) + 1:])
                 break
+        if notes_slots:
+            sections["notes"] = [self.summarize(record) for record in notes[:notes_slots]]
 
         capacity = self.planner_settings.max_daily_minutes
         findings = self.toolbox.planner.analyze(
@@ -402,6 +450,15 @@ class PlannerSession:
     def _find(self, request: ToolRequest) -> ToolOutcome:
         start, end = _parse_date(request.start), _parse_date(request.end)
         needle = (request.query or "").strip().lower()
+        # A note has no date, so a dated window over notes can only ever come
+        # back empty -- and an honest-looking empty list sent the model round
+        # again with a wider window, twice, before it gave up. Say why instead.
+        if (start or end) and request.entity_type == EntityType.note:
+            return ToolOutcome(
+                "find", _find_label(request, 0),
+                {"error": "notes have no dates; search notes by query instead.",
+                 "count": 0, "returned": 0, "results": []},
+            )
         matches: List[PlannerRecord] = []
         for record in self.records:
             content = record.content
@@ -423,7 +480,14 @@ class PlannerSession:
             if needle and needle not in _searchable_text(record).lower():
                 continue
             matches.append(record)
-        matches.sort(key=lambda record: (_due_date(record) or date.max, record.content.title))
+        # Dated work by date; undated work -- notes -- newest first, so "the
+        # first one" and "the latest one" are the same record. Sorted by title
+        # they were alphabetical, and the first was whichever started with A.
+        matches.sort(key=lambda record: (
+            _due_date(record) or date.max,
+            -record.updated_at.timestamp() if _due_date(record) is None else 0,
+            record.content.title,
+        ))
         capped = matches[:50]
         return ToolOutcome(
             "find", _find_label(request, len(matches)),

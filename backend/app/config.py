@@ -20,7 +20,14 @@ class Settings(BaseSettings):
     answer_provider: Literal["vertex", "muse"] = "vertex"
     gemini_model: str = "gemini-2.5-flash"
     muse_base_url: str = "https://api.meta.ai/v1"
-    muse_model: str = "muse-spark-1.2"
+    # Muse Spark 1.3, contributor tier. Its release notes name the two things
+    # this assistant kept getting wrong on 1.2 -- "long instruction following,
+    # with fewer dropped constraints" and "better calibration on irreversible
+    # actions" -- and a 150-line instruction with a rule about never creating a
+    # duplicate is exactly a long instruction with a constraint about an
+    # irreversible action. The contributor tier trains on prompts, as 1.2's
+    # did; the Settings screen already discloses that.
+    muse_model: str = "muse-spark-1.3-contributor"
     muse_api_key_resource: str = ""
     # Muse Spark spends most of its output on hidden reasoning, and it does all of
     # it before emitting the first answer token, so this sets how long the student
@@ -53,7 +60,16 @@ class Settings(BaseSettings):
     # raised alongside this rather than left to bite again, and
     # `agent_deadline_seconds` stops a slow turn from multiplying the ceiling
     # by the number of rounds.
-    muse_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "medium"
+    #
+    # Raised to "high" with the move to 1.3 on 2026-09-11. The 1.2 measurements
+    # above found "high" bought nothing for double the wall clock, but those
+    # measured tool choice and tone, not instruction following -- and the live
+    # failure that prompted the move was the model ignoring an explicit rule
+    # while creating duplicate records. That is the kind of failure more
+    # reasoning is for. The extra seconds are accepted on purpose; the student
+    # asked for the assistant to be right rather than quick. 1.3 accepts
+    # "xhigh" as well; kept in reserve.
+    muse_reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = "high"
     # Per model call, not per turn. Kept under the platform request timeout in
     # infra/cloudrun/service.yaml.template, which has to stay above it so a slow
     # generation surfaces as this app's own explained 504 rather than a bare

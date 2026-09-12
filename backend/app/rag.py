@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Un
 from .ai import (
     AnswerGenerator,
     EmbeddingClient,
+    GeneratedAction,
     GeneratedAnswer,
     GenerationTimeout,
     ToolName,
@@ -42,6 +43,16 @@ __all__ = [
 # with what it has. Each round is a full generation, so this is a latency
 # budget as much as a reasoning one.
 DEFAULT_TOOL_ROUNDS = 2
+
+# The most lookups one turn may run in total, across rounds. Each round already
+# takes at most three, but two rounds of three plus the opening search was seven
+# calls, and a turn was seen spending four of them re-asking for a record that a
+# lookup cannot find. Past this the model is told it has no lookups left.
+MAX_TOOL_CALLS_PER_TURN = 4
+
+_CITATION_REF = re.compile(r"\bS(\d{1,3})\b", re.IGNORECASE)
+_BARE_NUMBER = re.compile(r"(\d{1,3})")
+_CITATION_SHAPED = re.compile(r"S\d+", re.IGNORECASE)
 
 # How long a turn may already have spent before another round of lookups is
 # refused. Rounds are sequential model calls, so the round budget alone bounds
@@ -463,6 +474,50 @@ class CopilotService:
                 raise
         yield generated
 
+    def _focus_from_reference(
+        self, session: PlannerSession, question: str,
+    ) -> Optional[FocusRecordRef]:
+        """A citation id typed back by the student, as the record it names.
+
+        Matches "S46" anywhere, or a bare number when the whole message is
+        one -- "46" on its own is a reply to a list, not a date, though the
+        model once ran an agenda lookup for the twelfth of September on it.
+        """
+        text = question.strip()
+        match = _CITATION_REF.search(text) or _BARE_NUMBER.fullmatch(text)
+        if not match:
+            return None
+        found = session.evidence.lookup(f"S{match.group(1)}")
+        if not found:
+            return None
+        entity_type, record_id = found
+        return FocusRecordRef(record_id=record_id, entity_type=entity_type)
+
+    def _resolve_action_ids(
+        self, generated: GeneratedAnswer, session: PlannerSession,
+    ) -> GeneratedAnswer:
+        """Turn an S-number in an action's record_id into the record it names.
+
+        Done here against the whole ledger -- every record shown this turn or
+        cited earlier in the thread -- rather than downstream against only the
+        ids the model put in citation_ids. The old net covered the latter, so
+        an S-number the model used in an action but forgot to cite fell
+        through it and was refused.
+        """
+        def fix(action: GeneratedAction) -> GeneratedAction:
+            if not action.record_id or not _CITATION_SHAPED.fullmatch(action.record_id):
+                return action
+            found = session.evidence.lookup(action.record_id)
+            if not found:
+                return action
+            return action.model_copy(update={"record_id": found[1]})
+
+        actions = [fix(action) for action in generated.actions]
+        single = fix(generated.action) if generated.action else None
+        if actions == list(generated.actions) and single == generated.action:
+            return generated
+        return generated.model_copy(update={"actions": actions, "action": single})
+
     def _resolve_focus(
         self, uid: str, session: PlannerSession, focus: Optional[FocusRecordRef],
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -512,9 +567,15 @@ class CopilotService:
         self, uid: str, question: str, today: Optional[date],
         history: Optional[Sequence[ChatTurn]], allow_stream: bool,
         focus: Optional[FocusRecordRef] = None,
+        prior_citations: Optional[Sequence[Citation]] = None,
     ) -> Iterator[Union[str, AgentStep, Tuple[str, List[Citation], RetrievalDisclosure, GeneratedAnswer]]]:
         today = today or date.today()
         session = self.toolbox.session(uid, today)
+        # Numbers the thread already used keep meaning what they meant.
+        session.evidence.seed(prior_citations or [])
+        # "S46", or just "46" as a whole message, is the student pointing at a
+        # record they were shown. It reads as a focus, which is what it is.
+        focus = focus or self._focus_from_reference(session, question)
         focus_block, focus_note = self._resolve_focus(uid, session, focus)
         briefing = session.briefing()
         # Searching on the raw question every turn keeps topic questions working
@@ -544,7 +605,10 @@ class CopilotService:
             out_of_time = bool(self.deadline_seconds) and (
                 self._clock() - started >= self.deadline_seconds
             )
-            rounds_left = 0 if out_of_time else self.max_tool_rounds - round_index
+            # Out of lookups is the same: the budget is per turn, not per round,
+            # so a round cannot spend more than what is left of it.
+            calls_left = MAX_TOOL_CALLS_PER_TURN - (len(run_already) - 1)
+            rounds_left = 0 if out_of_time or calls_left <= 0 else self.max_tool_rounds - round_index
             if out_of_time and round_index:
                 self.audit.record(uid, "generation", metadata={
                     "stage": "deadline", "rounds_used": round_index,
@@ -566,7 +630,7 @@ class CopilotService:
             if not requests:
                 break
             fresh = 0
-            for request in requests:
+            for request in requests[:max(0, calls_left)]:
                 signature = self._signature(request)
                 if signature in run_already:
                     # It asked for something it has already been given. Running
@@ -587,6 +651,7 @@ class CopilotService:
                 break
 
         generated = self._settle(generated)
+        generated = self._resolve_action_ids(generated, session)
         answer, used, disclosure = self._finalize(uid, generated, session)
         yield answer, used, disclosure, generated
 
@@ -615,9 +680,13 @@ class CopilotService:
         self, uid: str, question: str, today: Optional[date] = None,
         history: Optional[Sequence[ChatTurn]] = None,
         focus: Optional[FocusRecordRef] = None,
+        prior_citations: Optional[Sequence[Citation]] = None,
     ) -> Tuple[str, List[Citation], RetrievalDisclosure, GeneratedAnswer]:
         result = None
-        for item in self._run(uid, question, today, history, allow_stream=False, focus=focus):
+        for item in self._run(
+            uid, question, today, history, allow_stream=False,
+            focus=focus, prior_citations=prior_citations,
+        ):
             if isinstance(item, tuple):
                 result = item
         if result is None:  # pragma: no cover - _run always ends with the tuple
@@ -628,6 +697,7 @@ class CopilotService:
         self, uid: str, question: str, today: Optional[date] = None,
         history: Optional[Sequence[ChatTurn]] = None,
         focus: Optional[FocusRecordRef] = None,
+        prior_citations: Optional[Sequence[Citation]] = None,
     ) -> Iterator[Union[str, AgentStep, Tuple[str, List[Citation], RetrievalDisclosure, GeneratedAnswer]]]:
         """Yield answer text as it is produced, then the same tuple ``answer`` returns.
 
@@ -640,4 +710,7 @@ class CopilotService:
         superseded. A caller must therefore clear what it accumulated when an
         ``AgentStep`` arrives, and show the final text rather than its own.
         """
-        return self._run(uid, question, today, history, allow_stream=True, focus=focus)
+        return self._run(
+            uid, question, today, history, allow_stream=True,
+            focus=focus, prior_citations=prior_citations,
+        )
