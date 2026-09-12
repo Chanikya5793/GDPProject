@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +32,7 @@ from .models import (
     PlannerSettings,
     PrivacySettings,
     ProposalOperation,
+    ProposedChange,
     RecordDeleteRequest,
     RecordUpsertRequest,
     RejectProposalRequest,
@@ -198,8 +199,29 @@ def thread_history(services: Container, uid: str, body, privacy):
             detail = services.repository.get_conversation(uid, body.conversation_id)
         except NotFound:
             return list(body.history)
-        return [ChatTurn(role=m.role, text=m.text) for m in detail.messages][-20:]
+        return [
+            ChatTurn(role=m.role, text=m.text, proposed=m.proposed) for m in detail.messages
+        ][-20:]
     return list(body.history)
+
+
+def proposed_changes(response: ChatResponse) -> List[ProposedChange]:
+    """The records this reply put changes on, for the transcript.
+
+    Carried on the assistant turn so a follow-up lands on the same record.
+    The citation id is the handle the student sees in the chat, so it goes
+    along when the reply cited the record.
+    """
+    by_record = {c.record_id: c.citation_id for c in response.citations}
+    changes = []
+    for proposal in response.proposals[:20]:
+        content = proposal.after or proposal.before
+        changes.append(ProposedChange(
+            operation=proposal.operation, entity_type=proposal.entity_type,
+            record_id=proposal.record_id, citation_id=by_record.get(proposal.record_id),
+            title=getattr(content, "title", None),
+        ))
+    return changes
 
 
 def thread_citations(services: Container, uid: str, body, privacy) -> list:
@@ -237,7 +259,8 @@ def remember_turn(services: Container, uid: str, privacy, body, response) -> Cha
         ConversationMessage(role="user", text=body.message[:4000], created_at=now),
         ConversationMessage(
             role="assistant", text=response.answer[:4000],
-            citations=response.citations[:40], created_at=now,
+            citations=response.citations[:40], proposed=proposed_changes(response),
+            created_at=now,
         ),
         retention_days=privacy.chat_retention_days,
     )

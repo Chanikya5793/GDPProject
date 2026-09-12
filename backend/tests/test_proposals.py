@@ -273,7 +273,15 @@ def test_the_assistant_can_pin_a_task_and_unpin_it(services):
     assert pinned.after.keep_scheduled is True
 
     # False is a real instruction, not an absent one -- the tri-state is what
-    # makes "manage this one again" expressible.
+    # makes "manage this one again" expressible. The pin above was only
+    # previewed, so pin the record for real before asking to release it.
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t9",
+        RecordUpsertRequest(
+            content=TaskContent(title="Exam", due_date=date(2026, 9, 10), keep_scheduled=True),
+            idempotency_key="seed-task-t9-pinned", expected_revision=1,
+        ),
+    )
     released = services.proposals.prepare("alice", GeneratedAction(
         operation=ProposalOperation.update, entity_type=EntityType.task,
         record_id="t9", keep_scheduled=False,
@@ -452,3 +460,22 @@ def test_every_refusal_says_something_useful(services):
         prepared = services.proposals.prepare("alice", action, "because you asked")
         assert prepared.proposal is None
         assert prepared.reason, f"{action.operation} {action.entity_type} refused in silence"
+
+
+def test_an_update_that_changes_nothing_is_refused_with_a_reason(services):
+    # Carrying a record forward from an earlier turn, the model re-sent it with
+    # only its own title filled in. That passed as an update and previewed as
+    # a card with nothing on it.
+    services.repository.upsert_record(
+        "alice", EntityType.task, "t-same",
+        RecordUpsertRequest(
+            content=TaskContent(title="Task 28", due_date=date(2026, 9, 12)),
+            idempotency_key="seed-task-t-same",
+        ),
+    )
+    prepared = services.proposals.prepare("alice", GeneratedAction(
+        operation="update", entity_type="task", record_id="t-same", title="Task 28",
+    ), "update")
+
+    assert prepared.proposal is None
+    assert prepared.reason == "it would leave it exactly as it is"

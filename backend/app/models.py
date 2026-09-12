@@ -242,11 +242,29 @@ class ActionProposal(StrictModel):
     expires_at: datetime
 
 
+class ProposedChange(StrictModel):
+    """What one assistant turn put in front of the student, by record.
+
+    The answer text of a proposing turn is a few words ("1 change to confirm"),
+    so on its own the transcript never says which record was on the table. The
+    next turn -- "you write it", "make it longer", "no, Friday" -- is about
+    that record, and without this the model went looking again and could land
+    on a different one.
+    """
+
+    operation: ProposalOperation
+    entity_type: EntityType
+    record_id: Optional[str] = None
+    citation_id: Optional[str] = None
+    title: Optional[str] = None
+
+
 class ChatTurn(StrictModel):
     """One earlier message in the same conversation."""
 
     role: Literal["user", "assistant"]
     text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
+    proposed: List[ProposedChange] = Field(default_factory=list, max_length=20)
 
 
 class ConversationMessage(StrictModel):
@@ -255,6 +273,7 @@ class ConversationMessage(StrictModel):
     role: Literal["user", "assistant"]
     text: Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
     citations: List[Citation] = Field(default_factory=list, max_length=40)
+    proposed: List[ProposedChange] = Field(default_factory=list, max_length=20)
     created_at: datetime
 
 
