@@ -129,7 +129,17 @@ class MigrationItem(StrictModel):
 
 class MigrationRequest(StrictModel):
     migration_id: IdempotencyKey
-    items: List[MigrationItem] = Field(max_length=5000)
+    # Left loose on purpose and validated one entry at a time in the handler.
+    # Typed as List[MigrationItem], one blank title anywhere in a student's
+    # old localStorage failed the whole request with a 422, so nothing of
+    # theirs ever moved and the banner showed the raw validation error.
+    items: List[Any] = Field(max_length=5000)
+
+
+class RejectedMigrationItem(StrictModel):
+    legacy_key: Optional[str] = None
+    legacy_id: Optional[Union[str, int]] = None
+    reason: str
 
 
 class MigrationResult(StrictModel):
@@ -137,6 +147,7 @@ class MigrationResult(StrictModel):
     imported: int
     skipped: int
     record_ids: List[str]
+    rejected: List[RejectedMigrationItem] = Field(default_factory=list)
 
 
 class PrivacySettings(StrictModel):

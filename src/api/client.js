@@ -16,6 +16,22 @@ export function apiConfigured() {
   return firebaseConfigured && Boolean(API_URL)
 }
 
+// A validation failure arrives as a list of {loc, msg} entries, and a list
+// interpolated into a message reads as "[object Object]". Name the first
+// field and what was wrong with it; that is what the student can act on.
+function describe(detail, status) {
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail) && detail.length) {
+    const first = detail[0]
+    const where = (first.loc || []).filter(part => part !== 'body' && typeof part === 'string').join('.')
+    const message = first.msg || 'is invalid'
+    const rest = detail.length > 1 ? ` (and ${detail.length - 1} more)` : ''
+    return where ? `${where}: ${message}${rest}` : `${message}${rest}`
+  }
+  if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message
+  return `Planner request failed (${status})`
+}
+
 /**
  * Read the sign-up policy without a token.
  *
@@ -48,12 +64,7 @@ export async function apiFetch(path, options = {}) {
   if (response.status === 204) return null
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new ApiError(
-      payload.detail || `Planner request failed (${response.status})`,
-      response.status,
-      payload.code,
-      payload,
-    )
+    throw new ApiError(describe(payload.detail, response.status), response.status, payload.code, payload)
   }
   return payload
 }
@@ -106,12 +117,7 @@ export async function apiStream(path, options = {}, onEvent) {
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new ApiError(
-      payload.detail || `Planner request failed (${response.status})`,
-      response.status,
-      payload.code,
-      payload,
-    )
+    throw new ApiError(describe(payload.detail, response.status), response.status, payload.code, payload)
   }
   if (!response.body?.getReader) {
     throw new ApiError('This browser cannot stream responses.', 500, 'no_stream')
