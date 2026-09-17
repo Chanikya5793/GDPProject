@@ -252,3 +252,47 @@ def test_the_history_lives_in_conversations_not_in_a_flat_list(client, auth, ser
     threads = client.get("/v1/conversations", headers=auth).json()
     assert [row["title"] for row in threads] == ["what is due today?"]
 
+
+
+def test_migration_moves_the_good_records_and_names_the_bad_one(client, auth):
+    # A blank title in one old note used to fail the whole request with a
+    # 422, so a student with one damaged row could never move anything.
+    good = task_request()["content"]
+    blank = {"entity_type": "note", "title": "   ", "body": "", "tag_ids": [], "attachments": []}
+    body = {
+        "migration_id": "migration-partial-0001",
+        "items": [
+            {"legacy_key": "nw_tasks", "legacy_id": 1, "content": good, "approved_for_ai": False},
+            {"legacy_key": "nw_notes", "legacy_id": 9, "content": blank, "approved_for_ai": False},
+            "not even a record",
+        ],
+    }
+    result = client.post("/v1/migrations/local-storage", json=body, headers=auth)
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["imported"] == 1
+    assert [r["legacy_id"] for r in payload["rejected"]] == [9, None]
+    assert "title" in payload["rejected"][0]["reason"]
+
+
+def test_migration_keeps_both_records_that_share_a_legacy_id(client, auth, services):
+    # The old planner seeded two demo tasks with id 1. The second was hashed
+    # to the same record id and skipped as already imported.
+    first = task_request("Submit History Essay")["content"]
+    second = task_request("CS Problems")["content"]
+    body = {
+        "migration_id": "migration-duplicate-01",
+        "items": [
+            {"legacy_key": "nw_tasks", "legacy_id": 1, "content": first, "approved_for_ai": False},
+            {"legacy_key": "nw_tasks", "legacy_id": 1, "content": second, "approved_for_ai": False},
+        ],
+    }
+    result = client.post("/v1/migrations/local-storage", json=body, headers=auth).json()
+    assert result["imported"] == 2
+    assert len(set(result["record_ids"])) == 2
+    titles = {r.content.title for r in services.repository.list_records("alice", EntityType.task)}
+    assert titles == {"Submit History Essay", "CS Problems"}
+
+    again = client.post("/v1/migrations/local-storage", json=body, headers=auth).json()
+    assert again["skipped"] == 2
+    assert again["record_ids"] == result["record_ids"]

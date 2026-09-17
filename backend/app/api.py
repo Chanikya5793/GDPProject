@@ -4,12 +4,12 @@ import hashlib
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .ai import GenerationTimeout
 from .auth import CurrentUser
@@ -26,6 +26,7 @@ from .models import (
     ConversationMessage,
     EntityType,
     IndexRequest,
+    MigrationItem,
     MigrationRequest,
     MigrationResult,
     PlannerRecord,
@@ -35,6 +36,7 @@ from .models import (
     ProposedChange,
     RecordDeleteRequest,
     RecordUpsertRequest,
+    RejectedMigrationItem,
     RejectProposalRequest,
     RenameConversationRequest,
 )
@@ -184,6 +186,12 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
         answer=answer, citations=citations, retrieval=disclosure,
         proposals=proposals, unavailable=refusals,
     )
+
+
+def _legacy_field(raw: Any, name: str) -> Optional[Union[str, int]]:
+    """What a rejected item called itself, if it was even a mapping."""
+    value = raw.get(name) if isinstance(raw, dict) else None
+    return value if isinstance(value, (str, int)) else None
 
 
 def thread_history(services: Container, uid: str, body, privacy):
@@ -394,8 +402,32 @@ def create_app(container: Container | None = None) -> FastAPI:
         imported = 0
         skipped = 0
         record_ids = []
-        for item in body.items:
-            digest = hashlib.sha256(f"{item.legacy_key}:{item.legacy_id}".encode()).hexdigest()[:24]
+        rejected = []
+        seen: Dict[str, int] = {}
+        for raw in body.items:
+            try:
+                item = MigrationItem.model_validate(raw)
+            except ValidationError as exc:
+                # One bad record is reported and the rest still move. The
+                # first error is enough to say what was wrong with it.
+                first = exc.errors()[0]
+                where = ".".join(str(part) for part in first["loc"] if part != "content")
+                rejected.append(RejectedMigrationItem(
+                    legacy_key=_legacy_field(raw, "legacy_key"),
+                    legacy_id=_legacy_field(raw, "legacy_id"),
+                    reason=f"{where}: {first['msg']}" if where else first["msg"],
+                ))
+                continue
+            # The old planner handed out ids from Date.now() and seeded demo
+            # rows by hand, so two records could share one. The second
+            # occurrence gets its own stable id rather than being dropped as
+            # "already imported".
+            legacy = f"{item.legacy_key}:{item.legacy_id}"
+            occurrence = seen.get(legacy, 0)
+            seen[legacy] = occurrence + 1
+            if occurrence:
+                legacy = f"{legacy}#{occurrence}"
+            digest = hashlib.sha256(legacy.encode()).hexdigest()[:24]
             record_id = f"legacy_{digest}"
             idem_suffix = hashlib.sha256(record_id.encode()).hexdigest()[:16]
             try:
@@ -419,7 +451,8 @@ def create_app(container: Container | None = None) -> FastAPI:
             record_ids.append(record_id)
             imported += 1
         return MigrationResult(
-            migration_id=body.migration_id, imported=imported, skipped=skipped, record_ids=record_ids
+            migration_id=body.migration_id, imported=imported, skipped=skipped,
+            record_ids=record_ids, rejected=rejected,
         )
 
     @app.get("/v1/ai-info", response_model=AiProviderInfo)
