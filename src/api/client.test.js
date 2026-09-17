@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../lib/firebase', () => ({
   auth: { currentUser: { getIdToken: async () => 'token' } },
@@ -6,19 +6,18 @@ vi.mock('../lib/firebase', () => ({
   persistenceReady: Promise.resolve(),
 }))
 
-import { apiFetch } from './client'
+// The API URL is read once when the module loads, so it has to be in place
+// before the import; CI has no .env to supply it.
+vi.stubEnv('VITE_PLANNER_API_URL', 'https://api.example.test')
+const { apiFetch } = await import('./client')
 
 function respond(status, body) {
   return { ok: status < 400, status, json: async () => body }
 }
 
 describe('apiFetch error messages', () => {
-  beforeEach(() => {
-    vi.stubEnv('VITE_PLANNER_API_URL', 'https://api.example.test')
-  })
   afterEach(() => {
     vi.unstubAllGlobals()
-    vi.unstubAllEnvs()
   })
 
   it('names the field a validation error is about instead of [object Object]', async () => {
