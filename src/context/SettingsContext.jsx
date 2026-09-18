@@ -14,7 +14,7 @@ const DEFAULTS = {
   showCompleted: true,
   reminderDefault: 30,
   dueDateAlerts: true,
-  autoBalance: true,
+  autoBalance: false,
   dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 }
 
