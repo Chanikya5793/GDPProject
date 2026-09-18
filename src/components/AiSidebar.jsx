@@ -372,6 +372,9 @@ export default function AiSidebar() {
   const toggle = () => setCollapsed(!collapsed)
 
   const handleSend = () => {
+    // While a reply is streaming the message is not sent; keep it in the box
+    // rather than throwing away what was typed.
+    if (!input.trim() || typing) return
     sendMessage(input)
     setInput('')
   }

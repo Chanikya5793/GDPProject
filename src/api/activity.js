@@ -79,8 +79,8 @@ export async function revertLog(entry) {
       } else if (action === 'deleted') {
         let restored = false
         if (trashId) {
-          const res = await restoreFromTrash(trashId)
-          if (res) { await RESTORERS[res.type]?.(res.item); restored = true }
+          const res = await restoreFromTrash(trashId, (item, type) => RESTORERS[type]?.(item))
+          if (res) restored = true
         }
         if (!restored && before) await RESTORERS[entity]?.(before)
       } else {

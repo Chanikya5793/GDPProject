@@ -144,8 +144,12 @@ export function AiProvider({ children }) {
   const failureText = requestError =>
     requestError.code === 'not_configured'
       ? 'The AI copilot needs the planner backend, which this build is not connected to. Everything else works offline.'
-      : requestError.status === 403
+      : requestError.code === 'ai_disabled'
       ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
+      // Any other refusal -- an unverified address, an account outside the
+      // sign-up policy -- says what it is; it is not a privacy setting.
+      : requestError.status === 403
+      ? requestError.message
       : requestError.status === 429
         // A budget, not a malfunction — the backend's detail names the wait.
         ? `You have reached the copilot request limit. ${requestError.message}`

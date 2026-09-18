@@ -7,7 +7,9 @@ export function getDaysUntilDue(dueDateStr) {
   if (!dueDateStr) return Infinity
   const t = new Date(); t.setHours(0, 0, 0, 0)
   const due = new Date(dueDateStr + 'T00:00:00')
-  return Math.floor((due - t) / 86400000)
+  // Rounded, not floored: across a spring-forward the two midnights are 23
+  // hours apart, and floor called the day after tomorrow "tomorrow".
+  return Math.round((due - t) / 86400000)
 }
 
 /**

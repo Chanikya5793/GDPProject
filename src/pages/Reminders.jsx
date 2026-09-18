@@ -6,6 +6,7 @@ import RepeatBadge from '../components/RepeatBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import AskAiButton from '../components/AskAiButton'
 import '../css/Reminders.css'
+import LoadFailed from '../components/LoadFailed'
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -154,6 +155,7 @@ export default function Reminders() {
   const { user } = useAuth()
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [view, setView] = useState('list')
   const [filter, setFilter] = useState('upcoming')
   const [modalReminder, setModalReminder] = useState(null)
@@ -161,7 +163,9 @@ export default function Reminders() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   useEffect(() => {
-    getReminders(user.id).then(r => { setReminders(r); setLoading(false) })
+    getReminders(user.id).then(r => setReminders(r))
+      .catch(error => setLoadError(error.message || 'Could not load your reminders.'))
+      .finally(() => setLoading(false))
   }, [user.id])
 
   const handleSave = async (form) => {
@@ -210,6 +214,7 @@ export default function Reminders() {
   const totalUpcoming = reminders.filter(r => r.date > todayStr).length
   const totalOverdue = reminders.filter(r => r.date < todayStr).length
 
+  if (loadError) return <LoadFailed message={loadError} />
   if (loading) return <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}><p style={{ color: 'var(--muted)' }}>Loading reminders...</p></div>
 
   return (

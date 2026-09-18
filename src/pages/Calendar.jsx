@@ -6,6 +6,7 @@ import { getReminders, updateReminder, createReminder } from '../api/reminders'
 import { getCategories } from '../api/categories'
 import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save, CircleCheckBig, Bell, Plus } from 'lucide-react'
 import '../css/Calendar.css'
+import LoadFailed from '../components/LoadFailed'
 
 /* ── helpers ── */
 
@@ -394,7 +395,12 @@ function MonthView({ year, month, itemsByDate, selectedDate, todayStr, onSelectD
               <div className="cal-cell-items">
                 {taskItems.slice(0, 2).map(t => <ItemPill key={`t-${t.id}`} item={t} />)}
                 {remItems.slice(0, 1).map(r => <ItemPill key={`r-${r.id}`} item={r} />)}
-                {items.length > 3 && <div className="cal-more">+{items.length - 3} more</div>}
+                {(() => {
+                  // Count what is actually hidden: two tasks and one reminder
+                  // are shown, so three tasks used to hide one with no hint.
+                  const hidden = items.length - Math.min(taskItems.length, 2) - Math.min(remItems.length, 1)
+                  return hidden > 0 && <div className="cal-more">+{hidden} more</div>
+                })()}
               </div>
             </div>
           )
@@ -628,6 +634,7 @@ export default function Calendar() {
   const [reminders, setReminders] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const todayStr = today()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -713,8 +720,9 @@ export default function Calendar() {
 
   useEffect(() => {
     Promise.all([getTasks(user.id), getReminders(user.id), getCategories(user.id)]).then(([t, r, c]) => {
-      setTasks(t); setReminders(r); setCategories(c); setLoading(false)
-    })
+      setTasks(t); setReminders(r); setCategories(c)
+    }).catch(error => setLoadError(error.message || 'Could not load your calendar.'))
+      .finally(() => setLoading(false))
   }, [user.id])
 
   const handleToggle = async (id) => {
@@ -803,6 +811,7 @@ export default function Calendar() {
   const calCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))].sort()
   const currentViewLabel = VIEW_OPTIONS.find(v => v.key === view)?.label || 'Month'
 
+  if (loadError) return <LoadFailed message={loadError} />
   if (loading) {
     return (
       <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>

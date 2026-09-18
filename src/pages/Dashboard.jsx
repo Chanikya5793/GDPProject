@@ -9,6 +9,7 @@ import { getReminders, createReminder } from "../api/reminders"
 import { getNotes, updateNote, getTags } from "../api/notes"
 import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon, ChevronsUpDown, ChevronsDownUp } from "lucide-react"
 import { getEffectivePriority } from "../utils/priority"
+import LoadFailed from "../components/LoadFailed"
 import "../css/Dashboard.css"
 
 /* ─── Helpers ─── */
@@ -326,7 +327,7 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef(null)
 
-  const note = notes.find(n => n.id === pinnedNoteId)
+  const note = notes.find(n => String(n.id) === String(pinnedNoteId))
 
   useEffect(() => {
     if (note) {
@@ -415,7 +416,7 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
               <div className="dash-note-picker">
                 {notes.map(n => (
                   <button key={n.id}
-                    className={`dash-note-picker-item${n.id === pinnedNoteId ? ' active' : ''}`}
+                    className={`dash-note-picker-item${String(n.id) === String(pinnedNoteId) ? ' active' : ''}`}
                     onClick={() => { onPinNote(n.id); setPickerOpen(false) }}>
                     <span className="dash-note-picker-title">{n.title || 'Untitled'}</span>
                     <span className="dash-note-picker-preview">{n.body.replace(/[#*_`>\u005B\u005D-]/g, '').slice(0, 50)}</span>
@@ -548,7 +549,7 @@ function AiChatPanel() {
   }, [messages, typing])
 
   const handleSend = () => {
-    if (!input.trim()) return
+    if (!input.trim() || typing) return
     sendMessage(input)
     setInput('')
   }
@@ -641,6 +642,12 @@ function persistLayout(layout) {
   localStorage.setItem('nw_dash_layout', JSON.stringify(layout))
 }
 
+// A pinned note's widget id is `note-<record id>`, and record ids contain
+// hyphens themselves, so only the prefix is stripped.
+function pinnedNoteIdOf(widgetId) {
+  return widgetId.slice('note-'.length)
+}
+
 /* ─── Dashboard ─── */
 
 export default function Dashboard() {
@@ -651,17 +658,21 @@ export default function Dashboard() {
   const [reminders, setReminders] = useState([])
   const [allNotes, setAllNotes] = useState([])
   const [allTags, setAllTags] = useState([])
+  // Record ids are strings (UUIDs, legacy_* hashes); pins written before the
+  // planner store were numbers. Everything is compared as a string.
   const [pinnedNoteId, setPinnedNoteId] = useState(() => {
     const saved = localStorage.getItem('nw_pinned_note')
-    return saved ? Number(saved) : null
+    return saved ? String(saved) : null
   })
   const [pinnedNoteIds, setPinnedNoteIds] = useState(() => {
     try {
       const saved = localStorage.getItem('nw_pinned_notes')
-      return saved ? JSON.parse(saved) : []
+      return saved ? JSON.parse(saved).map(String) : []
     } catch { return [] }
   })
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [quickMode, setQuickMode] = useState(null)
   const [layout, setLayout] = useState(loadLayout)
   const [dragIdx, setDragIdx] = useState(null)
@@ -669,7 +680,7 @@ export default function Dashboard() {
   const [activeStat, setActiveStat] = useState(null) // 'overdue'|'today'|'week'|'completed'|null
 
   const handlePinNote = (id) => {
-    setPinnedNoteId(id)
+    setPinnedNoteId(String(id))
     localStorage.setItem('nw_pinned_note', String(id))
   }
 
@@ -680,36 +691,46 @@ export default function Dashboard() {
 
   const handleUnpinNote = (id) => {
     setPinnedNoteIds(prev => {
-      const next = prev.filter(nid => nid !== id)
+      const next = prev.filter(nid => String(nid) !== String(id))
       localStorage.setItem('nw_pinned_notes', JSON.stringify(next))
       return next
     })
   }
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
-      const [t, r, n, tg] = await Promise.all([
-        getTasks(user.id),
-        getReminders(user.id),
-        getNotes(user.id),
-        getTags(),
-      ])
-      setTasks(t)
-      setReminders(r)
-      setAllNotes(n)
-      setAllTags(tg)
-      // Prune pinned note IDs that reference deleted notes
-      const noteIds = new Set(n.map(note => note.id))
-      setPinnedNoteIds(prev => {
-        const pruned = prev.filter(id => noteIds.has(id))
-        if (pruned.length !== prev.length) {
-          localStorage.setItem('nw_pinned_notes', JSON.stringify(pruned))
-        }
-        return pruned
-      })
-      setLoading(false)
+      try {
+        const [t, r, n, tg] = await Promise.all([
+          getTasks(user.id),
+          getReminders(user.id),
+          getNotes(user.id),
+          getTags(),
+        ])
+        if (cancelled) return
+        setTasks(t)
+        setReminders(r)
+        setAllNotes(n)
+        setAllTags(tg)
+        // Prune pinned note IDs that reference deleted notes
+        const noteIds = new Set(n.map(note => String(note.id)))
+        setPinnedNoteIds(prev => {
+          const pruned = prev.filter(id => noteIds.has(String(id)))
+          if (pruned.length !== prev.length) {
+            localStorage.setItem('nw_pinned_notes', JSON.stringify(pruned))
+          }
+          return pruned
+        })
+      } catch (error) {
+        // A first load with nothing cached and no server used to leave the
+        // page on its spinner for good.
+        if (!cancelled) setLoadError(error.message || 'Could not load your planner.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
     load()
+    return () => { cancelled = true }
   }, [user.id])
 
   /* Sync ai-chat widget with pop-out state */
@@ -735,7 +756,7 @@ export default function Dashboard() {
     setLayout(prev => {
       let next = [...prev]
       // Remove note widgets no longer pinned
-      next = next.filter(w => !w.id.startsWith('note-') || pinnedNoteIds.includes(Number(w.id.split('-')[1])))
+      next = next.filter(w => !w.id.startsWith('note-') || pinnedNoteIds.includes(pinnedNoteIdOf(w.id)))
       // Add newly pinned notes not yet in layout
       for (const noteId of pinnedNoteIds) {
         const wid = `note-${noteId}`
@@ -755,7 +776,8 @@ export default function Dashboard() {
   const todayStr = today()
   const weekStr = daysFromNow(7)
 
-  const overdue = tasks.filter(t => !t.completed && t.dueDate < todayStr)
+  // A task with no due date is neither overdue nor on a timeline.
+  const overdue = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr)
   const dueToday = tasks.filter(t => !t.completed && t.dueDate === todayStr)
   const upcoming = tasks.filter(t => !t.completed && t.dueDate > todayStr && t.dueDate <= weekStr)
   const remToday = reminders.filter(r => r.date === todayStr)
@@ -771,7 +793,7 @@ export default function Dashboard() {
 
   const statusData = [
     { label: 'Overdue', value: overdue.length, color: '#DC2626' },
-    { label: 'On Track', value: tasks.filter(t => !t.completed && t.dueDate >= todayStr).length, color: '#006A4E' },
+    { label: 'On Track', value: tasks.filter(t => !t.completed && (!t.dueDate || t.dueDate >= todayStr)).length, color: '#006A4E' },
     { label: 'Completed', value: completed, color: '#0AA56F' },
   ]
 
@@ -785,31 +807,54 @@ export default function Dashboard() {
   })
 
   const handleToggle = async (id) => {
-    const updated = await toggleTask(id)
-    setTasks(prev => prev.map(t => t.id === id ? updated : t))
+    setActionError('')
+    try {
+      const updated = await toggleTask(id)
+      setTasks(prev => prev.map(t => t.id === id ? updated : t))
+    } catch (error) {
+      setActionError(error.message || 'Could not update the task.')
+    }
   }
 
   const handleQuickTask = async (form) => {
     const { reminders: remindersList = [], ...taskData } = form
-    const created = await createTask({ ...taskData, userId: user.id })
-    setTasks(prev => [...prev, created])
-    for (const rem of remindersList) {
-      const reminder = await createReminder({
-        userId: user.id,
-        title: taskData.title,
-        date: rem.date,
-        time: rem.time,
-        notes: '',
-      })
-      setReminders(prev => [...prev, reminder])
+    setActionError('')
+    let created
+    try {
+      created = await createTask({ ...taskData, userId: user.id })
+    } catch (error) {
+      setActionError(error.message || 'Could not add the task.')
+      return
     }
+    setTasks(prev => [...prev, created])
+    // The task exists now, so the dialog closes here: a reminder failing
+    // below used to leave it open, and a retry made a second task.
     setQuickMode(null)
+    for (const rem of remindersList) {
+      try {
+        const reminder = await createReminder({
+          userId: user.id,
+          title: taskData.title,
+          date: rem.date,
+          time: rem.time,
+          notes: '',
+        })
+        setReminders(prev => [...prev, reminder])
+      } catch (error) {
+        setActionError(`The task was added, but a reminder could not be: ${error.message}`)
+      }
+    }
   }
 
   const handleQuickReminder = async (form) => {
-    const created = await createReminder({ ...form, userId: user.id })
-    setReminders(prev => [...prev, created])
-    setQuickMode(null)
+    setActionError('')
+    try {
+      const created = await createReminder({ ...form, userId: user.id })
+      setReminders(prev => [...prev, created])
+      setQuickMode(null)
+    } catch (error) {
+      setActionError(error.message || 'Could not add the reminder.')
+    }
   }
 
   /* ── Drag-and-drop handlers ── */
@@ -963,8 +1008,8 @@ export default function Dashboard() {
 
       default:
         if (id.startsWith('note-')) {
-          const noteId = Number(id.split('-')[1])
-          const note = allNotes.find(n => n.id === noteId)
+          const noteId = pinnedNoteIdOf(id)
+          const note = allNotes.find(n => String(n.id) === noteId)
           if (!note) return <p className="dash-empty">Note not found.</p>
           return <PinnedNoteCard note={note} tags={allTags} onUpdate={handleUpdateNote} />
         }
@@ -979,6 +1024,8 @@ export default function Dashboard() {
       <p style={{ color: 'var(--muted)' }}>Loading your planner...</p>
     </div>
   )
+
+  if (loadError) return <LoadFailed message={loadError} />
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
@@ -1001,11 +1048,12 @@ export default function Dashboard() {
       </div>
 
       <div className="page-body">
+        {actionError && <p className="login-error" role="alert">{actionError}</p>}
         <div className="dash-widget-grid">
           {layout.map((widget, idx) => {
             const isNote = widget.id.startsWith('note-')
-            const noteId = isNote ? Number(widget.id.split('-')[1]) : null
-            const noteObj = isNote ? allNotes.find(n => n.id === noteId) : null
+            const noteId = isNote ? pinnedNoteIdOf(widget.id) : null
+            const noteObj = isNote ? allNotes.find(n => String(n.id) === noteId) : null
             const meta = WIDGET_META[widget.id] || (isNote ? { title: noteObj?.title || 'Note' } : { title: '?' })
             return (
               <div

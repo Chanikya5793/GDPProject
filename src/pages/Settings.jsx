@@ -3,9 +3,11 @@ import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
 import { DEFAULT_DAILY_TASK_LIMIT } from '../utils/schedule'
 import { getTrash, restoreFromTrash, permanentDelete, emptyTrash } from '../api/trash'
-import { restoreTaskDirect } from '../api/tasks'
-import { restoreReminderDirect } from '../api/reminders'
-import { restoreNoteDirect } from '../api/notes'
+import { deleteTask, getTasks, restoreTaskDirect } from '../api/tasks'
+import { deleteReminder, getReminders, restoreReminderDirect } from '../api/reminders'
+import { deleteNote, getNotes, getTags, restoreNoteDirect } from '../api/notes'
+import { getLogs } from '../api/logs'
+import { getCategories } from '../api/categories'
 import ActivityLog from '../components/ActivityLog'
 import RetainedChats from '../components/RetainedChats'
 import { apiConfigured, apiFetch } from '../api/client'
@@ -45,18 +47,22 @@ function Toggle({ checked, onChange, label }) {
 /* ─── Settings Page ─── */
 
 export default function Settings() {
-  const { user, updateUser } = useAuth()
+  const { user, updateUser, configured } = useAuth()
   const { settings, updateSetting, resetSettings } = useSettings()
 
   /* Profile editing */
   const [name, setName] = useState(user?.name || '')
   const [email, setEmail] = useState(user?.email || '')
-  const [profileSaved, setProfileSaved] = useState(false)
+  const [profileSaved, setProfileSaved] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
   const [confirmClear, setConfirmClear] = useState(null)
 
   /* Recycle bin */
   const [trash, setTrash] = useState([])
   const [trashFilter, setTrashFilter] = useState('all')
+  const [restoringId, setRestoringId] = useState(null)
+  const [trashError, setTrashError] = useState('')
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
   const [privacy, setPrivacy] = useState({
     ai_enabled: false,
@@ -119,6 +125,7 @@ export default function Settings() {
   }, [])
 
   const updatePlannerSettings = async updates => {
+    const previous = plannerSettings
     const next = { ...plannerSettings, ...updates }
     setPlannerSettings(next)
     setPlannerStatus('saving')
@@ -130,12 +137,15 @@ export default function Settings() {
       setPlannerSettings(saved)
       setPlannerStatus('ready')
     } catch (error) {
-      setPlannerStatus('error')
+      // The control shows what the server has, not what was asked for.
+      setPlannerSettings(previous)
+      setPlannerStatus('ready')
       setPlannerError(error.message)
     }
   }
 
   const updatePrivacy = async updates => {
+    const previous = privacy
     const next = { ...privacy, ...updates }
     setPrivacy(next)
     setPrivacyStatus('saving')
@@ -147,7 +157,8 @@ export default function Settings() {
       setPrivacy(saved)
       setPrivacyStatus('ready')
     } catch (error) {
-      setPrivacyStatus('error')
+      setPrivacy(previous)
+      setPrivacyStatus('ready')
       setPrivacyError(error.message)
     }
   }
@@ -161,7 +172,17 @@ export default function Settings() {
     })
   }
 
+  // The same two-step confirm the other destructive buttons use; these were
+  // the only one-click deletes in the app.
+  const [confirmAi, setConfirmAi] = useState(null)
+  const armAi = key => {
+    setConfirmAi(key)
+    setTimeout(() => setConfirmAi(current => (current === key ? null : current)), 3000)
+  }
+
   const deleteAiIndex = async () => {
+    if (confirmAi !== 'index') { armAi('index'); return }
+    setConfirmAi(null)
     setPrivacyStatus('saving')
     setPrivacyError('')
     try {
@@ -187,6 +208,8 @@ export default function Settings() {
   }
 
   const deleteCopilotChats = async () => {
+    if (confirmAi !== 'chats') { armAi('chats'); return }
+    setConfirmAi(null)
     setPrivacyStatus('saving')
     setPrivacyError('')
     try {
@@ -213,14 +236,19 @@ export default function Settings() {
     }
   }
 
+  const RESTORERS = { task: restoreTaskDirect, reminder: restoreReminderDirect, note: restoreNoteDirect }
+
   const handleRestore = async (trashId) => {
-    const result = await restoreFromTrash(trashId)
-    if (result) {
-      const { item, type } = result
-      if (type === 'task') restoreTaskDirect(item)
-      else if (type === 'reminder') restoreReminderDirect(item)
-      else if (type === 'note') restoreNoteDirect(item)
-      setTrash(prev => prev.filter(t => t._trashId !== trashId))
+    if (restoringId) return
+    setRestoringId(trashId)
+    setTrashError('')
+    try {
+      const result = await restoreFromTrash(trashId, (item, type) => RESTORERS[type]?.(item))
+      if (result) setTrash(prev => prev.filter(t => t._trashId !== trashId))
+    } catch (error) {
+      setTrashError(error.message || 'Could not restore that item.')
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -252,62 +280,85 @@ export default function Settings() {
 
   const profileChanged = name !== user?.name || email !== user?.email
 
-  const saveProfile = () => {
-    if (!name.trim()) return
-    updateUser({ name: name.trim(), email: email.trim() })
-    setProfileSaved(true)
-    setTimeout(() => setProfileSaved(false), 2000)
-  }
-
-  /* Data export */
-  const exportData = () => {
-    const data = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key.startsWith('nw_')) {
-        try { data[key] = JSON.parse(localStorage.getItem(key)) }
-        catch { data[key] = localStorage.getItem(key) }
-      }
+  const saveProfile = async () => {
+    if (!name.trim() || profileSaving) return
+    setProfileSaving(true)
+    setProfileError('')
+    try {
+      await updateUser({ name: name.trim(), email: email.trim() })
+      const emailPending = configured && email.trim() !== user?.email
+      // Firebase does not change the address until the link in the
+      // verification mail is opened; say so rather than "Saved!".
+      setProfileSaved(emailPending ? 'Check your new inbox to confirm the email change.' : 'Saved!')
+      setTimeout(() => setProfileSaved(''), emailPending ? 6000 : 2000)
+    } catch (error) {
+      setProfileError(error?.code === 'auth/requires-recent-login'
+        ? 'Sign out and back in, then try changing your email again.'
+        : error?.message || 'Could not save your profile.')
+    } finally {
+      setProfileSaving(false)
     }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `northwest-planner-backup-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
-  /* Data clearing */
-  const clearData = (type) => {
+  /* Data export: the records themselves. The raw localStorage values are
+     AES-GCM envelopes whose key never leaves IndexedDB, so a dump of them was
+     a backup nobody could open. */
+  const [dataBusy, setDataBusy] = useState(false)
+  const [dataError, setDataError] = useState('')
+
+  const exportData = async () => {
+    if (dataBusy) return
+    setDataBusy(true)
+    setDataError('')
+    try {
+      const [tasks, reminders, notes, tags, categories, trashItems, activity] = await Promise.all([
+        getTasks(), getReminders(), getNotes(), getTags(), getCategories(), getTrash(), getLogs(),
+      ])
+      const data = {
+        exportedAt: new Date().toISOString(), account: user?.email || null,
+        tasks, reminders, notes, tags, categories, trash: trashItems, activity, settings,
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `northwest-planner-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setDataError(error.message || 'Could not export your data.')
+    } finally {
+      setDataBusy(false)
+    }
+  }
+
+  /* Data clearing goes through the same delete path as the pages, so the
+     server copy goes too and the trash keeps a copy. Removing the legacy
+     nw_tasks keys, as this used to, deleted nothing anyone could see. */
+  const clearData = async (type) => {
     if (confirmClear !== type) {
       setConfirmClear(type)
       setTimeout(() => setConfirmClear(null), 3000)
       return
     }
-    switch (type) {
-      case 'tasks':
-        localStorage.removeItem('nw_tasks')
-        break
-      case 'reminders':
-        localStorage.removeItem('nw_reminders')
-        break
-      case 'notes':
-        localStorage.removeItem('nw_notes')
-        break
-      case 'all': {
-        const keys = []
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)
-          if (key.startsWith('nw_') && key !== 'nw_user') keys.push(key)
-        }
-        keys.forEach(k => localStorage.removeItem(k))
-        resetSettings()
-        break
-      }
-    }
+    if (dataBusy) return
     setConfirmClear(null)
-    window.location.reload()
+    setDataBusy(true)
+    setDataError('')
+    try {
+      const kinds = type === 'all' ? ['tasks', 'reminders', 'notes'] : [type]
+      for (const kind of kinds) {
+        if (kind === 'tasks') for (const task of await getTasks()) await deleteTask(task.id)
+        if (kind === 'reminders') for (const reminder of await getReminders()) await deleteReminder(reminder.id)
+        if (kind === 'notes') for (const note of await getNotes()) await deleteNote(note.id)
+      }
+      if (type === 'all') resetSettings()
+      setTrash(await getTrash())
+    } catch (error) {
+      setDataError(error.message || 'Could not clear that data.')
+    } finally {
+      setDataBusy(false)
+    }
   }
 
   const initials = (user?.name || 'U')
@@ -358,11 +409,12 @@ export default function Settings() {
                   />
                 </div>
                 <div className="settings-profile-actions">
-                  {profileSaved && <span className="settings-saved">Saved!</span>}
+                  {profileSaved && <span className="settings-saved">{profileSaved}</span>}
+                  {profileError && <span className="login-error" role="alert">{profileError}</span>}
                   <button
                     className="btn-primary"
                     onClick={saveProfile}
-                    disabled={!profileChanged || !name.trim()}
+                    disabled={!profileChanged || !name.trim() || profileSaving}
                   >
                     Save Changes
                   </button>
@@ -458,11 +510,13 @@ export default function Settings() {
 
             {privacyError && <p className="login-error">{privacyError}</p>}
             <div className="settings-profile-actions">
-              <button className="btn-danger" onClick={deleteAiIndex} disabled={privacyStatus === 'saving'}>
-                <Trash2 size={14} /> Delete my AI index
+              <button className={`btn-danger${confirmAi === 'index' ? ' confirming' : ''}`}
+                onClick={deleteAiIndex} disabled={privacyStatus === 'saving'}>
+                <Trash2 size={14} /> {confirmAi === 'index' ? 'Confirm? Re-index later from each record' : 'Delete my AI index'}
               </button>
-              <button className="btn-danger" onClick={deleteCopilotChats} disabled={privacyStatus === 'saving'}>
-                <Trash2 size={14} /> Delete retained chats
+              <button className={`btn-danger${confirmAi === 'chats' ? ' confirming' : ''}`}
+                onClick={deleteCopilotChats} disabled={privacyStatus === 'saving'}>
+                <Trash2 size={14} /> {confirmAi === 'chats' ? 'Confirm? Cannot undo!' : 'Delete retained chats'}
               </button>
               <span className="settings-row-desc"><Brain size={12} /> Record content is never indexed without approval.</span>
               {aiInfo && (
@@ -753,6 +807,7 @@ export default function Settings() {
               </div>
             ) : (
               <div className="trash-list">
+                {trashError && <p className="login-error" role="alert">{trashError}</p>}
                 {filteredTrash.map(item => {
                   const meta = TRASH_TYPE_META[item._trashType] || TRASH_TYPE_META.task
                   const Icon = meta.icon
@@ -771,8 +826,9 @@ export default function Settings() {
                         </span>
                       </div>
                       <div className="trash-item-actions">
-                        <button className="btn-ghost" onClick={() => handleRestore(item._trashId)} title="Restore">
-                          <RotateCcw size={13} /> Restore
+                        <button className="btn-ghost" onClick={() => handleRestore(item._trashId)} title="Restore"
+                          disabled={restoringId !== null}>
+                          <RotateCcw size={13} /> {restoringId === item._trashId ? 'Restoring…' : 'Restore'}
                         </button>
                         <button className="btn-icon btn-icon-danger" onClick={() => handlePermanentDelete(item._trashId)} title="Delete permanently">
                           <Trash2 size={14} />
@@ -804,7 +860,7 @@ export default function Settings() {
                 <span className="settings-row-label">Export Data</span>
                 <span className="settings-row-desc">Download all your data as a JSON file</span>
               </div>
-              <button className="btn-ghost" onClick={exportData}>
+              <button className="btn-ghost" onClick={exportData} disabled={dataBusy}>
                 <Download size={14} /> Export
               </button>
             </div>
@@ -821,6 +877,7 @@ export default function Settings() {
 
             <div className="settings-danger-zone">
               <h3><AlertTriangle size={14} /> Danger Zone</h3>
+              {dataError && <p className="login-error" role="alert">{dataError}</p>}
               <div className="settings-danger-actions">
                 {[
                   { key: 'tasks', label: 'Clear Tasks' },
@@ -832,6 +889,7 @@ export default function Settings() {
                     key={item.key}
                     className={`btn-danger${confirmClear === item.key ? ' confirming' : ''}`}
                     onClick={() => clearData(item.key)}
+                    disabled={dataBusy}
                   >
                     <Trash2 size={12} />
                     {confirmClear === item.key

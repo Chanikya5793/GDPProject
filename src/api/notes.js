@@ -1,7 +1,7 @@
 import { addToTrash } from './trash'
 import { addLog } from './logs'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './plannerStore'
-import { getSecureCollection, setSecureCollection } from './secureCollections'
+import { getSecureCollection, updateSecureCollection } from './secureCollections'
 
 const TAGS_NAMESPACE = 'metadata:tags'
 const DEFAULT_TAGS = [
@@ -47,40 +47,47 @@ export async function getTags() {
   return getSecureCollection(TAGS_NAMESPACE, DEFAULT_TAGS)
 }
 
+function mutateTags(updater) {
+  return updateSecureCollection(TAGS_NAMESPACE, DEFAULT_TAGS, updater)
+}
+
 export async function createTag(tag) {
-  const tags = await getTags()
   const created = { ...tag, id: `tag_${crypto.randomUUID()}` }
-  await setSecureCollection(TAGS_NAMESPACE, [...tags, created])
+  await mutateTags(tags => [...tags, created])
   await addLog('created', 'tag', created.name, { entityId: created.id, after: created })
   return created
 }
 
 export async function updateTag(id, updates) {
-  const tags = await getTags()
-  const before = tags.find(tag => String(tag.id) === String(id))
-  const updated = tags.map(tag => String(tag.id) === String(id) ? { ...tag, ...updates } : tag)
-  await setSecureCollection(TAGS_NAMESPACE, updated)
+  let before
+  const updated = await mutateTags(tags => {
+    before = tags.find(tag => String(tag.id) === String(id))
+    return tags.map(tag => String(tag.id) === String(id) ? { ...tag, ...updates } : tag)
+  })
   const tag = updated.find(item => String(item.id) === String(id))
   await addLog('updated', 'tag', tag?.name, { entityId: id, before, after: tag })
   return tag
 }
 
 export async function deleteTag(id) {
-  const tags = await getTags()
-  const tag = tags.find(item => String(item.id) === String(id))
-  await setSecureCollection(TAGS_NAMESPACE, tags.filter(item => String(item.id) !== String(id)))
+  let tag
+  await mutateTags(tags => {
+    tag = tags.find(item => String(item.id) === String(id))
+    return tags.filter(item => String(item.id) !== String(id))
+  })
   const notes = await getNotes()
-  await Promise.all(notes.filter(note => note.tagIds?.includes(id)).map(note =>
-    updateRecord('note', note.id, { tagIds: note.tagIds.filter(tagId => tagId !== id) })
-  ))
+  // One at a time: each update re-reads the note cache, and the log behind
+  // them is one list too.
+  for (const note of notes.filter(item => item.tagIds?.includes(id))) {
+    await updateRecord('note', note.id, { tagIds: note.tagIds.filter(tagId => tagId !== id) })
+  }
   await addLog('deleted', 'tag', tag?.name, { entityId: id, before: tag })
   return { success: true }
 }
 
 export async function restoreTagDirect(tag) {
-  const tags = await getTags()
-  if (!tags.some(item => String(item.id) === String(tag.id))) {
-    await setSecureCollection(TAGS_NAMESPACE, [...tags, tag])
-  }
+  await mutateTags(tags => (
+    tags.some(item => String(item.id) === String(tag.id)) ? undefined : [...tags, tag]
+  ))
 }
 

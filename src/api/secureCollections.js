@@ -1,4 +1,4 @@
-import { getSecureItem, setSecureItem } from '../security/cryptoStore'
+import { getSecureItem, setSecureItem, updateSecureItem } from '../security/cryptoStore'
 
 export function authenticatedUid() {
   const uid = sessionStorage.getItem('nw_authenticated_uid')
@@ -14,3 +14,8 @@ export function setSecureCollection(namespace, value) {
   return setSecureItem(authenticatedUid(), namespace, value)
 }
 
+
+/** Read-modify-write one collection with no other writer in between. */
+export function updateSecureCollection(namespace, fallback, updater) {
+  return updateSecureItem(authenticatedUid(), namespace, fallback, updater)
+}

@@ -5,6 +5,7 @@ import { Search, Trash2, X, PinIcon, Paperclip, Download, File as FileIcon, Shie
 import ConfirmDialog from '../components/ConfirmDialog'
 import AskAiButton from '../components/AskAiButton'
 import '../css/Notes.css'
+import LoadFailed from '../components/LoadFailed'
 
 const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
 
@@ -134,6 +135,7 @@ export default function Notes() {
   const [notes, setNotes] = useState([])
   const [tags, setTags] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
@@ -147,16 +149,17 @@ export default function Notes() {
   const [pinnedNoteIds, setPinnedNoteIds] = useState(() => {
     try {
       const saved = localStorage.getItem('nw_pinned_notes')
-      return saved ? JSON.parse(saved) : []
+      return saved ? JSON.parse(saved).map(String) : []
     } catch { return [] }
   })
   const tagPickerRef = useRef(null)
   const attachInputRef = useRef(null)
 
-  const handlePinToDashboard = (noteId) => {
+  const handlePinToDashboard = (id) => {
+    const noteId = String(id)
     setPinnedNoteIds(prev => {
       const next = prev.includes(noteId)
-        ? prev.filter(id => id !== noteId)
+        ? prev.filter(pinned => pinned !== noteId)
         : [...prev, noteId]
       localStorage.setItem('nw_pinned_notes', JSON.stringify(next))
       return next
@@ -172,8 +175,8 @@ export default function Notes() {
         setEditTitle(n[0].title)
         setEditBody(n[0].body)
       }
-      setLoading(false)
-    })
+    }).catch(error => setLoadError(error.message || 'Could not load your notes.'))
+      .finally(() => setLoading(false))
   }, [user.id])
 
   useEffect(() => {
@@ -222,13 +225,14 @@ export default function Notes() {
     await deleteNote(selectedId)
     const remaining = notes.filter(n => n.id !== selectedId)
     setNotes(remaining)
-    if (remaining.length > 0) {
-      selectNote(remaining[0])
-    } else {
-      setSelectedId(null)
-      setEditTitle('')
-      setEditBody('')
-    }
+    // Unsaved edits belonged to the note just deleted; selecting the next
+    // one must not try to save them back to it.
+    setDirty(false)
+    const next = remaining[0]
+    setSelectedId(next ? next.id : null)
+    setEditTitle(next ? next.title : '')
+    setEditBody(next ? next.body : '')
+    setEditorMode('write')
     setConfirmDeleteNote(false)
   }
 
@@ -347,6 +351,7 @@ export default function Notes() {
     return html
   }
 
+  if (loadError) return <LoadFailed message={loadError} />
   if (loading) return <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}><p style={{ color: 'var(--muted)' }}>Loading notes...</p></div>
 
   return (
@@ -376,7 +381,7 @@ export default function Notes() {
           </div>
           <div className="notes-list">
             {filteredNotes.map(note => (
-              <NoteListItem key={note.id} note={note} selected={note.id === selectedId} tags={tags} isPinned={pinnedNoteIds.includes(note.id)} onClick={() => selectNote(note)} />
+              <NoteListItem key={note.id} note={note} selected={note.id === selectedId} tags={tags} isPinned={pinnedNoteIds.includes(String(note.id))} onClick={() => selectNote(note)} />
             ))}
             {filteredNotes.length === 0 && (
               <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
@@ -407,12 +412,12 @@ export default function Notes() {
                     {selectedNote._approvedForAi ? 'AI approved' : 'Keep out of AI'}
                   </button>
                   <button
-                    className={`note-pin-btn${pinnedNoteIds.includes(selectedId) ? ' pinned' : ''}`}
+                    className={`note-pin-btn${pinnedNoteIds.includes(String(selectedId)) ? ' pinned' : ''}`}
                     onClick={() => handlePinToDashboard(selectedId)}
-                    title={pinnedNoteIds.includes(selectedId) ? 'Unpin from Dashboard' : 'Pin to Dashboard'}
+                    title={pinnedNoteIds.includes(String(selectedId)) ? 'Unpin from Dashboard' : 'Pin to Dashboard'}
                   >
                     <PinIcon size={14} />
-                    {pinnedNoteIds.includes(selectedId) ? 'Pinned' : 'Pin to Dashboard'}
+                    {pinnedNoteIds.includes(String(selectedId)) ? 'Pinned' : 'Pin to Dashboard'}
                   </button>
                   <div className="editor-mode-toggle">
                     <button className={`editor-mode-btn${editorMode === 'write' ? ' active' : ''}`} onClick={() => setEditorMode('write')}>Write</button>

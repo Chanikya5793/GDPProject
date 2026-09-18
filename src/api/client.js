@@ -16,6 +16,17 @@ export function apiConfigured() {
   return firebaseConfigured && Boolean(API_URL)
 }
 
+// A request that never answers used to leave the page on its spinner for
+// good: nothing aborted it. Generous, because the planner API is small and a
+// slow link is the case this is for; the streaming route has its own below.
+const REQUEST_TIMEOUT_MS = 30_000
+const STREAM_TIMEOUT_MS = 180_000
+
+function timeoutSignal(ms, override) {
+  if (override) return override
+  return typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined
+}
+
 // A validation failure arrives as a list of {loc, msg} entries, and a list
 // interpolated into a message reads as "[object Object]". Name the first
 // field and what was wrong with it; that is what the student can act on.
@@ -40,27 +51,57 @@ function describe(detail, status) {
  */
 export async function fetchSignupPolicy() {
   if (!apiConfigured()) return null
-  const response = await fetch(`${API_URL}/v1/signup-policy`)
+  const response = await fetch(`${API_URL}/v1/signup-policy`, {
+    signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+  })
   if (!response.ok) throw new ApiError('Could not read the sign-up policy.', response.status)
   return response.json()
 }
 
-export async function apiFetch(path, options = {}) {
-  await persistenceReady
-  if (!apiConfigured()) {
+/**
+ * Refuse before any request when the build cannot reach a planner API.
+ *
+ * Two different situations, deliberately told apart. No Firebase at all is
+ * the public demo, and every store falls back to the device. Firebase but no
+ * API URL is a broken deployment: with the same `not_configured` code it
+ * looked like a working app whose every write quietly went nowhere.
+ */
+function assertConfigured() {
+  if (!firebaseConfigured) {
     throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured')
   }
+  if (!API_URL) {
+    throw new ApiError('This build has no planner API URL. Set VITE_PLANNER_API_URL.', 503, 'misconfigured')
+  }
+}
+
+function describeFailure(error) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    return new ApiError('The planner service took too long to answer. Please try again.', 0, 'timeout')
+  }
+  return error
+}
+
+export async function apiFetch(path, options = {}) {
+  await persistenceReady
+  assertConfigured()
   const user = auth?.currentUser
   if (!user) throw new ApiError('Sign in is required.', 401, 'unauthenticated')
   const token = await user.getIdToken()
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-  })
+  let response
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: timeoutSignal(REQUEST_TIMEOUT_MS, options.signal),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    })
+  } catch (error) {
+    throw describeFailure(error)
+  }
   if (response.status === 204) return null
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -100,21 +141,25 @@ function parseSseBlock(block) {
  */
 export async function apiStream(path, options = {}, onEvent) {
   await persistenceReady
-  if (!apiConfigured()) {
-    throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured')
-  }
+  assertConfigured()
   const user = auth?.currentUser
   if (!user) throw new ApiError('Sign in is required.', 401, 'unauthenticated')
   const token = await user.getIdToken()
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'text/event-stream',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-  })
+  let response
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: timeoutSignal(STREAM_TIMEOUT_MS, options.signal),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'text/event-stream',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    })
+  } catch (error) {
+    throw describeFailure(error)
+  }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new ApiError(describe(payload.detail, response.status), response.status, payload.code, payload)
