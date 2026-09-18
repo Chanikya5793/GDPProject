@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import {
-  createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification,
+  createUserWithEmailAndPassword, onAuthStateChanged, reload, sendEmailVerification,
   signInWithEmailAndPassword, signOut, updateProfile, verifyBeforeUpdateEmail,
 } from 'firebase/auth';
 import { User } from '@/types';
@@ -14,9 +14,12 @@ interface AuthContextType {
   loading: boolean;
   configured: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string; notice?: string }>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-read the signed-in user; the verification link is opened elsewhere. */
+  refreshUser: () => Promise<User | null>;
+  resendVerification: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -104,13 +107,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     }
     if (!auth) return { success: false, error: 'Firebase Authentication is not configured.' };
+    let credential;
     try {
-      const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateProfile(credential.user, { displayName: name.trim() });
-      await sendEmailVerification(credential.user);
-      setUser(toUser(credential.user));
-      return { success: true };
+      credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
     } catch (error) { return { success: false, error: message(error) }; }
+    // The account exists from here on, and the user is signed in. A failure
+    // to set the name or send the mail is not a failed sign-up, and used to
+    // be reported as one while the session was already live.
+    try { await updateProfile(credential.user, { displayName: name.trim() }); } catch { /* set later in Settings */ }
+    let notice = 'Check your inbox for the verification link.';
+    try { await sendEmailVerification(credential.user); }
+    catch { notice = 'We could not send the verification email just now. Use Resend on the next screen.'; }
+    setUser(toUser(credential.user));
+    return { success: true, notice };
+  };
+
+  const refreshUser = async () => {
+    if (!firebaseConfigured || !auth?.currentUser) return user;
+    await reload(auth.currentUser);
+    const refreshed = toUser(auth.currentUser);
+    setUser(refreshed);
+    return refreshed;
+  };
+
+  const resendVerification = async () => {
+    if (!firebaseConfigured || !auth?.currentUser) return;
+    await sendEmailVerification(auth.currentUser);
   };
 
   const updateUser = async (updates: Partial<User>) => {
@@ -139,7 +161,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, configured: firebaseConfigured, login, register, updateUser, logout }}>
+    <AuthContext.Provider value={{
+      user, loading, configured: firebaseConfigured, login, register, updateUser, logout,
+      refreshUser, resendVerification,
+    }}>
       {children}
     </AuthContext.Provider>
   );

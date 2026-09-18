@@ -40,14 +40,25 @@ export default function RecycleBinSection({ userId }: { userId: string }) {
 
   const filtered = useMemo(() => filterTrash(trash, filter), [trash, filter]);
 
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
   const handleRestore = async (item: TrashItem) => {
-    const result = await restoreFromTrash(item._trashId);
-    if (!result) { reload(); return; }
-    // Restore by the type recorded on the trash entry, not the active filter.
-    if (result.type === 'task') await restoreTaskDirect(result.item as never);
-    else if (result.type === 'reminder') await restoreReminderDirect(result.item as never);
-    else if (result.type === 'note') await restoreNoteDirect(result.item as never);
-    reload();
+    if (restoringId) return;
+    setRestoringId(item._trashId);
+    try {
+      // Restore by the type recorded on the trash entry, not the active
+      // filter, and only drop the row once the record is back.
+      await restoreFromTrash(item._trashId, async (record, type) => {
+        if (type === 'task') await restoreTaskDirect(record as never);
+        else if (type === 'reminder') await restoreReminderDirect(record as never);
+        else if (type === 'note') await restoreNoteDirect(record as never);
+      });
+    } catch (error) {
+      Alert.alert('Could not restore', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setRestoringId(null);
+      reload();
+    }
   };
 
   const handleDelete = (item: TrashItem) => {
@@ -128,11 +139,14 @@ export default function RecycleBinSection({ userId }: { userId: string }) {
             </View>
             <TouchableOpacity
               onPress={() => handleRestore(item)}
+              disabled={restoringId !== null}
               accessibilityRole="button"
               accessibilityLabel={`Restore ${item.title || 'item'}`}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={[s.action, { color: accent.primary }]}>Restore</Text>
+              <Text style={[s.action, { color: accent.primary }]}>
+                {restoringId === item._trashId ? 'Restoring…' : 'Restore'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleDelete(item)}

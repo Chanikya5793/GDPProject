@@ -21,20 +21,62 @@ export class ApiError extends Error {
   }
 }
 
+// A request that never answers used to hang the create or update behind it
+// with the outbox never engaged; React Native's fetch sets no limit of its own.
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * A validation failure arrives as a list of {loc, msg} entries, and a list
+ * interpolated into a message reads as "[object Object]". Name the first
+ * field and what was wrong with it; that is what the student can act on.
+ */
+export function describeDetail(detail: unknown, status: number): string {
+  if (typeof detail === 'string' && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    const first = detail[0] as { loc?: unknown[]; msg?: string };
+    const where = (first.loc || [])
+      .filter((part): part is string => typeof part === 'string' && part !== 'body')
+      .join('.');
+    const message = first.msg || 'is invalid';
+    const rest = detail.length > 1 ? ` (and ${detail.length - 1} more)` : '';
+    return where ? `${where}: ${message}${rest}` : `${message}${rest}`;
+  }
+  if (detail && typeof detail === 'object' && typeof (detail as { message?: unknown }).message === 'string') {
+    return (detail as { message: string }).message;
+  }
+  return `Planner request failed (${status})`;
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!firebaseConfigured || !API_URL) throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured');
   if (!auth?.currentUser) throw new ApiError('Sign in is required.', 401, 'unauthenticated');
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${await auth.currentUser.getIdToken()}`,
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-  });
+  const token = await auth.currentUser.getIdToken();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: options.signal ?? controller.signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      // No status on purpose: the callers treat a status-less error as "the
+      // server was unreachable" and keep the change for later.
+      throw new Error('The planner service took too long to answer. Please try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (response.status === 204) return undefined as T;
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(payload.detail || 'Planner request failed.', response.status, payload.code);
+  if (!response.ok) throw new ApiError(describeDetail(payload.detail, response.status), response.status, payload.code);
   return payload as T;
 }
 

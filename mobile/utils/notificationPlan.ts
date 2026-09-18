@@ -117,6 +117,8 @@ export function buildNotificationPlan(input: PlanInput): PlannedNotification[] {
   // Reminders fire at the moment they name. The whole point of a reminder is
   // the time on it, so no lead is subtracted.
   for (const reminder of reminders) {
+    // Done is done, for reminders as much as for tasks.
+    if (reminder.completed) continue;
     const at = parseLocalDateTime(reminder.date, reminder.time);
     if (at === null || at <= now) continue;
     const body = (reminder.notes || '').trim() || `Reminder at ${formatClock(at)}`;

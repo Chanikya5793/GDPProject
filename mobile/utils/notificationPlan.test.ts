@@ -94,6 +94,11 @@ describe('buildNotificationPlan', () => {
     expect(plan([task({ completed: true })], [])).toEqual([]);
   });
 
+  it('drops completed reminders, which used to fire anyway', () => {
+    expect(plan([], [reminder({ completed: true })])).toEqual([]);
+    expect(plan([], [reminder({ completed: false })])).toHaveLength(1);
+  });
+
   it('drops anything already past, rather than firing it late', () => {
     expect(plan([task({ dueDate: '2026-09-01' })], [reminder({ date: '2026-09-06' })])).toEqual([]);
   });

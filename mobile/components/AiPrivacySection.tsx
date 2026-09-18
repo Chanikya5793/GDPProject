@@ -109,7 +109,9 @@ export default function AiPrivacySection() {
     ]);
   };
 
-  const busy = status === 'saving' || status === 'loading';
+  // Also while in error: the switches would otherwise be live over the
+  // defaults, and one flip would write those defaults over the server's copy.
+  const busy = status === 'saving' || status === 'loading' || status === 'error';
 
   if (status === 'unavailable') {
     return (

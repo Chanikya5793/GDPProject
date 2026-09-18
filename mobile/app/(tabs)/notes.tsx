@@ -16,6 +16,7 @@ import { Note, NoteAttachment, PlannerRecordId, Tag } from '@/types';
 import { assignedTags, toggleTagId } from '@/utils/noteTags';
 import MarkdownText from '@/components/MarkdownText';
 import { hasMarkdown } from '@/utils/markdown';
+import { useToast } from '@/components/Toast';
 import {
   addAttachment, dataUrlBytes, formatBytes, isWithinSizeLimit,
   MAX_ATTACHMENT_BYTES, removeAttachment,
@@ -23,6 +24,7 @@ import {
 
 export default function NotesScreen() {
   const { user } = useAuth();
+  const toast = useToast();
   const { colors, accent, appearance } = useAppTheme();
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -52,9 +54,17 @@ export default function NotesScreen() {
   };
 
   const handleSaveNote = async (id: PlannerRecordId, updates: Partial<Note>) => {
-    const updated = await updateNote(id, updates);
-    setNotes(prev => prev.map(n => n.id === id ? updated : n));
-    setSelectedNote(updated);
+    // Rejected saves -- a note also edited on the web, a refused field --
+    // used to vanish: the editor had already marked itself clean.
+    try {
+      const updated = await updateNote(id, updates);
+      setNotes(prev => prev.map(n => n.id === id ? updated : n));
+      setSelectedNote(updated);
+      return true;
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not save the note.', 'error');
+      return false;
+    }
   };
 
   const handleDeleteNote = (id: PlannerRecordId) => {
@@ -161,7 +171,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
   appearance: ReturnType<typeof useAppTheme>['appearance'];
-  onSave: (id: PlannerRecordId, updates: Partial<Note>) => void;
+  onSave: (id: PlannerRecordId, updates: Partial<Note>) => Promise<boolean> | void;
   onDelete: (id: PlannerRecordId) => void;
   onClose: () => void;
 }) {
@@ -185,10 +195,18 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
     }
   }, [visible, note?.id]);
 
-  const handleSave = () => {
-    if (!note) return;
-    onSave(note.id, { title, body, tagIds, attachments, _approvedForAi: approvedForAi });
-    setDirty(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!note || saving) return;
+    setSaving(true);
+    try {
+      const ok = await onSave(note.id, { title, body, tagIds, attachments, _approvedForAi: approvedForAi });
+      // Stay dirty when the save was refused, so the edits are still here.
+      if (ok !== false) setDirty(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const pickImage = async () => {
@@ -241,9 +259,10 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
     onSave(note.id, { attachments: next });
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (dirty && note) {
-      onSave(note.id, { title, body, tagIds, attachments, _approvedForAi: approvedForAi });
+      const ok = await onSave(note.id, { title, body, tagIds, attachments, _approvedForAi: approvedForAi });
+      if (ok === false) return; // the toast said why; the edits are still in the editor
     }
     onClose();
   };
@@ -302,8 +321,10 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
               </TouchableOpacity>
             )}
             {dirty && (
-              <TouchableOpacity onPress={handleSave}>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: accent.primary }}>Save</Text>
+              <TouchableOpacity onPress={handleSave} disabled={saving}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: accent.primary }}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Text>
               </TouchableOpacity>
             )}
             {note && (

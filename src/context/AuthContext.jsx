@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  reload,
   sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
@@ -139,16 +140,42 @@ export function AuthProvider({ children }) {
     // The binding check is server-side; this only spares the user the dead end.
     const refusal = await signupRefusal(email)
     if (refusal) return { success: false, error: refusal }
+    let credential
     try {
       await persistenceReady
-      const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
-      await updateProfile(credential.user, { displayName: name.trim() })
-      await sendEmailVerification(credential.user)
-      setUser(publicUser(credential.user))
-      return { success: true }
+      credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
     } catch (error) {
       return { success: false, error: authMessage(error) }
     }
+    // The account exists from here on, and the user is signed in. A failure
+    // to set the name or send the mail is not a failed sign-up, and used to
+    // be reported as one while the session was already live.
+    try {
+      await updateProfile(credential.user, { displayName: name.trim() })
+    } catch { /* the address is what matters; the name can be set in Settings */ }
+    let notice = 'Check your inbox for the verification link.'
+    try {
+      await sendEmailVerification(credential.user)
+    } catch {
+      notice = 'We could not send the verification email just now. Use "Resend" on the next screen.'
+    }
+    setUser(publicUser(credential.user))
+    return { success: true, notice }
+  }
+
+  // The verification link is opened in a mail client, so this session only
+  // learns about it when asked; the banner calls this.
+  const refreshUser = async () => {
+    if (!firebaseConfigured || !auth?.currentUser) return user
+    await reload(auth.currentUser)
+    const refreshed = publicUser(auth.currentUser)
+    setUser(refreshed)
+    return refreshed
+  }
+
+  const resendVerification = async () => {
+    if (!firebaseConfigured || !auth?.currentUser) return
+    await sendEmailVerification(auth.currentUser)
   }
 
   const updateUser = async updates => {
@@ -185,6 +212,7 @@ export function AuthProvider({ children }) {
   // to resolve and bounces a signed-in user to the login screen on reload.
   const value = useMemo(() => ({
     user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
+    refreshUser, resendVerification,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [user, loading])
 

@@ -5,6 +5,7 @@ import { SettingsProvider } from './context/SettingsContext'
 import SidebarNav from './components/SidebarNav'
 import AiSidebar from './components/AiSidebar'
 import MigrationBanner from './components/MigrationBanner'
+import VerifyEmailBanner from './components/VerifyEmailBanner'
 
 // Pages
 import Login     from './pages/Login'
@@ -36,6 +37,7 @@ function AppLayout({ children }) {
           Secure Copilot
           Planner records are encrypted offline and synchronized to your authenticated account.
         </div>
+        <VerifyEmailBanner />
         <MigrationBanner />
         {children}
       </div>

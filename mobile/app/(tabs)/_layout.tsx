@@ -1,8 +1,9 @@
 import { Redirect, Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '@/contexts/AuthContext';
+import VerifyEmailBanner from '@/components/VerifyEmailBanner';
 import { useAppTheme } from '@/theme/useAppTheme';
 
 export default function TabLayout() {
@@ -13,6 +14,8 @@ export default function TabLayout() {
   if (!user) return <Redirect href="/login" />;
 
   return (
+    <View style={{ flex: 1 }}>
+    <VerifyEmailBanner />
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: accent.primary,
@@ -91,5 +94,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </View>
   );
 }

@@ -57,7 +57,7 @@ const REPLY_STYLES: { value: ReplyStyle; short: string; label: string; blurb: st
 ];
 
 export default function SettingsScreen() {
-  const { user, updateUser, logout } = useAuth();
+  const { user, updateUser, logout, configured } = useAuth();
   const { settings, updateSetting, resetSettings } = useSettings();
   const { colors, accent, appearance } = useAppTheme();
 
@@ -99,10 +99,27 @@ export default function SettingsScreen() {
     }
   }, [plannerSettings]);
 
-  const saveProfile = () => {
-    if (!name.trim()) return;
-    updateUser({ name: name.trim(), email: email.trim() });
-    Alert.alert('Saved', 'Profile updated.');
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  const saveProfile = async () => {
+    if (!name.trim() || profileSaving) return;
+    setProfileSaving(true);
+    try {
+      const emailChanged = configured && email.trim() !== user?.email;
+      await updateUser({ name: name.trim(), email: email.trim() });
+      // Firebase changes the address only once the link in the verification
+      // mail is opened, so "updated" would be untrue for that half.
+      Alert.alert('Saved', emailChanged
+        ? 'Name updated. Check your new inbox to confirm the email change.'
+        : 'Profile updated.');
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      Alert.alert('Could not save', code === 'auth/requires-recent-login'
+        ? 'Sign out and back in, then try changing your email again.'
+        : (error as Error).message || 'Please try again.');
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -150,7 +167,7 @@ export default function SettingsScreen() {
           </View>
         </View>
         {profileChanged && (
-          <TouchableOpacity style={[s.saveBtn, { backgroundColor: accent.primary }]} onPress={saveProfile}>
+          <TouchableOpacity style={[s.saveBtn, { backgroundColor: accent.primary }]} onPress={saveProfile} disabled={profileSaving}>
             <Text style={s.saveBtnText}>Save Changes</Text>
           </TouchableOpacity>
         )}
