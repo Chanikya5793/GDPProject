@@ -27,9 +27,14 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD: ${{ github.sha }}
         run: |
           if [ -n "$BASE_SHA" ]; then
             range="$BASE_SHA..$HEAD_SHA"
+          elif [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
+            # A direct push: everything it brought, not just the tip.
+            range="$BEFORE_SHA..$HEAD"
           elif git rev-parse HEAD~1 >/dev/null 2>&1; then
             range="HEAD~1..HEAD"
           else
@@ -37,11 +42,13 @@ jobs:
           fi
           echo "Checking commits in $range"
           # The product feature is called the copilot, so the word alone is not a
-          # match; only an attribution trailer naming an assistant is.
+          # match; only an attribution trailer naming an assistant is. Kept in
+          # step with .githooks/commit-msg, which strips the same lines.
           if git log "$range" --format='%H%n%B' | grep -inE \
-               -e '^[[:space:]]*co-authored-by:.*(claude|anthropic|codex|chatgpt|openai)' \
-               -e 'generated with .*(claude|codex|chatgpt)' \
-               -e 'https?://claude\.ai'; then
+               -e '^[[:space:]]*co-authored-by:.*(claude|anthropic|copilot|codex|chatgpt|openai)' \
+               -e 'generated with .*(claude|codex|chatgpt|copilot)' \
+               -e 'https?://claude\.ai' \
+               -e '^[[:space:]]*🤖'; then
             echo "::error::Commit message carries assistant attribution. Enable the hook with 'git config core.hooksPath .githooks' and amend."
             exit 1
           fi
