@@ -15,6 +15,20 @@ class AuthenticatedUser:
     email: Optional[str] = None
 
 
+class Forbidden(Exception):
+    """A valid token whose holder may not do this, with a code the clients key on.
+
+    HTTPException carries only a detail string, and the web copilot used to
+    read every 403 as "AI is turned off in Privacy settings" -- including an
+    unverified address and a refused domain. The code says which it is.
+    """
+
+    def __init__(self, detail: str, code: str):
+        super().__init__(detail)
+        self.detail = detail
+        self.code = code
+
+
 class FirebaseTokenVerifier:
     def __init__(self, settings: Settings, policy: SignupPolicy | None = None):
         self.settings = settings
@@ -56,17 +70,17 @@ class FirebaseTokenVerifier:
         # service. 403 rather than 401 — the token is valid, the account is not
         # eligible, and retrying with a fresh one will not help.
         if not self.policy.allows(email):
-            raise HTTPException(status_code=403, detail=self.policy.describe())
+            raise Forbidden(self.policy.describe(), "not_eligible")
         # The policy is about who owns the address, and Firebase issues a full
         # token the moment a password is chosen, before the verification mail
         # is opened. Without this anyone could register any @nwmissouri.edu
         # address and be let in. Only enforced while the policy itself is,
         # so a project with no domain restriction keeps working as before.
         if self.policy.enforce and email and not decoded.get("email_verified"):
-            raise HTTPException(
-                status_code=403,
-                detail="Verify your email address to use the planner. Check your inbox "
-                       "for the link, then sign in again.",
+            raise Forbidden(
+                "Verify your email address to use the planner. Check your inbox "
+                "for the link, then sign in again.",
+                "email_unverified",
             )
         return AuthenticatedUser(uid=uid, email=email)
 

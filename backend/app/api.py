@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .ai import GenerationTimeout
-from .auth import CurrentUser
+from .auth import CurrentUser, Forbidden
 from .config import get_settings
 from .models import (
     ActionProposal,
@@ -372,6 +372,10 @@ def create_app(container: Container | None = None) -> FastAPI:
     async def invalid_proposal(_request: Request, exc: InvalidProposal):
         return JSONResponse(status_code=409, content={"detail": str(exc), "code": "invalid_proposal"})
 
+    @app.exception_handler(Forbidden)
+    async def forbidden(_request: Request, exc: Forbidden):
+        return JSONResponse(status_code=403, content={"detail": exc.detail, "code": exc.code})
+
     @app.exception_handler(ProposalStateError)
     async def proposal_state(_request: Request, exc: ProposalStateError):
         # Raised inside the confirm transaction when a reject or a second
@@ -543,7 +547,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         try:
             services.indexing.index(user.uid, entity_type, record_id, body.expected_revision)
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise Forbidden(str(exc), "ai_disabled") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"status": "indexed", "record_id": record_id, "revision": body.expected_revision}
@@ -588,7 +592,7 @@ def create_app(container: Container | None = None) -> FastAPI:
                 prior_citations=thread_citations(services, user.uid, body, privacy),
             )
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise Forbidden(str(exc), "ai_disabled") from exc
         except GenerationTimeout as exc:
             # Expected under load rather than a fault: say so and let them retry,
             # instead of a bare 500.
@@ -667,7 +671,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         except StopIteration as exc:
             raise HTTPException(status_code=500, detail="The assistant produced no answer.") from exc
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise Forbidden(str(exc), "ai_disabled") from exc
         except GenerationTimeout as exc:
             raise HTTPException(
                 status_code=504,

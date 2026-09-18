@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from app.ai import GeneratedAction, GeneratedAnswer
 from app.api import local_today
-from app.auth import FirebaseTokenVerifier
+from app.auth import FirebaseTokenVerifier, Forbidden
 from app.models import EntityType, ProposalOperation, RecordUpsertRequest, ScheduleContent
 from app.proposals import clean_generated_priority
 from app.signup_policy import SignupPolicy
@@ -35,9 +35,9 @@ def enforced():
 def test_an_unverified_address_is_refused_while_the_policy_is_enforced():
     decoded = {"uid": "u1", "email": "s123@nwmissouri.edu", "email_verified": False}
     with patch("app.auth.auth.verify_id_token", return_value=decoded), \
-            pytest.raises(HTTPException) as exc:
+            pytest.raises(Forbidden) as exc:
         verifier(enforced()).verify("token")
-    assert exc.value.status_code == 403
+    assert exc.value.code == "email_unverified"
     assert "Verify your email" in exc.value.detail
 
 
@@ -258,3 +258,15 @@ def test_a_failure_after_generation_still_ends_the_stream_with_an_error(client, 
         events = read_events(response)
     assert events[-1][0] == "error"
     assert events[-1][1]["code"] == "generation_failed"
+
+
+def test_ai_disabled_carries_a_code_the_clients_can_key_on(client, auth):
+    client.put("/v1/privacy", json={
+        "ai_enabled": False, "indexed_entity_types": [], "index_attachments": False,
+        "retain_chat": False, "chat_retention_days": 0,
+    }, headers=auth)
+    response = client.post("/v1/copilot/chat", json={
+        "message": "hello", "request_id": "disabled-request-0001",
+    }, headers=auth)
+    assert response.status_code == 403
+    assert response.json()["code"] == "ai_disabled"
