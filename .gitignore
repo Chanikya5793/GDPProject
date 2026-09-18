@@ -20,6 +20,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+.venv*/
 
 # Editor directories and files
 .vscode/*

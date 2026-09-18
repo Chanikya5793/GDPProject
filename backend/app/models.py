@@ -1,8 +1,15 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 SafeText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100_000)]
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
@@ -88,6 +95,21 @@ class ScheduleContent(StrictModel):
     starts_at: datetime
     ends_at: datetime
     notes: SafeText = ""
+
+    @field_validator("starts_at", "ends_at")
+    @classmethod
+    def aware(cls, value: datetime) -> datetime:
+        """Pin every timestamp to UTC.
+
+        A naive and an aware datetime cannot be compared: one of each in the
+        same block, or across two stored blocks, raised TypeError out of the
+        validator below and out of the planner's sort, which neither pydantic
+        nor the API maps to anything but a 500. A bare timestamp is taken as
+        UTC, which is what every client sends anyway.
+        """
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def ends_after_start(self) -> "ScheduleContent":

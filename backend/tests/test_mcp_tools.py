@@ -28,14 +28,18 @@ def seed(services):
     ), approved=True)
     put(services, EntityType.task, "task2", TaskContent(
         title="Completed", due_date=date(2026, 8, 20), completed=True
-    ))
+    ), approved=True)
     put(services, EntityType.reminder, "rem1", ReminderContent(
         title="Advisor", date=date(2026, 8, 20)
-    ))
-    put(services, EntityType.note, "note1", NoteContent(title="Reference", body="Exam facts"))
+    ), approved=True)
+    put(services, EntityType.note, "note1", NoteContent(
+        title="Reference", body="Exam facts"
+    ), approved=True)
     put(services, EntityType.schedule, "event1", ScheduleContent(
         title="Class", starts_at="2026-08-20T10:00:00Z", ends_at="2026-08-20T11:00:00Z"
-    ))
+    ), approved=True)
+    # Kept out of the AI by the student. No tool may hand it over.
+    put(services, EntityType.note, "private", NoteContent(title="Diary", body="Private"))
     return task
 
 
@@ -51,6 +55,37 @@ def test_read_only_mcp_tools(services, name, args, minimum):
     seed(services)
     result = services.mcp_tools.call("alice", name, args)
     assert len(result) >= minimum
+
+
+def test_mcp_listing_tools_honour_record_approval(services):
+    seed(services)
+    titles = [item["title"] for item in services.mcp_tools.call("alice", "notes", {})]
+    assert titles == ["Reference"]
+
+
+def test_mcp_listing_tools_honour_indexed_types(services):
+    seed(services)
+    services.repository.set_privacy("alice", PrivacySettings(
+        ai_enabled=True, indexed_entity_types=[EntityType.task]
+    ))
+    assert services.mcp_tools.call("alice", "notes", {}) == []
+    assert services.mcp_tools.call("alice", "reminders", {}) == []
+    window = services.mcp_tools.call(
+        "alice", "calendar_window", {"start": "2026-08-19", "end": "2026-08-21"}
+    )
+    assert {item["content"]["entity_type"] for item in window} == {"task"}
+
+
+@pytest.mark.parametrize("name,args", [
+    ("tasks", {}), ("reminders", {}), ("notes", {}),
+    ("calendar_window", {"start": "2026-08-19", "end": "2026-08-21"}),
+    ("workload_summary", {}), ("planner_search", {"query": "exam"}),
+])
+def test_mcp_tools_refuse_when_ai_is_off(services, name, args):
+    seed(services)
+    services.repository.set_privacy("alice", PrivacySettings(ai_enabled=False))
+    with pytest.raises(PermissionError):
+        services.mcp_tools.call("alice", name, args)
 
 
 def test_mcp_planner_search_uses_approved_index(services):

@@ -29,11 +29,23 @@ class FirebaseTokenVerifier:
     def verify(self, token: str) -> AuthenticatedUser:
         try:
             decoded = auth.verify_id_token(token, check_revoked=True)
-        except Exception as exc:
+        except (
+            auth.InvalidIdTokenError, auth.ExpiredIdTokenError, auth.RevokedIdTokenError,
+            auth.UserDisabledError, ValueError,
+        ) as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired Firebase ID token",
                 headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+        except Exception as exc:
+            # check_revoked looks the user up on every request, so a Firebase
+            # outage or a lost connection lands here. That is not a bad token:
+            # answering 401 makes both clients sign the student out, when all
+            # they needed was to try again in a moment.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Could not verify the sign-in right now. Please try again.",
             ) from exc
         uid = decoded.get("uid")
         if not uid:
@@ -45,6 +57,17 @@ class FirebaseTokenVerifier:
         # eligible, and retrying with a fresh one will not help.
         if not self.policy.allows(email):
             raise HTTPException(status_code=403, detail=self.policy.describe())
+        # The policy is about who owns the address, and Firebase issues a full
+        # token the moment a password is chosen, before the verification mail
+        # is opened. Without this anyone could register any @nwmissouri.edu
+        # address and be let in. Only enforced while the policy itself is,
+        # so a project with no domain restriction keeps working as before.
+        if self.policy.enforce and email and not decoded.get("email_verified"):
+            raise HTTPException(
+                status_code=403,
+                detail="Verify your email address to use the planner. Check your inbox "
+                       "for the link, then sign in again.",
+            )
         return AuthenticatedUser(uid=uid, email=email)
 
 

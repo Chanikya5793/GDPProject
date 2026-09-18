@@ -360,11 +360,19 @@ class StreamingAnswerGenerator(AnswerGenerator, Protocol):
     def generate_stream(self, prompt: str) -> Iterator[StreamItem]: ...
 
 
+# Per call, in milliseconds, for the Vertex clients. HttpOptions leaves the
+# timeout unset, which is unbounded: a hung Vertex call held a worker until the
+# platform killed the request as a bare 500, the exact failure the Muse
+# adapter's timeout exists to avoid. Under the Cloud Run request timeout so a
+# slow generation is reported by this app rather than the platform.
+VERTEX_TIMEOUT_MS = 120_000
+
+
 class VertexEmbeddingClient:
     def __init__(self, project: str, location: str, model: str, dimensions: int):
         self.client = genai.Client(
             vertexai=True, project=project, location=location,
-            http_options=types.HttpOptions(api_version="v1"),
+            http_options=types.HttpOptions(api_version="v1", timeout=VERTEX_TIMEOUT_MS),
         )
         self.model = model
         self.dimensions = dimensions
@@ -395,24 +403,37 @@ class GeminiAnswerGenerator:
     def __init__(self, project: str, location: str, model: str):
         self.client = genai.Client(
             vertexai=True, project=project, location=location,
-            http_options=types.HttpOptions(api_version="v1"),
+            http_options=types.HttpOptions(api_version="v1", timeout=VERTEX_TIMEOUT_MS),
         )
         self.model = model
 
     def generate(self, prompt: str) -> GeneratedAnswer:
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json",
-                response_schema=GeneratedAnswer,
-                system_instruction=SYSTEM_INSTRUCTION,
-            ),
-        )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema=GeneratedAnswer,
+                    system_instruction=SYSTEM_INSTRUCTION,
+                ),
+            )
+        except Exception as exc:
+            # The SDK raises its own error types for a timeout and for an
+            # overloaded model; both are "try again", not a server fault.
+            if _looks_like_timeout(exc):
+                raise GenerationTimeout("Gemini did not answer in time") from exc
+            raise
         if not response.text:
             raise RuntimeError("Gemini returned an empty response")
         return GeneratedAnswer.model_validate(json_document(response.text))
+
+
+def _looks_like_timeout(exc: Exception) -> bool:
+    name = type(exc).__name__.lower()
+    text = str(exc).lower()
+    return "timeout" in name or "timed out" in text or "deadline" in text
 
 
 

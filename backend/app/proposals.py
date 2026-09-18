@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from pydantic import ValidationError
+
 from .ai import GeneratedAction
 from .audit import AuditLogger
 from .models import (
@@ -49,6 +51,34 @@ def clean_generated_time(value: Optional[str]) -> Optional[str]:
     anything else with a validation error the caller cannot catch usefully."""
     match = _TIME_PATTERN.match((value or "").strip())
     return f"{match.group(1)}:{match.group(2)}" if match else None
+
+
+def clean_generated_priority(value: Optional[str]) -> Optional[str]:
+    """A priority the task model accepts, or None.
+
+    The model writes "High" and "urgent" as readily as "high"; a value the
+    Literal refuses used to surface as a 500 on chat, or worse, be copied onto
+    a stored proposal unvalidated and 500 on every confirm.
+    """
+    text = (value or "").strip().lower()
+    if text in ("low", "medium", "high"):
+        return text
+    return {"urgent": "high", "critical": "high", "normal": "medium", "none": "low"}.get(text)
+
+
+def _validated(after: PlannerContent) -> tuple[Optional[PlannerContent], Optional[str]]:
+    """The content re-checked against its own model, or why it fails.
+
+    `model_copy` does not validate, so a title of five hundred and one
+    characters or a blank one rides along to the store; the Firestore
+    repository revalidates on read and the confirm then fails every time.
+    """
+    try:
+        return type(after).model_validate(after.model_dump()), None
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        field = ".".join(str(part) for part in first["loc"]) or "content"
+        return None, f"{field} {first['msg'].lower()}"
 
 
 # How long a preview stays confirmable. Thirty minutes was shorter than the
@@ -103,7 +133,12 @@ def _apply_update(
             return None, "only a task can be pinned in place"
 
     elif isinstance(before, TaskContent):
-        updates.update(offered("title", "priority", "notes", "keep_scheduled", "category"))
+        updates.update(offered("title", "notes", "keep_scheduled", "category"))
+        if action.priority is not None:
+            priority = clean_generated_priority(action.priority)
+            if priority is None:
+                return None, "priority must be low, medium or high"
+            updates["priority"] = priority
         if action.body is not None and action.notes is None:
             # A task has no body. The text was still meant for it.
             updates["notes"] = action.body
@@ -132,7 +167,9 @@ def _apply_update(
 
     if not updates:
         return None, "it did not say what to change about it"
-    after = before.model_copy(update=updates)
+    after, reason = _validated(before.model_copy(update=updates))
+    if after is None:
+        return None, reason
     # An update that restates the record as it stands -- the model carrying a
     # record forward from an earlier turn with only its title filled in --
     # would preview as a card with nothing on it. Say so instead.
@@ -182,26 +219,36 @@ class ProposalService:
             due_date, embedded_time = split_generated_datetime(action.due_date)
             # A time inside the date field is still the time they asked for.
             at_time = clean_generated_time(action.due_time) or embedded_time
-            if action.entity_type == EntityType.task:
-                after = TaskContent(
-                    title=action.title, due_date=due_date, due_time=at_time,
-                    priority=action.priority or "medium", notes=action.notes or "",
-                    keep_scheduled=bool(action.keep_scheduled),
-                )
-            elif action.entity_type == EntityType.reminder:
-                # A reminder is meaningless without a day to fire on, so refuse
-                # rather than invent one; the model is told to ask instead.
-                if not due_date:
-                    return PreparedAction(reason="a reminder needs a day to fire on")
-                after = ReminderContent(
-                    title=action.title, date=due_date, time=at_time,
-                    notes=action.notes or "",
-                )
-            elif action.entity_type == EntityType.note:
-                after = NoteContent(
-                    title=action.title, body=action.body or action.notes or "",
-                )
-            else:
+            try:
+                if action.entity_type == EntityType.task:
+                    priority = clean_generated_priority(action.priority) if action.priority else "medium"
+                    if priority is None:
+                        return PreparedAction(reason="priority must be low, medium or high")
+                    after = TaskContent(
+                        title=action.title, due_date=due_date, due_time=at_time,
+                        priority=priority, notes=action.notes or "",
+                        keep_scheduled=bool(action.keep_scheduled),
+                    )
+                elif action.entity_type == EntityType.reminder:
+                    # A reminder is meaningless without a day to fire on, so
+                    # refuse rather than invent one; the model is told to ask.
+                    if not due_date:
+                        return PreparedAction(reason="a reminder needs a day to fire on")
+                    after = ReminderContent(
+                        title=action.title, date=due_date, time=at_time,
+                        notes=action.notes or "",
+                    )
+                elif action.entity_type == EntityType.note:
+                    after = NoteContent(
+                        title=action.title, body=action.body or action.notes or "",
+                    )
+            except ValidationError as exc:
+                # The model's values are untrusted input: a 600-character title
+                # is refused with a reason rather than failing the whole reply.
+                first = exc.errors()[0]
+                field = ".".join(str(part) for part in first["loc"]) or "content"
+                return PreparedAction(reason=f"{field} {first['msg'].lower()}")
+            if after is None:
                 # ScheduleContent exists in the model, but nothing in either
                 # client renders one, so a confirmed calendar block would vanish
                 # into a collection no screen reads. Refusing with a reason the

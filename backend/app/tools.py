@@ -80,6 +80,8 @@ DEFAULT_BRIEFING_ITEMS = 40
 # is the middle: enough to reason over a real note, bounded well inside any
 # prompt budget.
 FOCUS_TEXT_CHARS = 4000
+# Per search hit. Smaller than a focus: up to five of these arrive together.
+SEARCH_TEXT_CHARS = 2000
 
 # Briefing slots held back for notes, newest first, whatever the dated work
 # takes. Eight covers what a student is realistically editing this week.
@@ -438,7 +440,10 @@ class PlannerSession:
             text = record_text(record)
             results.append({
                 **self.summarize(record),
-                "untrusted_content": text,
+                # Capped like a focused record: a note holding a pasted lecture
+                # transcript is a hundred thousand characters, and five of
+                # those on every turn is more than the model's context.
+                "untrusted_content": safe_excerpt(text, SEARCH_TEXT_CHARS),
                 "injection_suspected": assess_untrusted_text(text).suspicious,
             })
         self.search_citation_ids.extend(item["citation_id"] for item in results)

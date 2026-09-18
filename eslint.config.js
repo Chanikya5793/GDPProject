@@ -11,7 +11,7 @@ export default defineConfig([
     // system; linting it with the web app's browser globals flags valid
     // CommonJS config plugins as no-undef.
     'mobile',
-    'backend/.venv', 'backend/.pytest_cache',
+    'backend/.venv*', 'backend/.pytest_cache',
   ]),
   {
     files: ['**/*.{js,jsx}'],

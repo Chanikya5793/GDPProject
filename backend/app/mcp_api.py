@@ -108,23 +108,39 @@ class McpToolService:
                 raise ValueError(f"{key} must be a string")
         if name == "planner_search" and not 1 <= len(arguments["query"]) <= 8000:
             raise ValueError("Search query length is invalid")
+        # The caller on the other end of MCP is a model, so the same consent
+        # the in-app assistant honours applies here: nothing when the student
+        # has turned AI off, and otherwise only the kinds they index and the
+        # records they approved. planner_search always went through this
+        # gate; the listing tools used to hand over everything.
+        privacy = self.repository.get_privacy(uid)
+        if not privacy.ai_enabled:
+            self.audit.record(uid, "mcp_access", "denied", {"tool": name, "reason": "ai_disabled"})
+            raise PermissionError("AI access is disabled for this account")
+
+        def visible(kind: EntityType):
+            if kind not in privacy.indexed_entity_types:
+                return []
+            return [
+                record for record in self.repository.list_records(uid, kind)
+                if record.approved_for_ai
+            ]
+
         if name == "tasks":
-            records = self.repository.list_records(uid, EntityType.task)
+            records = visible(EntityType.task)
             if not arguments.get("include_completed", False):
                 records = [record for record in records if not record.content.completed]  # type: ignore[union-attr]
             result = [record.model_dump(mode="json") for record in records]
         elif name == "reminders":
-            result = [record.model_dump(mode="json") for record in
-                      self.repository.list_records(uid, EntityType.reminder)]
+            result = [record.model_dump(mode="json") for record in visible(EntityType.reminder)]
         elif name == "notes":
             result = [{"record_id": record.record_id, "revision": record.revision,
-                       "title": record.content.title} for record in
-                      self.repository.list_records(uid, EntityType.note)]
+                       "title": record.content.title} for record in visible(EntityType.note)]
         elif name == "calendar_window":
             start, end = date.fromisoformat(arguments["start"]), date.fromisoformat(arguments["end"])
             result = []
             for kind in (EntityType.task, EntityType.reminder, EntityType.schedule):
-                for record in self.repository.list_records(uid, kind):
+                for record in visible(kind):
                     content = record.content
                     item_date = (content.due_date if isinstance(content, TaskContent) else
                                  content.date if isinstance(content, ReminderContent) else
@@ -134,7 +150,7 @@ class McpToolService:
         elif name == "workload_summary":
             records = []
             for kind in EntityType:
-                records.extend(self.repository.list_records(uid, kind))
+                records.extend(visible(kind))
             capacity = self.repository.get_planner_settings(uid).max_daily_minutes
             result = [item.model_dump(mode="json")
                       for item in self.planner.analyze(records, max_daily_minutes=capacity)]

@@ -53,6 +53,17 @@ def _created_records(proposal: ActionProposal) -> List[ProposedRecord]:
     return [ProposedRecord(record_id=proposal.record_id, content=proposal.after)]
 
 
+def _upsert_hash(entity_type: EntityType, record_id: str, request: RecordUpsertRequest) -> str:
+    """What an idempotency key stands for: the body *and* where it was sent.
+
+    Hashing the body alone let a key be replayed against a different record
+    with the same content and answer as if the second write had happened.
+    """
+    return hashlib.sha256(
+        f"upsert:{entity_type.value}:{record_id}:{request.model_dump_json()}".encode()
+    ).hexdigest()
+
+
 class RevisionConflict(RuntimeError):
     pass
 
@@ -63,6 +74,10 @@ class IdempotencyConflict(RuntimeError):
 
 class NotFound(RuntimeError):
     pass
+
+
+class ProposalStateError(RuntimeError):
+    """The proposal is no longer pending: a reject or another confirm got there first."""
 
 
 class PlannerRepository(Protocol):
@@ -135,7 +150,7 @@ class MemoryPlannerRepository:
         with self._lock:
             if request.content.entity_type != entity_type:
                 raise ValueError("Path entity type does not match content entity type")
-            request_hash = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+            request_hash = _upsert_hash(entity_type, record_id, request)
             idem_key = (uid, request.idempotency_key)
             if idem_key in self.idempotency:
                 prior_hash, prior_record = self.idempotency[idem_key]
@@ -231,9 +246,9 @@ class MemoryPlannerRepository:
             if stored.status == "confirmed":
                 return deepcopy(stored)
             if stored.status != "pending":
-                raise ValueError(f"Proposal is {stored.status}")
+                raise ProposalStateError(f"Proposal is {stored.status}")
             if not proposal.record_id:
-                raise ValueError("Proposal has no target record")
+                raise ProposalStateError("Proposal has no target record")
             key = (uid, proposal.entity_type, proposal.record_id)
             current = self.records.get(key)
             if proposal.operation.value == "create":
@@ -407,7 +422,7 @@ class FirestorePlannerRepository:
         idem_ref = self.client.collection("users").document(uid).collection("idempotency").document(
             request.idempotency_key
         )
-        request_hash = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+        request_hash = _upsert_hash(entity_type, record_id, request)
 
         @firestore.transactional
         def apply(txn):
@@ -453,6 +468,10 @@ class FirestorePlannerRepository:
 
         apply(transaction)
         snapshot = ref.get()
+        if not snapshot.exists:
+            # A replayed key whose record has since been deleted: the write it
+            # stands for did happen, but there is nothing to hand back.
+            raise NotFound("Record not found")
         return self._deserialize(uid, snapshot)
 
     def delete_record(
@@ -557,7 +576,7 @@ class FirestorePlannerRepository:
         self, uid: str, proposal: ActionProposal, idempotency_key: str
     ) -> ActionProposal:
         if not proposal.record_id:
-            raise ValueError("Proposal has no target record")
+            raise ProposalStateError("Proposal has no target record")
         proposal_ref = self.client.collection("users").document(uid).collection(
             "proposals"
         ).document(proposal.proposal_id)
@@ -585,7 +604,7 @@ class FirestorePlannerRepository:
                     raise IdempotencyConflict("Proposal idempotency state is inconsistent")
                 return
             if status != "pending":
-                raise ValueError(f"Proposal is {status}")
+                raise ProposalStateError(f"Proposal is {status}")
 
             now = datetime.now(timezone.utc)
             if proposal.operation.value == "create":
@@ -708,25 +727,6 @@ class FirestorePlannerRepository:
             messages=[ConversationMessage.model_validate(m) for m in payload["messages"]],
         )
 
-    def _write_thread(self, uid: str, detail: ConversationDetail) -> None:
-        payload = self.cipher.encrypt(
-            uid, "conversation", detail.conversation_id, 1,
-            {
-                "title": detail.title,
-                "messages": [m.model_dump(mode="json") for m in detail.messages],
-            },
-        )
-        self._threads(uid).document(detail.conversation_id).set({
-            "uid": uid,
-            "conversation_id": detail.conversation_id,
-            "encrypted_payload": payload.to_dict(),
-            "created_at": detail.created_at,
-            "updated_at": detail.updated_at,
-            # A real Firestore TTL field, so the retention period in Settings is
-            # performed rather than merely displayed.
-            "expires_at": detail.expires_at,
-        })
-
     def list_conversations(self, uid: str, limit: int = 50) -> List[Conversation]:
         # Only the metadata is needed for a sidebar, but the title lives inside
         # the encrypted payload, so each row is decrypted. Bounded by `limit`.
@@ -754,38 +754,76 @@ class FirestorePlannerRepository:
             raise NotFound("Conversation not found")
         return self._read_thread(uid, snapshot)
 
+    def _thread_document(self, uid: str, detail: ConversationDetail) -> dict:
+        payload = self.cipher.encrypt(
+            uid, "conversation", detail.conversation_id, 1,
+            {
+                "title": detail.title,
+                "messages": [m.model_dump(mode="json") for m in detail.messages],
+            },
+        )
+        return {
+            "uid": uid,
+            "conversation_id": detail.conversation_id,
+            "encrypted_payload": payload.to_dict(),
+            "created_at": detail.created_at,
+            "updated_at": detail.updated_at,
+            # A real Firestore TTL field, so the retention period in Settings is
+            # performed rather than merely displayed.
+            "expires_at": detail.expires_at,
+        }
+
     def append_turn(
         self, uid: str, conversation_id: Optional[str],
         question: ConversationMessage, answer: ConversationMessage,
         retention_days: int = 30,
     ) -> ConversationDetail:
+        # A thread is one document, so two turns landing at once -- the same
+        # question sent from a phone and a laptop, or a retry racing the
+        # original -- each read N messages and each wrote N+2, and one
+        # exchange was lost. Read and write inside one transaction so the
+        # second writer sees the first.
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(days=retention_days or 3650)
-        existing: Optional[ConversationDetail] = None
-        if conversation_id:
-            try:
-                existing = self.get_conversation(uid, conversation_id)
-            except NotFound:
-                existing = None
-        if existing is None:
-            existing = ConversationDetail(
-                conversation_id=conversation_id or generated_record_id(),
-                title=thread_title(question.text),
-                created_at=now, updated_at=now, expires_at=expires_at,
-                message_count=0, messages=[],
-            )
-        messages = [*existing.messages, question, answer][-MAX_THREAD_MESSAGES:]
-        updated = existing.model_copy(update={
-            "messages": messages, "message_count": len(messages),
-            "updated_at": now, "expires_at": expires_at,
-        })
-        self._write_thread(uid, updated)
-        return updated
+        thread_id = conversation_id or generated_record_id()
+        ref = self._threads(uid).document(thread_id)
+        transaction = self.client.transaction()
+
+        @firestore.transactional
+        def apply(txn) -> ConversationDetail:
+            snapshot = ref.get(transaction=txn)
+            if snapshot.exists:
+                existing = self._read_thread(uid, snapshot)
+            else:
+                existing = ConversationDetail(
+                    conversation_id=thread_id, title=thread_title(question.text),
+                    created_at=now, updated_at=now, expires_at=expires_at,
+                    message_count=0, messages=[],
+                )
+            messages = [*existing.messages, question, answer][-MAX_THREAD_MESSAGES:]
+            updated = existing.model_copy(update={
+                "messages": messages, "message_count": len(messages),
+                "updated_at": now, "expires_at": expires_at,
+            })
+            txn.set(ref, self._thread_document(uid, updated))
+            return updated
+
+        return apply(transaction)
 
     def rename_conversation(self, uid: str, conversation_id: str, title: str) -> Conversation:
-        detail = self.get_conversation(uid, conversation_id)
-        renamed = detail.model_copy(update={"title": title})
-        self._write_thread(uid, renamed)
+        ref = self._threads(uid).document(conversation_id)
+        transaction = self.client.transaction()
+
+        @firestore.transactional
+        def apply(txn) -> ConversationDetail:
+            snapshot = ref.get(transaction=txn)
+            if not snapshot.exists:
+                raise NotFound("Conversation not found")
+            renamed = self._read_thread(uid, snapshot).model_copy(update={"title": title})
+            txn.set(ref, self._thread_document(uid, renamed))
+            return renamed
+
+        renamed = apply(transaction)
         return Conversation(**renamed.model_dump(exclude={"messages"}))
 
     def delete_conversation(self, uid: str, conversation_id: str) -> bool:
