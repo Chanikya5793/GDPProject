@@ -76,7 +76,10 @@ class FirebaseTokenVerifier:
         # is opened. Without this anyone could register any @nwmissouri.edu
         # address and be let in. Only enforced while the policy itself is,
         # so a project with no domain restriction keeps working as before.
-        if self.policy.enforce and email and not decoded.get("email_verified"):
+        if (
+            self.settings.require_verified_email and self.policy.enforce
+            and email and not decoded.get("email_verified")
+        ):
             raise Forbidden(
                 "Verify your email address to use the planner. Check your inbox "
                 "for the link, then sign in again.",
