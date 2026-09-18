@@ -60,6 +60,15 @@ export interface NoteAttachment {
   approvedForAi: boolean;
 }
 
+/** A text attachment as the planner API stores it. Web creates these; the
+ * phone has no UI for them and only carries them through untouched. */
+export interface ServerAttachment {
+  attachment_id: string;
+  filename: string;
+  text: string;
+  approved_for_ai: boolean;
+}
+
 export interface Note {
   id: PlannerRecordId;
   userId: string;
@@ -72,6 +81,15 @@ export interface Note {
   _revision?: number;
   _approvedForAi?: boolean;
   _pending?: boolean;
+  /**
+   * Fields owned by another client, round-tripped so a save from here does
+   * not erase them: the web's text attachments (which feed the assistant's
+   * index) and its string tag ids. Both used to be dropped on every write --
+   * a phone edit sent `attachments: []` and turned `"chemistry"` into
+   * `"NaN"`.
+   */
+  _serverAttachments?: ServerAttachment[];
+  _foreignTagIds?: string[];
 }
 
 export interface Tag {

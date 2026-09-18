@@ -1,7 +1,7 @@
 import { apiRequest, idempotencyKey } from './client';
 import { getItem, setItem } from './storage';
 import { preserveAttachments } from '@/utils/attachments';
-import { Note, PlannerRecordId, Reminder, Task } from '@/types';
+import { Note, PlannerRecordId, Reminder, ServerAttachment, Task } from '@/types';
 import { auth } from '@/lib/firebase';
 
 type Kind = 'task' | 'reminder' | 'note';
@@ -53,12 +53,20 @@ function fromServer(record: ServerRecord): PlannerItem {
     seriesId: (record.content.series_id as string) || null,
     recurrence: (record.content.recurrence as Reminder['recurrence']) || null,
   };
+  const tagIds = (record.content.tag_ids as Array<string | number> || []).map(String);
+  const attachments = (record.content.attachments as ServerAttachment[] | undefined) || [];
   return {
     ...common, title: record.content.title, body: String(record.content.body || ''),
-    tagIds: (record.content.tag_ids as Array<string | number> || []).map(Number),
+    // This app's tags have numeric ids; the web's are strings. Anything not
+    // ours is kept aside and sent back as-is rather than coerced to NaN.
+    tagIds: tagIds.filter(isNumericId).map(Number),
+    _foreignTagIds: tagIds.filter(id => !isNumericId(id)),
+    _serverAttachments: attachments.filter(item => item && typeof item.text === 'string'),
     updatedAt: record.updated_at,
   };
 }
+
+const isNumericId = (value: string) => /^\d+$/.test(value);
 
 function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
   if (kind === 'task') {
@@ -83,7 +91,10 @@ function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
   const note = item as Note;
   return {
     entity_type: 'note', title: note.title, body: note.body,
-    tag_ids: note.tagIds.map(String), attachments: [],
+    tag_ids: [...note.tagIds.map(String), ...(note._foreignTagIds || [])],
+    // Image attachments stay on the device; the web's text attachments are
+    // the server's and go back exactly as they came.
+    attachments: note._serverAttachments || [],
   };
 }
 
