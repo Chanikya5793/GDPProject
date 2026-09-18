@@ -1,4 +1,4 @@
-import { getSecureCollection, setSecureCollection } from './secureCollections'
+import { getSecureCollection, setSecureCollection, updateSecureCollection } from './secureCollections'
 
 const NAMESPACE = 'audit:activity'
 const MAX_LOGS = 300
@@ -38,28 +38,33 @@ function sanitizeSnapshot(value) {
 
 export async function addLog(action, entity, title = '', payload = {}) {
   if (suppressDepth > 0) return null
-  const logs = await load()
-  const now = Date.now()
-  const last = logs[0]
-  if (last && last.sessionId === SESSION_ID && last.action === action &&
-      last.entity === entity && last.title === title && !last.reverted &&
-      now - new Date(last.ts).getTime() < DEDUPE_WINDOW_MS) {
-    last.ts = new Date(now).toISOString()
-    if (payload.after !== undefined) last.after = sanitizeSnapshot(payload.after)
-    await save(logs)
-    return last.id
-  }
-  const entry = {
-    id: crypto.randomUUID(), ts: new Date(now).toISOString(), sessionId: SESSION_ID,
-    sessionStart: SESSION_START, action, entity, title,
-    ...(payload.entityId !== undefined ? { entityId: payload.entityId } : {}),
-    ...(payload.before !== undefined ? { before: sanitizeSnapshot(payload.before) } : {}),
-    ...(payload.after !== undefined ? { after: sanitizeSnapshot(payload.after) } : {}),
-    ...(payload.trashId ? { trashId: payload.trashId } : {}),
-    ...(payload.revertOf ? { revertOf: payload.revertOf } : {}),
-  }
-  await save([entry, ...logs])
-  return entry.id
+  let id = null
+  // The log is one stored list, so concurrent entries -- a batch reschedule
+  // logs one per task -- are serialised here rather than dropped.
+  await updateSecureCollection(NAMESPACE, [], logs => {
+    const now = Date.now()
+    const last = logs[0]
+    if (last && last.sessionId === SESSION_ID && last.action === action &&
+        last.entity === entity && last.title === title && !last.reverted &&
+        now - new Date(last.ts).getTime() < DEDUPE_WINDOW_MS) {
+      const merged = { ...last, ts: new Date(now).toISOString() }
+      if (payload.after !== undefined) merged.after = sanitizeSnapshot(payload.after)
+      id = merged.id
+      return [merged, ...logs.slice(1)]
+    }
+    const entry = {
+      id: crypto.randomUUID(), ts: new Date(now).toISOString(), sessionId: SESSION_ID,
+      sessionStart: SESSION_START, action, entity, title,
+      ...(payload.entityId !== undefined ? { entityId: payload.entityId } : {}),
+      ...(payload.before !== undefined ? { before: sanitizeSnapshot(payload.before) } : {}),
+      ...(payload.after !== undefined ? { after: sanitizeSnapshot(payload.after) } : {}),
+      ...(payload.trashId ? { trashId: payload.trashId } : {}),
+      ...(payload.revertOf ? { revertOf: payload.revertOf } : {}),
+    }
+    id = entry.id
+    return [entry, ...logs].slice(0, MAX_LOGS)
+  })
+  return id
 }
 
 export async function getLogs() {
@@ -72,16 +77,12 @@ export async function clearLogs() {
 
 export async function deleteLogs(ids) {
   const selected = new Set(ids)
-  await save((await load()).filter(log => !selected.has(log.id)))
+  await updateSecureCollection(NAMESPACE, [], logs => logs.filter(log => !selected.has(log.id)))
 }
 
 export async function markReverted(id) {
-  const logs = await load()
-  const entry = logs.find(log => log.id === id)
-  if (entry) {
-    entry.reverted = true
-    entry.revertedAt = new Date().toISOString()
-    await save(logs)
-  }
+  await updateSecureCollection(NAMESPACE, [], logs => logs.map(log => (
+    log.id === id ? { ...log, reverted: true, revertedAt: new Date().toISOString() } : log
+  )))
 }
 

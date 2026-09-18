@@ -1,4 +1,4 @@
-import { getSecureCollection, setSecureCollection } from './secureCollections'
+import { getSecureCollection, updateSecureCollection } from './secureCollections'
 
 const NAMESPACE = 'metadata:categories'
 const BUILT_IN = [
@@ -16,17 +16,15 @@ export async function getCategories() {
 }
 
 export async function createCategory(category) {
-  const custom = await getSecureCollection(NAMESPACE, [])
   const created = {
     ...category, id: `custom_${crypto.randomUUID()}`, builtin: false,
   }
-  await setSecureCollection(NAMESPACE, [...custom, created])
+  await updateSecureCollection(NAMESPACE, [], custom => [...custom, created])
   return created
 }
 
 export async function deleteCategory(id) {
-  const custom = await getSecureCollection(NAMESPACE, [])
-  await setSecureCollection(NAMESPACE, custom.filter(category => category.id !== id))
+  await updateSecureCollection(NAMESPACE, [], custom => custom.filter(category => category.id !== id))
   return { success: true }
 }
 

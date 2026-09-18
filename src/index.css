@@ -1307,3 +1307,17 @@ button { font-family: inherit; cursor: pointer; }
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }
+
+/* ── Verify-email banner ── */
+.verify-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.verify-banner-actions { display: flex; gap: 8px; margin-left: auto; }
+.verify-banner-status { flex-basis: 100%; color: var(--muted, #6b7280); font-size: 12.5px; }

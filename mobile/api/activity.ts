@@ -72,11 +72,12 @@ export async function revertLog(entry: LogEntry): Promise<RevertResult> {
         // Tags are not moved to the trash on delete, so there is no trash entry
         // to consult; the snapshot below is the only route back.
         if (trashId !== undefined) {
-          const fromTrash = await restoreFromTrash(String(trashId));
-          if (fromTrash) {
-            const byType = RESTORERS[fromTrash.type as LogEntity];
-            if (byType) { await byType(fromTrash.item as never); restored = true; }
-          }
+          const fromTrash = await restoreFromTrash(String(trashId), async (item, type) => {
+            const byType = RESTORERS[type as LogEntity];
+            if (!byType) throw new Error(unsupported(type as LogEntity));
+            await byType(item as never);
+          });
+          if (fromTrash) restored = true;
         }
         // The trash entry may have been emptied; the snapshot is the fallback.
         if (!restored && before) await restore(before as never);

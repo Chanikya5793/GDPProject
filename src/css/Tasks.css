@@ -196,7 +196,8 @@
     z-index 0s .25s;
 }
 
-.task-card:hover {
+.task-card:hover,
+.task-card:focus-within {
   transform: translateY(-3px);
   box-shadow: 0 12px 32px rgba(0,0,0,.12), 0 4px 10px rgba(0,0,0,.04);
   z-index: 10;
@@ -241,11 +242,13 @@
   font-weight: 600;
 }
 
-.task-card:hover .task-date-compact {
+.task-card:hover .task-date-compact,
+.task-card:focus-within .task-date-compact {
   opacity: 0;
 }
 
-.task-card:hover .task-card-title {
+.task-card:hover .task-card-title,
+.task-card:focus-within .task-card-title {
   white-space: normal;
   word-break: break-word;
 }
@@ -260,7 +263,11 @@
   transition: grid-template-rows .2s ease;
 }
 
-.task-card:hover .task-card-details {
+/* Also on focus-within: the complete, edit and delete buttons live inside
+   this reveal, and without it a keyboard user tabbed onto buttons they
+   could not see. */
+.task-card:hover .task-card-details,
+.task-card:focus-within .task-card-details {
   grid-template-rows: 1fr;
   transition: grid-template-rows .3s cubic-bezier(.4, 0, .2, 1);
 }

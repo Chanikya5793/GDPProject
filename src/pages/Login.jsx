@@ -11,17 +11,23 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [pw, setPw]    = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (busy) return
     setError('')
+    setBusy(true)
+    try {
+      // Call the right auth function based on current mode
+      const result = mode === 'login'
+        ? await login(email, pw) : await register(name, email, pw)
 
-    // Call the right auth function based on current mode
-    const result = mode === 'login' 
-      ? await login(email, pw) : await register(name, email, pw)
-
-    // If it fails, show an error
-    if (!result.success) setError(result.error || 'Something went wrong.')
+      // If it fails, show an error
+      if (!result.success) setError(result.error || 'Something went wrong.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -66,7 +72,7 @@ export default function Login() {
 
           {error && <p className="login-error">{error}</p>}
 
-          <button type="submit" className="btn-primary"
+          <button type="submit" className="btn-primary" disabled={busy}
             style={{ width: '100%', justifyContent: 'center', padding: '11px' }}>
             {mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>

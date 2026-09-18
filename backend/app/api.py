@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, List, Optional, Union
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .ai import GenerationTimeout
-from .auth import CurrentUser
+from .auth import CurrentUser, Forbidden
 from .config import get_settings
 from .models import (
     ActionProposal,
@@ -35,6 +36,7 @@ from .models import (
     ProposalOperation,
     ProposedChange,
     RecordDeleteRequest,
+    RecordId,
     RecordUpsertRequest,
     RejectedMigrationItem,
     RejectProposalRequest,
@@ -43,7 +45,7 @@ from .models import (
 from .proposals import InvalidProposal
 from .rag import AgentStep
 from .ratelimit import RateLimitExceeded
-from .repository import IdempotencyConflict, NotFound, RevisionConflict
+from .repository import IdempotencyConflict, NotFound, ProposalStateError, RevisionConflict
 from .runtime import Container, build_production_container
 from .signup_policy import get_signup_policy
 
@@ -69,6 +71,22 @@ SSE_HEADERS = {
 
 def sse_event(event: str, payload: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def local_today(timezone_name: str) -> date:
+    """The student's calendar date, from the zone the client sent.
+
+    Both clients send the device zone with every question and the request
+    model validates it, but the answer used to be built on the server's own
+    clock -- UTC on Cloud Run -- so from early evening in Missouri "today"
+    was already tomorrow: work due today read as overdue and tomorrow's as
+    due today. An unknown zone name falls back to UTC rather than failing
+    the question over it.
+    """
+    try:
+        return datetime.now(ZoneInfo(timezone_name)).date()
+    except (ZoneInfoNotFoundError, ValueError):
+        return datetime.now(timezone.utc).date()
 
 
 def _rationale(action) -> str:
@@ -354,6 +372,16 @@ def create_app(container: Container | None = None) -> FastAPI:
     async def invalid_proposal(_request: Request, exc: InvalidProposal):
         return JSONResponse(status_code=409, content={"detail": str(exc), "code": "invalid_proposal"})
 
+    @app.exception_handler(Forbidden)
+    async def forbidden(_request: Request, exc: Forbidden):
+        return JSONResponse(status_code=403, content={"detail": exc.detail, "code": exc.code})
+
+    @app.exception_handler(ProposalStateError)
+    async def proposal_state(_request: Request, exc: ProposalStateError):
+        # Raised inside the confirm transaction when a reject or a second
+        # confirm won the race. The same answer as the pre-check gives.
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "invalid_proposal"})
+
     @app.get("/v1/signup-policy")
     def signup_policy() -> Dict[str, Any]:
         # Public on purpose: the sign-up form needs it before anyone has a token,
@@ -375,19 +403,27 @@ def create_app(container: Container | None = None) -> FastAPI:
         return services.repository.list_records(user.uid, entity_type)
 
     @app.get("/v1/records/{entity_type}/{record_id}", response_model=PlannerRecord)
-    def get_record(entity_type: EntityType, record_id: str, user: CurrentUser, services: ContainerDep):
+    def get_record(
+        entity_type: EntityType, record_id: RecordId, user: CurrentUser, services: ContainerDep,
+    ):
         return services.repository.get_record(user.uid, entity_type, record_id)
 
     @app.put("/v1/records/{entity_type}/{record_id}", response_model=PlannerRecord)
     def upsert_record(
-        entity_type: EntityType, record_id: str, body: RecordUpsertRequest,
+        entity_type: EntityType, record_id: RecordId, body: RecordUpsertRequest,
         user: CurrentUser, services: ContainerDep,
     ):
+        if body.content.entity_type != entity_type:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Path names a {entity_type.value} but the content is a "
+                       f"{body.content.entity_type.value}",
+            )
         return services.repository.upsert_record(user.uid, entity_type, record_id, body)
 
     @app.delete("/v1/records/{entity_type}/{record_id}", status_code=204)
     def delete_record(
-        entity_type: EntityType, record_id: str, body: RecordDeleteRequest,
+        entity_type: EntityType, record_id: RecordId, body: RecordDeleteRequest,
         user: CurrentUser, services: ContainerDep,
     ) -> Response:
         services.repository.delete_record(
@@ -404,6 +440,9 @@ def create_app(container: Container | None = None) -> FastAPI:
         record_ids = []
         rejected = []
         seen: Dict[str, int] = {}
+        # The key pattern caps at 128 characters and migration_id alone may be
+        # that long, so the per-item suffix hangs off a digest of it instead.
+        migration_prefix = hashlib.sha256(body.migration_id.encode()).hexdigest()[:32]
         for raw in body.items:
             try:
                 item = MigrationItem.model_validate(raw)
@@ -443,8 +482,8 @@ def create_app(container: Container | None = None) -> FastAPI:
                 user.uid, item.content.entity_type, record_id,
                 RecordUpsertRequest(
                     content=item.content,
-                    expected_revision=None if not existed else 1,
-                    idempotency_key=f"{body.migration_id}:{idem_suffix}",
+                    expected_revision=None,
+                    idempotency_key=f"migration:{migration_prefix}:{idem_suffix}",
                     approved_for_ai=item.approved_for_ai,
                 ),
             )
@@ -502,13 +541,13 @@ def create_app(container: Container | None = None) -> FastAPI:
 
     @app.post("/v1/index/{entity_type}/{record_id}", status_code=202)
     def index_record(
-        entity_type: EntityType, record_id: str, body: IndexRequest,
+        entity_type: EntityType, record_id: RecordId, body: IndexRequest,
         user: CurrentUser, services: ContainerDep,
     ):
         try:
             services.indexing.index(user.uid, entity_type, record_id, body.expected_revision)
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise Forbidden(str(exc), "ai_disabled") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"status": "indexed", "record_id": record_id, "revision": body.expected_revision}
@@ -519,7 +558,7 @@ def create_app(container: Container | None = None) -> FastAPI:
 
     @app.delete("/v1/index/{entity_type}/{record_id}", status_code=204)
     def delete_index_record(
-        entity_type: EntityType, record_id: str, user: CurrentUser, services: ContainerDep,
+        entity_type: EntityType, record_id: RecordId, user: CurrentUser, services: ContainerDep,
     ) -> Response:
         services.vector_store.delete_record(user.uid, entity_type, record_id)
         services.audit.record(user.uid, "deletion", metadata={
@@ -547,19 +586,35 @@ def create_app(container: Container | None = None) -> FastAPI:
             raise
         try:
             answer, citations, disclosure, generated = services.copilot.answer(
-                user.uid, body.message,
+                user.uid, body.message, today=local_today(body.timezone),
                 history=thread_history(services, user.uid, body, privacy),
                 focus=body.focus,
                 prior_citations=thread_citations(services, user.uid, body, privacy),
             )
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise Forbidden(str(exc), "ai_disabled") from exc
         except GenerationTimeout as exc:
             # Expected under load rather than a fault: say so and let them retry,
             # instead of a bare 500.
             raise HTTPException(
                 status_code=504,
                 detail="The assistant took too long to answer. Please try again.",
+            ) from exc
+        except (RevisionConflict, IdempotencyConflict, NotFound, RateLimitExceeded):
+            raise
+        except Exception as exc:
+            # A provider outage, a safety-blocked reply, or a document the
+            # model produced that does not parse. The streaming route already
+            # reports these in-band as generation_failed; the blocking one
+            # answered with a bare 500 and a stack trace in the log. The
+            # detail is withheld on purpose: it can quote the prompt, and the
+            # prompt carries the student's planner records.
+            services.audit.record(user.uid, "failure", "failed", {
+                "stage": "copilot_chat", "error_type": type(exc).__name__,
+            })
+            raise HTTPException(
+                status_code=502,
+                detail="The assistant could not answer that. Please try again.",
             ) from exc
         response = build_chat_response(
             services, user.uid, answer, citations, disclosure, generated
@@ -602,7 +657,7 @@ def create_app(container: Container | None = None) -> FastAPI:
             )
             raise
         stream = services.copilot.answer_stream(
-            user.uid, body.message,
+            user.uid, body.message, today=local_today(body.timezone),
             history=thread_history(services, user.uid, body, privacy),
             focus=body.focus,
             prior_citations=thread_citations(services, user.uid, body, privacy),
@@ -616,7 +671,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         except StopIteration as exc:
             raise HTTPException(status_code=500, detail="The assistant produced no answer.") from exc
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise Forbidden(str(exc), "ai_disabled") from exc
         except GenerationTimeout as exc:
             raise HTTPException(
                 status_code=504,
@@ -628,11 +683,22 @@ def create_app(container: Container | None = None) -> FastAPI:
             while True:
                 if isinstance(item, tuple):
                     answer, citations, disclosure, generated = item
-                    response = build_chat_response(
-                        services, user.uid, answer, citations, disclosure, generated
-                    )
-                    response = remember_turn(services, user.uid, privacy, body, response)
-                    retain_chat_response(services, user.uid, privacy, body, response)
+                    # Building the previews and storing the turn can fail the
+                    # same way generation can, and once the body has started
+                    # a raised exception just drops the connection. The client
+                    # is promised a terminal event either way.
+                    try:
+                        response = build_chat_response(
+                            services, user.uid, answer, citations, disclosure, generated
+                        )
+                        response = remember_turn(services, user.uid, privacy, body, response)
+                        retain_chat_response(services, user.uid, privacy, body, response)
+                    except Exception:
+                        yield sse_event("error", {
+                            "code": "generation_failed",
+                            "detail": "The assistant could not finish that answer.",
+                        })
+                        return
                     yield sse_event("final", response.model_dump(mode="json"))
                     return
                 if isinstance(item, AgentStep):
@@ -706,9 +772,17 @@ def create_app(container: Container | None = None) -> FastAPI:
         proposal_id: str, body: ConfirmProposalRequest,
         user: CurrentUser, services: ContainerDep,
     ):
-        return services.proposals.confirm(
+        confirmed = services.proposals.confirm(
             user.uid, proposal_id, body.idempotency_key, body.expected_base_revision
         )
+        # DELETE /v1/records clears the record's vector; a delete confirmed
+        # through the assistant deletes the same record and has to do the same,
+        # or the orphaned embedding keeps taking a retrieval slot.
+        if confirmed.operation == ProposalOperation.delete and confirmed.record_id:
+            services.vector_store.delete_record(
+                user.uid, confirmed.entity_type, confirmed.record_id
+            )
+        return confirmed
 
     @app.post("/v1/proposals/{proposal_id}/reject", response_model=ActionProposal)
     def reject_proposal(
@@ -746,6 +820,8 @@ def create_app(container: Container | None = None) -> FastAPI:
             elif body.method == "tools/call":
                 name = str(body.params.get("name", ""))
                 arguments = body.params.get("arguments") or {}
+                if not isinstance(arguments, dict):
+                    raise ValueError("arguments must be an object")
                 output = services.mcp_tools.call(user.uid, name, arguments)
                 result = {"content": [{"type": "text", "text": json.dumps(output, default=str)}],
                           "isError": False}

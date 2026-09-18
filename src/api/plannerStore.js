@@ -1,5 +1,5 @@
 import { apiFetch, idempotencyKey } from './client'
-import { getSecureItem, setSecureItem } from '../security/cryptoStore'
+import { getSecureItem, setSecureItem, updateSecureItem, withSecureLock } from '../security/cryptoStore'
 
 const ENTITY_TO_CACHE = {
   task: 'records:tasks',
@@ -7,6 +7,8 @@ const ENTITY_TO_CACHE = {
   note: 'records:notes',
   schedule: 'records:schedules',
 }
+
+const OUTBOX = 'sync:outbox'
 
 function currentUid() {
   const value = sessionStorage.getItem('nw_authenticated_uid')
@@ -71,25 +73,52 @@ function toServer(entityType, item) {
   throw new Error(`Unsupported planner entity: ${entityType}`)
 }
 
-async function cache(entityType, records) {
-  await setSecureItem(currentUid(), ENTITY_TO_CACHE[entityType], records)
+/**
+ * Note attachments carry file data the server never sees, so the device copy
+ * is kept over the server's -- but only when it has any. An empty local list
+ * used to win over attachments added from another device.
+ */
+function withLocalAttachments(entityType, saved, local) {
+  if (entityType !== 'note') return saved
+  const attachments = local?.attachments?.length ? local.attachments : saved.attachments
+  return attachments === saved.attachments ? saved : { ...saved, attachments }
 }
+
+const sameId = (left, right) => String(left) === String(right)
 
 async function cached(entityType) {
   return getSecureItem(currentUid(), ENTITY_TO_CACHE[entityType], [])
 }
 
-async function outbox() {
-  return getSecureItem(currentUid(), 'sync:outbox', [])
+// Every write to a collection goes through here. The collection is stored
+// whole, so it has to be re-read under the lock: a batch of updates used to
+// read one snapshot each and write it back each, keeping only the last.
+function mutateCache(entityType, updater) {
+  return updateSecureItem(currentUid(), ENTITY_TO_CACHE[entityType], [], updater)
 }
 
-async function saveOutbox(items) {
-  return setSecureItem(currentUid(), 'sync:outbox', items)
+async function cache(entityType, records) {
+  await setSecureItem(currentUid(), ENTITY_TO_CACHE[entityType], records)
 }
 
-async function queue(operation) {
-  const items = await outbox()
-  await saveOutbox([...items, operation])
+function queue(operation) {
+  return updateSecureItem(currentUid(), OUTBOX, [], items => [...items, operation])
+}
+
+// A change that could not reach the server is kept for later only when there
+// is a server to reach. The public demo has none: queueing there grew the
+// outbox with every edit and replayed all of it, failing, on every load.
+async function keepForLater(operation, error) {
+  if (error.code === 'not_configured') return
+  await queue(operation)
+}
+
+// Errors that will not go away by retrying: the request itself was refused.
+// A network failure has no status; a 5xx and a missing service are worth
+// another try once the connection is back.
+function isPermanentFailure(error) {
+  if (error.code === 'misconfigured') return true
+  return Boolean(error.status && error.status < 500 && error.code !== 'not_configured')
 }
 
 async function sendOperation(operation) {
@@ -113,32 +142,61 @@ async function synchronizeIndex(entityType, record) {
   }
 }
 
+/**
+ * Send everything queued while offline, in order.
+ *
+ * Revisions are chained through the flush: an offline edit is queued with
+ * the revision the device last saw, so a second edit of the same record
+ * carried the same number and was refused once the first had landed. Each
+ * success now feeds its new revision into the next operation on that record.
+ *
+ * A refusal the server will repeat -- a stale revision, a record deleted
+ * elsewhere -- drops that operation and moves on; the next list refreshes
+ * the record from the server. Keeping it used to block every operation
+ * behind it, on every load, for good. Only a failure to reach the server
+ * keeps the queue.
+ */
 export async function flushPlannerOutbox() {
-  const items = await outbox()
-  const remaining = []
-  for (const operation of items) {
-    try {
-      await sendOperation(operation)
-    } catch (error) {
-      remaining.push({ ...operation, lastError: error.code || error.message })
-      if (error.status === 409) break
+  return withSecureLock(currentUid(), OUTBOX, async () => {
+    const items = await getSecureItem(currentUid(), OUTBOX, [])
+    if (!items.length) return { pending: 0, dropped: 0 }
+    const remaining = []
+    const revisions = {}
+    let dropped = 0
+    let unreachable = false
+    for (const operation of items) {
+      if (unreachable) {
+        remaining.push(operation)
+        continue
+      }
+      const known = revisions[operation.recordId]
+      const body = known === undefined ? operation.body : { ...operation.body, expected_revision: known }
+      try {
+        const result = await sendOperation({ ...operation, body })
+        if (operation.method === 'DELETE') delete revisions[operation.recordId]
+        else if (result?.revision) revisions[operation.recordId] = result.revision
+      } catch (error) {
+        if (error.code === 'not_configured' || isPermanentFailure(error)) {
+          dropped += 1
+          continue
+        }
+        // Still offline. Nothing behind this can go either; keep the order.
+        unreachable = true
+        remaining.push({ ...operation, lastError: error.code || error.message })
+      }
     }
-  }
-  await saveOutbox(remaining)
-  return { pending: remaining.length }
+    await setSecureItem(currentUid(), OUTBOX, remaining)
+    return { pending: remaining.length, dropped }
+  })
 }
 
 export async function listRecords(entityType) {
   try {
     await flushPlannerOutbox()
-    const localRecords = await cached(entityType)
-    const records = (await apiFetch(`/v1/records/${entityType}`)).map(fromServer).map(record => {
-      if (entityType !== 'note') return record
-      const local = localRecords.find(item => String(item.id) === String(record.id))
-      return { ...record, attachments: local?.attachments || record.attachments }
-    })
-    await cache(entityType, records)
-    return records
+    const fetched = (await apiFetch(`/v1/records/${entityType}`)).map(fromServer)
+    return await mutateCache(entityType, localRecords => fetched.map(record => (
+      withLocalAttachments(entityType, record, localRecords.find(item => sameId(item.id, record.id)))
+    )))
   } catch (error) {
     const records = await cached(entityType)
     if (records.length || !navigator.onLine || error.code === 'not_configured') return records
@@ -148,8 +206,13 @@ export async function listRecords(entityType) {
 
 export async function createRecord(entityType, values) {
   const recordId = String(values.id || crypto.randomUUID())
+  // Visible to the assistant unless the record says otherwise: the forms and
+  // the phone both default to that, and a quick-add or a new note used to
+  // come out hidden simply because it never mentioned the flag.
+  const approved = values._approvedForAi ?? true
   const local = {
     ...values, id: recordId, userId: currentUid(), _revision: 1, _pending: false,
+    _approvedForAi: approved,
     createdAt: values.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(),
   }
   const operation = {
@@ -157,29 +220,28 @@ export async function createRecord(entityType, values) {
     body: {
       content: toServer(entityType, local), expected_revision: null,
       idempotency_key: idempotencyKey(`create-${entityType}`),
-      approved_for_ai: Boolean(values._approvedForAi),
+      approved_for_ai: approved,
     },
   }
+  let saved
   try {
-    const serverRecord = fromServer(await sendOperation(operation))
-    const saved = entityType === 'note'
-      ? { ...serverRecord, attachments: local.attachments || serverRecord.attachments }
-      : serverRecord
-    await cache(entityType, [...await cached(entityType), saved])
-    try { await synchronizeIndex(entityType, saved) } catch { /* approval persists; privacy may block indexing */ }
-    return saved
+    saved = withLocalAttachments(entityType, fromServer(await sendOperation(operation)), local)
   } catch (error) {
-    if (error.status && error.status < 500 && error.code !== 'not_configured') throw error
-    local._pending = true
-    await queue(operation)
-    await cache(entityType, [...await cached(entityType), local])
-    return local
+    if (isPermanentFailure(error)) throw error
+    saved = { ...local, _pending: error.code !== 'not_configured' }
+    await keepForLater(operation, error)
   }
+  await mutateCache(entityType, records => [
+    ...records.filter(record => !sameId(record.id, recordId)), saved,
+  ])
+  if (!saved._pending) {
+    try { await synchronizeIndex(entityType, saved) } catch { /* approval persists; privacy may block indexing */ }
+  }
+  return saved
 }
 
 export async function updateRecord(entityType, recordId, updates) {
-  const records = await cached(entityType)
-  const current = records.find(record => String(record.id) === String(recordId))
+  const current = (await cached(entityType)).find(record => sameId(record.id, recordId))
   if (!current) throw new Error('Record is not available in the encrypted offline cache')
   const merged = { ...current, ...updates, updatedAt: new Date().toISOString() }
   const operation = {
@@ -190,26 +252,25 @@ export async function updateRecord(entityType, recordId, updates) {
       approved_for_ai: Boolean(merged._approvedForAi),
     },
   }
+  let saved
   try {
-    const serverRecord = fromServer(await sendOperation(operation))
-    const saved = entityType === 'note'
-      ? { ...serverRecord, attachments: merged.attachments || serverRecord.attachments }
-      : serverRecord
-    await cache(entityType, records.map(record => String(record.id) === String(recordId) ? saved : record))
-    try { await synchronizeIndex(entityType, saved) } catch { /* approval persists; privacy may block indexing */ }
-    return saved
+    saved = withLocalAttachments(entityType, fromServer(await sendOperation(operation)), merged)
   } catch (error) {
-    if (error.status && error.status < 500 && error.code !== 'not_configured') throw error
-    merged._pending = true
-    await queue(operation)
-    await cache(entityType, records.map(record => String(record.id) === String(recordId) ? merged : record))
-    return merged
+    if (isPermanentFailure(error)) throw error
+    saved = { ...merged, _pending: error.code !== 'not_configured' }
+    await keepForLater(operation, error)
   }
+  await mutateCache(entityType, records => records.map(record => (
+    sameId(record.id, recordId) ? saved : record
+  )))
+  if (!saved._pending) {
+    try { await synchronizeIndex(entityType, saved) } catch { /* approval persists; privacy may block indexing */ }
+  }
+  return saved
 }
 
 export async function deleteRecord(entityType, recordId) {
-  const records = await cached(entityType)
-  const current = records.find(record => String(record.id) === String(recordId))
+  const current = (await cached(entityType)).find(record => sameId(record.id, recordId))
   if (!current) return
   const operation = {
     method: 'DELETE', entityType, recordId: String(recordId),
@@ -221,10 +282,11 @@ export async function deleteRecord(entityType, recordId) {
   try {
     await sendOperation(operation)
   } catch (error) {
-    if (error.status && error.status < 500 && error.code !== 'not_configured') throw error
-    await queue(operation)
+    // Already gone on the server is the outcome asked for.
+    if (isPermanentFailure(error) && error.status !== 404) throw error
+    if (error.status !== 404) await keepForLater(operation, error)
   }
-  await cache(entityType, records.filter(record => String(record.id) !== String(recordId)))
+  await mutateCache(entityType, records => records.filter(record => !sameId(record.id, recordId)))
 }
 
 export async function replaceCachedRecords(entityType, records) {

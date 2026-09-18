@@ -27,6 +27,9 @@ export async function createReminder(rem: Partial<Reminder> & { userId: string; 
     time: rem.time || '',
     notes: rem.notes || '',
     createdAt: new Date().toISOString(),
+    // The form's "visible to the assistant" switch. Tasks and notes carry
+    // it; reminders dropped it here and were indexed regardless.
+    _approvedForAi: rem._approvedForAi,
   };
   const created = await createPlannerItem('reminder', newRem);
   await addLog('created', 'reminder', created.title, { entityId: created.id, after: created });

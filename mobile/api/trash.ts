@@ -26,13 +26,28 @@ export async function getTrash(userId: string): Promise<TrashItem[]> {
   return trash.filter(t => (t as Record<string, unknown>).userId === userId);
 }
 
-export async function restoreFromTrash(trashId: string): Promise<{ item: Record<string, unknown>; type: string } | null> {
+export type RestoredItem = { item: Record<string, unknown>; type: string };
+
+/**
+ * Take an item out of the bin.
+ *
+ * `restore(item, type)` runs first and the row is removed only once it has
+ * succeeded. The row used to go first, so a failed re-create -- the record
+ * still existed on the server, the network dropped -- left the item nowhere.
+ */
+export async function restoreFromTrash(
+  trashId: string,
+  restore?: (item: Record<string, unknown>, type: string) => Promise<unknown>,
+): Promise<RestoredItem | null> {
   const trash = await getItem<TrashItem[]>(KEY, []);
   const item = trash.find(t => t._trashId === trashId);
   if (!item) return null;
-  await setItem(KEY, trash.filter(t => t._trashId !== trashId));
   const { _trashId, _trashType, _deletedAt, ...original } = item;
-  return { item: original as Record<string, unknown>, type: _trashType };
+  const result = { item: original as Record<string, unknown>, type: _trashType };
+  if (restore) await restore(result.item, result.type);
+  const current = await getItem<TrashItem[]>(KEY, []);
+  await setItem(KEY, current.filter(t => t._trashId !== trashId));
+  return result;
 }
 
 export async function permanentDelete(trashId: string): Promise<void> {

@@ -101,6 +101,14 @@ export default function CopilotScreen() {
   const [noticeSeen, setNoticeSeen] = useState(true);
   /** Message ids whose batch of changes is opened up for review. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Proposal ids with a confirm or reject in flight. A second tap on the same
+  // card used to send a second POST at a proposal no longer pending.
+  const [acting, setActing] = useState<Set<string>>(new Set());
+  const markActing = (id: string, on: boolean) => setActing(previous => {
+    const next = new Set(previous);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
   // The thread this conversation belongs to. The server owns the transcript, so
   // a thread started here can be picked up on the web and the other way round.
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -333,7 +341,12 @@ export default function CopilotScreen() {
           streamFailure = data as { code?: string; detail?: string };
         }
       });
-      if (!settled && !controller.signal.aborted) {
+      if (controller.signal.aborted) {
+        // Stopped by the student. Keep what arrived; a bubble left marked as
+        // streaming made the next question skip its "Reading your planner…"
+        // state, and was persisted that way.
+        upsertAnswer({ streaming: false });
+      } else if (!settled) {
         // The model failed mid-answer or the connection dropped. Keep whatever
         // text arrived, but stop it looking complete.
         upsertAnswer({ streaming: false });
@@ -343,8 +356,8 @@ export default function CopilotScreen() {
         }]);
       }
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return;
       upsertAnswer({ streaming: false });
+      if (error instanceof Error && error.name === 'AbortError') return;
       // An unconfigured backend means the copilot is unavailable, not that the
       // request failed; saying "not configured" in red reads like a crash.
       const code = (error as { code?: string })?.code;
@@ -402,9 +415,11 @@ export default function CopilotScreen() {
   const actOnProposal = async (
     proposal: Proposal, action: 'confirm' | 'reject', quiet = false,
   ) => {
+    if (acting.has(proposal.proposal_id)) return;
     const body = action === 'confirm'
       ? { idempotency_key: idempotencyKey('mobile-confirm'), expected_base_revision: proposal.base_revision }
       : { reason: 'Rejected in mobile copilot' };
+    markActing(proposal.proposal_id, true);
     try {
       const updated = await apiRequest<Proposal>(`/v1/proposals/${proposal.proposal_id}/${action}`, {
         method: 'POST', body: JSON.stringify(body),
@@ -417,6 +432,8 @@ export default function CopilotScreen() {
       const detail = error instanceof Error ? error.message : 'Could not apply that change.';
       toast.show(detail, 'error');
       throw error;
+    } finally {
+      markActing(proposal.proposal_id, false);
     }
   };
 
@@ -490,8 +507,12 @@ export default function CopilotScreen() {
       {renderDiff(longTextChange(proposal))}
       {proposal.status === 'pending' && (
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.reject} onPress={() => actOnProposal(proposal, 'reject')}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.confirm} onPress={() => actOnProposal(proposal, 'confirm')}><Text style={styles.confirmText}>Confirm change</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.reject} disabled={acting.has(proposal.proposal_id)}
+            onPress={() => actOnProposal(proposal, 'reject')}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.confirm} disabled={acting.has(proposal.proposal_id)}
+            onPress={() => actOnProposal(proposal, 'confirm')}>
+            <Text style={styles.confirmText}>{acting.has(proposal.proposal_id) ? 'Working…' : 'Confirm change'}</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -523,16 +544,19 @@ export default function CopilotScreen() {
             {item.status !== 'pending' ? ` · ${item.status}` : ''}
           </Text>
         ))}
-        {pending.length > 0 && (
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.reject} onPress={() => actOnEvery(pending, 'reject')}>
-              <Text style={styles.rejectText}>Reject all {pending.length}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.confirm} onPress={() => actOnEvery(pending, 'confirm')}>
-              <Text style={styles.confirmText}>Confirm all {pending.length}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {pending.length > 0 && (() => {
+          const busy = pending.some(item => acting.has(item.proposal_id));
+          return (
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.reject} disabled={busy} onPress={() => actOnEvery(pending, 'reject')}>
+                <Text style={styles.rejectText}>Reject all {pending.length}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirm} disabled={busy} onPress={() => actOnEvery(pending, 'confirm')}>
+                <Text style={styles.confirmText}>{busy ? 'Working…' : `Confirm all ${pending.length}`}</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
         {open ? proposals.map(proposalCard) : null}
       </View>
     );

@@ -13,6 +13,7 @@ import AskAiButton from '../components/AskAiButton'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } from '../utils/schedule'
 import '../css/Tasks.css'
+import LoadFailed from '../components/LoadFailed'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
 
@@ -430,6 +431,7 @@ export default function Tasks() {
   const [tasks, setTasks] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [view, setView] = useState('grid')
   const [statusFilter, setStatusFilter] = useState('active')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -448,8 +450,8 @@ export default function Tasks() {
     Promise.all([getTasks(user.id), getCategories(user.id)]).then(([t, c]) => {
       setTasks(t)
       setCategories(c)
-      setLoading(false)
-    })
+    }).catch(error => setLoadError(error.message || 'Could not load your tasks.'))
+      .finally(() => setLoading(false))
   }, [user.id])
 
   // Auto-balance: pull overflow off crowded future days without waiting for the
@@ -551,6 +553,7 @@ export default function Tasks() {
 
   const usedCategories = [...new Set(tasks.map(t => t.category).filter(Boolean))]
 
+  if (loadError) return <LoadFailed message={loadError} />
   if (loading) return (
     <div className="page-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
       <p style={{ color: 'var(--muted)' }}>Loading tasks...</p>
