@@ -26,6 +26,28 @@ gcloud firestore indexes composite create \
 Deploy `firestore.rules`; all browser/mobile Firestore access is denied because planner
 traffic goes through FastAPI with verified Firebase ID tokens.
 
+## Email verification
+
+The API refuses an unverified address while `PLANNER_REQUIRE_VERIFIED_EMAIL` is `true`
+(the code default). It is set to `false` in `infra/cloudrun/service.yaml.template` for
+now because verification mail does not arrive: Firebase's default sender,
+`noreply@nw-student-planner.firebaseapp.com`, is quarantined by the nwmissouri.edu
+Microsoft 365 tenant. Identity Toolkit metrics show every sign-up's `SendOobCode`
+accepted (200) and no user ever verified.
+
+To turn the gate back on, first make the mail deliverable, in one of two ways:
+
+1. **Custom sending domain** — Firebase console → Authentication → Templates →
+   *Customize domain*. Use a subdomain of a domain you control (for example
+   `mail.<your-domain>`), add the TXT and CNAME records Firebase lists at the DNS host,
+   and wait for verification. Mail then carries that domain's SPF/DKIM.
+2. **Custom SMTP** — the same page → *SMTP settings*, with a transactional provider
+   (SendGrid, Mailgun, Resend) whose sending domain is verified.
+
+Then set `PLANNER_REQUIRE_VERIFIED_EMAIL` to `"true"` in the Cloud Run template and
+redeploy. Existing accounts are all unverified, so tell them to use *Resend* in the
+in-app banner after the switch.
+
 ## Deploy
 
 Populate the variables validated by `scripts/deploy.sh`, authenticate `gcloud` with the

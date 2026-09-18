@@ -21,9 +21,14 @@ from tests.conftest import task_request
 
 # --- auth ---------------------------------------------------------------------
 
-def verifier(policy: SignupPolicy) -> FirebaseTokenVerifier:
+class _Settings:
+    def __init__(self, require_verified_email: bool = True):
+        self.require_verified_email = require_verified_email
+
+
+def verifier(policy: SignupPolicy, require_verified_email: bool = True) -> FirebaseTokenVerifier:
     instance = FirebaseTokenVerifier.__new__(FirebaseTokenVerifier)
-    instance.settings = None
+    instance.settings = _Settings(require_verified_email)
     instance.policy = policy
     return instance
 
@@ -45,6 +50,12 @@ def test_a_verified_address_passes():
     decoded = {"uid": "u1", "email": "s123@nwmissouri.edu", "email_verified": True}
     with patch("app.auth.auth.verify_id_token", return_value=decoded):
         assert verifier(enforced()).verify("token").uid == "u1"
+
+
+def test_verification_can_be_switched_off_while_mail_cannot_be_delivered():
+    decoded = {"uid": "u1", "email": "s123@nwmissouri.edu", "email_verified": False}
+    with patch("app.auth.auth.verify_id_token", return_value=decoded):
+        assert verifier(enforced(), require_verified_email=False).verify("token").uid == "u1"
 
 
 def test_verification_is_not_demanded_when_the_policy_is_off():
