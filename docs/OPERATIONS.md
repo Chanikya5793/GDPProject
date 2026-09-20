@@ -29,24 +29,27 @@ traffic goes through FastAPI with verified Firebase ID tokens.
 ## Email verification
 
 The API refuses an unverified address while `PLANNER_REQUIRE_VERIFIED_EMAIL` is `true`
-(the code default). It is set to `false` in `infra/cloudrun/service.yaml.template` for
-now because verification mail does not arrive: Firebase's default sender,
-`noreply@nw-student-planner.firebaseapp.com`, is quarantined by the nwmissouri.edu
-Microsoft 365 tenant. Identity Toolkit metrics show every sign-up's `SendOobCode`
-accepted (200) and no user ever verified.
+(the code default and the deployed value). Both clients show a banner with *Resend* and
+*I've verified* until the address is verified.
 
-To turn the gate back on, first make the mail deliverable, in one of two ways:
+Verification mail is sent from `noreply@planner.chanakyachowdary.in`. Firebase's default
+sender, `noreply@nw-student-planner.firebaseapp.com`, was quarantined by the
+nwmissouri.edu Microsoft 365 tenant: Identity Toolkit metrics showed every sign-up's
+`SendOobCode` accepted (200) and no user ever verified. The custom domain was set up on
+2026-09-19 in Firebase console → Authentication → Templates → *Customize domain*, with
+these records in the Cloudflare zone for `chanakyachowdary.in` (all DNS-only):
 
-1. **Custom sending domain** — Firebase console → Authentication → Templates →
-   *Customize domain*. Use a subdomain of a domain you control (for example
-   `mail.<your-domain>`), add the TXT and CNAME records Firebase lists at the DNS host,
-   and wait for verification. Mail then carries that domain's SPF/DKIM.
-2. **Custom SMTP** — the same page → *SMTP settings*, with a transactional provider
-   (SendGrid, Mailgun, Resend) whose sending domain is verified.
+| Name | Type | Value |
+| --- | --- | --- |
+| `planner` | TXT | `v=spf1 include:_spf.firebasemail.com ~all` |
+| `planner` | TXT | `firebase=nw-student-planner` |
+| `firebase1._domainkey.planner` | CNAME | `mail-planner-chanakyachowdary-in.dkim1._domainkey.firebasemail.com` |
+| `firebase2._domainkey.planner` | CNAME | `mail-planner-chanakyachowdary-in.dkim2._domainkey.firebasemail.com` |
 
-Then set `PLANNER_REQUIRE_VERIFIED_EMAIL` to `"true"` in the Cloud Run template and
-redeploy. Existing accounts are all unverified, so tell them to use *Resend* in the
-in-app banner after the switch.
+If mail stops arriving again, check those records first, then Firebase's *Customize
+domain* status. Setting `PLANNER_REQUIRE_VERIFIED_EMAIL` to `"false"` in the Cloud Run
+template and redeploying lets everyone back in while it is fixed; note that this
+reopens the sign-up-policy bypass (anyone can register an allowed-domain address).
 
 Microsoft 365 (the university's mail) files the message under **Junk** and tags it
 `[EXT]`; the in-app banner says so. Firebase invalidates an older verification link when a
