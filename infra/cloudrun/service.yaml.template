@@ -54,13 +54,12 @@ spec:
               value: ${GDP_KMS_KEY_NAME}
             - name: PLANNER_MCP_SESSION_SECRET_RESOURCE
               value: ${GDP_MCP_SECRET_RESOURCE}
-            # Off until verification mail is deliverable. Firebase's default
-            # sender (noreply@<project>.firebaseapp.com) is quarantined by the
-            # nwmissouri.edu Microsoft 365 tenant: every sign-up's mail was
-            # accepted by Firebase and none arrived. Set to "true" once a
-            # custom sending domain or SMTP is configured in Firebase Auth.
+            # Verification mail is sent from noreply@planner.chanakyachowdary.in
+            # (custom domain verified in Firebase Auth on 2026-09-19, SPF and
+            # DKIM in Cloudflare). Firebase's default sender was quarantined by
+            # the nwmissouri.edu Microsoft 365 tenant; see docs/OPERATIONS.md.
             - name: PLANNER_REQUIRE_VERIFIED_EMAIL
-              value: "false"
+              value: "true"
             # Quoted: the value is a JSON array, which YAML would otherwise
             # read as a sequence, and Cloud Run rejects a non-string env value.
             - name: PLANNER_ALLOWED_ORIGINS
