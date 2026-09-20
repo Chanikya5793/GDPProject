@@ -20,6 +20,8 @@ interface AuthContextType {
   /** Re-read the signed-in user; the verification link is opened elsewhere. */
   refreshUser: () => Promise<User | null>;
   resendVerification: () => Promise<void>;
+  /** When the last verification mail went out, for the banner's cooldown. */
+  verificationSentAt: number | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -59,6 +61,7 @@ async function persistDemoUser(value: User): Promise<User> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verificationSentAt, setVerificationSentAt] = useState<number | null>(null);
 
   useEffect(() => {
     // Demo mode: no Firebase project configured, so restore any saved session.
@@ -116,15 +119,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // be reported as one while the session was already live.
     try { await updateProfile(credential.user, { displayName: name.trim() }); } catch { /* set later in Settings */ }
     let notice = 'Check your inbox for the verification link.';
-    try { await sendEmailVerification(credential.user); }
+    try { await sendEmailVerification(credential.user); setVerificationSentAt(Date.now()); }
     catch { notice = 'We could not send the verification email just now. Use Resend on the next screen.'; }
     setUser(toUser(credential.user));
     return { success: true, notice };
   };
 
+  // Reloading the profile is not enough on its own. The ID token the API
+  // sees carries email_verified from when it was minted and lives for an
+  // hour, so a student who had just verified was still refused until they
+  // signed out and back in. Force a new token the moment the flag flips.
+  // The tabs load on `user`, so the new object below makes them fetch again.
   const refreshUser = async () => {
     if (!firebaseConfigured || !auth?.currentUser) return user;
+    const wasVerified = auth.currentUser.emailVerified;
     await reload(auth.currentUser);
+    if (auth.currentUser.emailVerified && !wasVerified) await auth.currentUser.getIdToken(true);
     const refreshed = toUser(auth.currentUser);
     setUser(refreshed);
     return refreshed;
@@ -133,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resendVerification = async () => {
     if (!firebaseConfigured || !auth?.currentUser) return;
     await sendEmailVerification(auth.currentUser);
+    setVerificationSentAt(Date.now());
   };
 
   const updateUser = async (updates: Partial<User>) => {
@@ -163,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, loading, configured: firebaseConfigured, login, register, updateUser, logout,
-      refreshUser, resendVerification,
+      refreshUser, resendVerification, verificationSentAt,
     }}>
       {children}
     </AuthContext.Provider>

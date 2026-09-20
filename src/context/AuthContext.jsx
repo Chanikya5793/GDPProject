@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
+  applyActionCode,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   reload,
@@ -72,9 +73,25 @@ function authMessage(error) {
   return messages[error?.code] || 'Authentication failed. Please try again.'
 }
 
+// When the last verification mail went out, so the banner can hold its
+// Resend button until Firebase will accept another request. Survives a
+// reload within the tab; a fresh tab starts with no wait.
+const SENT_AT_KEY = 'nw_verification_sent_at'
+
+function markVerificationSent() {
+  const now = Date.now()
+  try { sessionStorage.setItem(SENT_AT_KEY, String(now)) } catch { /* private mode */ }
+  return now
+}
+
+function readVerificationSent() {
+  try { return Number(sessionStorage.getItem(SENT_AT_KEY)) || null } catch { return null }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [verificationSentAt, setVerificationSentAt] = useState(readVerificationSent)
 
   useEffect(() => {
     if (!firebaseConfigured || !auth) {
@@ -156,6 +173,7 @@ export function AuthProvider({ children }) {
     let notice = 'Check your inbox for the verification link.'
     try {
       await sendEmailVerification(credential.user)
+      setVerificationSentAt(markVerificationSent())
     } catch {
       notice = 'We could not send the verification email just now. Use "Resend" on the next screen.'
     }
@@ -165,9 +183,18 @@ export function AuthProvider({ children }) {
 
   // The verification link is opened in a mail client, so this session only
   // learns about it when asked; the banner calls this.
+  //
+  // Reloading the profile is not enough on its own. The ID token the API
+  // sees carries email_verified from when it was minted and lives for an
+  // hour, so a student who had just verified was still refused until they
+  // signed out and back in. Force a new token the moment the flag flips.
   const refreshUser = async () => {
     if (!firebaseConfigured || !auth?.currentUser) return user
+    const wasVerified = auth.currentUser.emailVerified
     await reload(auth.currentUser)
+    if (auth.currentUser.emailVerified && !wasVerified) {
+      await auth.currentUser.getIdToken(true)
+    }
     const refreshed = publicUser(auth.currentUser)
     setUser(refreshed)
     return refreshed
@@ -176,6 +203,20 @@ export function AuthProvider({ children }) {
   const resendVerification = async () => {
     if (!firebaseConfigured || !auth?.currentUser) return
     await sendEmailVerification(auth.currentUser)
+    setVerificationSentAt(markVerificationSent())
+  }
+
+  // Apply a code from a verification link opened in this app. Returns the
+  // refreshed user when someone is signed in, else null.
+  const applyVerification = async code => {
+    if (!firebaseConfigured || !auth) throw new Error('Firebase is not configured')
+    await applyActionCode(auth, code)
+    if (!auth.currentUser) return null
+    await reload(auth.currentUser)
+    await auth.currentUser.getIdToken(true)
+    const refreshed = publicUser(auth.currentUser)
+    setUser(refreshed)
+    return refreshed
   }
 
   const updateUser = async updates => {
@@ -212,9 +253,9 @@ export function AuthProvider({ children }) {
   // to resolve and bounces a signed-in user to the login screen on reload.
   const value = useMemo(() => ({
     user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
-    refreshUser, resendVerification,
+    refreshUser, resendVerification, applyVerification, verificationSentAt,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [user, loading])
+  }), [user, loading, verificationSentAt])
 
   return (
     <AuthContext.Provider value={value}>

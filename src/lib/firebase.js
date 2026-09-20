@@ -19,5 +19,11 @@ if (firebaseConfigured) {
   persistenceReady = setPersistence(auth, browserLocalPersistence)
 }
 
+// The hosted action handler Firebase ships with every project. Our own
+// handler forwards to it for the flows it does not render itself.
+export const defaultActionHandler = firebaseConfigured
+  ? `https://${firebaseConfig.authDomain}/__/auth/action`
+  : null
+
 export { auth, persistenceReady }
 
