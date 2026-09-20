@@ -42,6 +42,33 @@ beforeEach(() => {
   mocks.log.mockResolvedValue('log');
 });
 
+describe('widget titles', () => {
+  const published = () => JSON.parse(mocks.publish.mock.calls.at(-1)![0]);
+  it('publishes titles when nothing about them was ever saved', async () => {
+    mocks.uid = 'u1';
+    mocks.records.nw_settings = {};
+    const api = await import('@/api/widgets');
+    await api.syncWidget();
+    expect(published().titlesAllowed).toBe(true);
+    expect(published().items[0].title).toBe('Assignment');
+  });
+  it('publishes titles for an install carrying the old default it never chose', async () => {
+    mocks.uid = 'u1';
+    mocks.records.nw_settings = { widgetShowTitles: false };
+    const api = await import('@/api/widgets');
+    await api.syncWidget();
+    expect(published().titlesAllowed).toBe(true);
+  });
+  it('withholds titles when the student switched them off', async () => {
+    mocks.uid = 'u1';
+    mocks.records.nw_settings = { widgetShowTitles: false, widgetTitlesDecided: true };
+    const api = await import('@/api/widgets');
+    await api.syncWidget();
+    expect(published().titlesAllowed).toBe(false);
+    expect(published().items[0].title).toBe('');
+  });
+});
+
 describe('native widget sync lifecycle', () => {
   it('preserves and applies taps when the signed-in account restores after a cold launch', async () => {
     const api = await import('@/api/widgets');

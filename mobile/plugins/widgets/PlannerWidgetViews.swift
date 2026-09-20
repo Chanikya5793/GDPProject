@@ -570,6 +570,12 @@ struct PlannerWidgetView: View {
         Link("Saved on device · Open to sync", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(accent)
       } else if stale {
         Link("Open planner to refresh", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
+      } else if !(entry.state.snapshot?.titlesAllowed ?? true) && !entry.state.items.isEmpty {
+        // The app's switch is off, so every row reads "Task" or "Reminder".
+        // Name the switch rather than leave the widget looking broken.
+        Link(isSmall ? "Titles hidden · tap to show" : "Titles hidden · turn on in Settings › Widgets & Siri",
+             destination: route("settings"))
+          .font(.system(size: 10)).lineLimit(2).foregroundStyle(.secondary)
       } else {
         HStack(spacing: 10) {
           Link(destination: route("tasks", ["new": ""])) { Label("Task", systemImage: "plus") }

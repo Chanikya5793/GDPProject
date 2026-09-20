@@ -118,8 +118,15 @@ export interface Settings {
   showCompleted: boolean;
   reminderDefault: number;
   dueDateAlerts: boolean;
-  /** Whether the home screen widget may show record titles. Off by default. */
+  /** Whether the home screen widget may show record titles. On by default. */
   widgetShowTitles: boolean;
+  /**
+   * True once the student has set widgetShowTitles themselves. Settings are
+   * written back whole, so an install that pre-dates the on-by-default change
+   * carries a stored `false` it never chose; this is how that is told apart
+   * from a deliberate off.
+   */
+  widgetTitlesDecided?: boolean;
   autoBalance: boolean;
   dailyTaskLimit: number;
 }
