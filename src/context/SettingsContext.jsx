@@ -18,10 +18,32 @@ const DEFAULTS = {
   dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 }
 
+// Settings whose default changed after people had already stored the old
+// one. The object is written back whole, so a stored value equal to the old
+// default is not evidence of a choice; the flag is. Auto-balance used to be
+// on and moved tasks without asking; it is opt-in now.
+const MIGRATED_DEFAULTS = [{ key: 'autoBalance', decided: 'autoBalanceDecided' }]
+
+export function hydrateSettings(stored) {
+  const merged = { ...DEFAULTS, ...(stored || {}) }
+  let migrated = false
+  for (const { key, decided } of MIGRATED_DEFAULTS) {
+    if (!merged[decided] && merged[key] !== DEFAULTS[key]) {
+      merged[key] = DEFAULTS[key]
+      migrated = true
+    }
+  }
+  return { settings: merged, migrated }
+}
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem('nw_settings')
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) }
+    if (raw) {
+      const { settings, migrated } = hydrateSettings(JSON.parse(raw))
+      if (migrated) localStorage.setItem('nw_settings', JSON.stringify(settings))
+      return settings
+    }
   } catch { /* use defaults */ }
   return { ...DEFAULTS }
 }
@@ -65,6 +87,9 @@ export function SettingsProvider({ children }) {
   const updateSetting = useCallback((key, value) => {
     setSettings(prev => {
       const next = { ...prev, [key]: value }
+      // A choice made here is one the migration must never overturn.
+      const rule = MIGRATED_DEFAULTS.find(item => item.key === key)
+      if (rule) next[rule.decided] = true
       localStorage.setItem('nw_settings', JSON.stringify(next))
       return next
     })

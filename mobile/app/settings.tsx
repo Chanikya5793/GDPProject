@@ -297,7 +297,8 @@ export default function SettingsScreen() {
           />
         </SettingsRow>
 
-        <SettingsRow label="Auto-Balance Busy Days" colors={colors}>
+        <SettingsRow label="Auto-Balance Busy Days" colors={colors}
+          description="Off by default. When on, lower-priority tasks are pulled off overloaded days onto earlier free days without asking; the Optimize button on Tasks does the same on request.">
           <Switch
             value={settings.autoBalance}
             onValueChange={v => updateSetting('autoBalance', v)}
@@ -426,14 +427,20 @@ export default function SettingsScreen() {
   );
 }
 
-function SettingsRow({ label, colors, children }: {
+function SettingsRow({ label, description, colors, children }: {
   label: string;
+  description?: string;
   colors: ReturnType<typeof useAppTheme>['colors'];
   children: React.ReactNode;
 }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 }}>
-      <Text style={{ fontSize: 15, color: colors.text }}>{label}</Text>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, gap: 12 }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15, color: colors.text }}>{label}</Text>
+        {description ? (
+          <Text style={{ fontSize: 12, lineHeight: 16, color: colors.textMuted, marginTop: 2 }}>{description}</Text>
+        ) : null}
+      </View>
       {children}
     </View>
   );
