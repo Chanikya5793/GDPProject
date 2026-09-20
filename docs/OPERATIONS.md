@@ -29,7 +29,10 @@ traffic goes through FastAPI with verified Firebase ID tokens.
 ## Email verification
 
 The API refuses an unverified address while `PLANNER_REQUIRE_VERIFIED_EMAIL` is `true`
-(the code default and the deployed value). Both clients show a banner with *Resend* and
+(the code default). The GitHub deploy sets it explicitly with `--update-env-vars`; note
+that a source deploy keeps whatever environment the service already has, and the Cloud
+Run template under `infra/` is read only by the manual `scripts/deploy.sh`, so a flag
+changed in the template alone does not ship through CI. Both clients show a banner with *Resend* and
 *I've verified* until the address is verified.
 
 Verification mail is sent from `noreply@planner.chanakyachowdary.in`. Firebase's default
