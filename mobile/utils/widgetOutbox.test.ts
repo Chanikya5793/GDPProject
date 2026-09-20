@@ -28,13 +28,29 @@ beforeEach(() => {
 });
 
 describe('widget mutation and outbox ordering', () => {
-  it('retains all later commands when an outbox operation conflicts', async () => {
+  it('drops a conflicting operation and still sends the ones behind it', async () => {
     const outbox = [1, 2, 3].map(recordId => ({ method: 'PUT', kind: 'task', recordId, body: {} }));
     mocks.data.nw_sync_outbox = outbox;
-    mocks.request.mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409 }));
+    const sent: number[] = [];
+    mocks.request.mockImplementation(async (path: string) => {
+      const recordId = Number(path.split('/').pop());
+      sent.push(recordId);
+      if (recordId === 1) throw Object.assign(new Error('Conflict'), { status: 409 });
+      return server(true);
+    });
+    const api = await import('@/api/plannerClient');
+    expect(await api.flushOutbox()).toBe(0);
+    expect(sent).toEqual([1, 2, 3]);
+    expect(mocks.data.nw_sync_outbox).toEqual([]);
+  });
+  it('keeps the whole queue, in order, while the server is unreachable', async () => {
+    const outbox = [1, 2, 3].map(recordId => ({ method: 'PUT', kind: 'task', recordId, body: {} }));
+    mocks.data.nw_sync_outbox = outbox;
+    mocks.request.mockRejectedValue(new TypeError('Network request failed'));
     const api = await import('@/api/plannerClient');
     expect(await api.flushOutbox()).toBe(3);
     expect(mocks.data.nw_sync_outbox).toEqual(outbox);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
   it('does not drop concurrent offline task and reminder completions', async () => {
     mocks.data.nw_reminders = [{ id: 'r1', userId: 'u1', title: 'Reminder', date: '2026-09-17', time: '', completed: false, _revision: 1 }];

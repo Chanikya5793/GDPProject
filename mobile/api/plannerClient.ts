@@ -182,6 +182,29 @@ async function send(operation: OutboxOperation): Promise<ServerRecord | undefine
   );
 }
 
+const statusOf = (error: unknown): number | undefined =>
+  error instanceof Error && 'status' in error ? (error as { status?: number }).status : undefined;
+const codeOf = (error: unknown): string | undefined =>
+  error instanceof Error && 'code' in error ? (error as { code?: string }).code : undefined;
+
+// There is no server in the demo build (or one this build cannot reach by
+// configuration). Keeping a change "for later" there grew the outbox with
+// every edit and replayed all of it, failing, on every list.
+const isUnconfigured = (error: unknown) => codeOf(error) === 'not_configured';
+
+// Errors that will not go away by retrying: the request itself was refused.
+// A network failure has no status; a 5xx is worth another try once the
+// connection is back.
+function isPermanentFailure(error: unknown): boolean {
+  const status = statusOf(error);
+  return Boolean(status && status < 500) && !isUnconfigured(error);
+}
+
+async function keepForLater(operation: OutboxOperation, error: unknown, expectedUid = getStorageUid()): Promise<void> {
+  if (isUnconfigured(error)) return;
+  await queue(operation, expectedUid);
+}
+
 async function queue(operation: OutboxOperation, expectedUid = getStorageUid()): Promise<void> {
   await serializeRecords('outbox', async () => {
     const outbox = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
@@ -194,19 +217,41 @@ export async function flushOutbox(): Promise<number> {
   return serializeRecords('outbox', flushOutboxNow);
 }
 
+/**
+ * Send everything queued while offline, in order.
+ *
+ * Revisions are chained through the flush: an offline edit is queued with
+ * the revision the device last saw, so a second edit of the same record
+ * carried the same number and was refused once the first had landed. Each
+ * success feeds its new revision into the next operation on that record.
+ *
+ * A refusal the server will repeat -- a stale revision, a record deleted
+ * elsewhere -- drops that operation and moves on; the next list refreshes
+ * the record from the server. Keeping it used to block every operation
+ * behind it, on every load, for good. Only a failure to reach the server
+ * keeps the queue, and then the whole rest of it, in order.
+ */
 async function flushOutboxNow(): Promise<number> {
   const uid = getStorageUid();
   const outbox = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
+  if (!outbox.length) return 0;
   const remaining: OutboxOperation[] = [];
-  for (const [index, operation] of outbox.entries()) {
+  const revisions = new Map<string, number>();
+  let unreachable = false;
+  for (const operation of outbox) {
     if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
-    try { await send(operation); }
-    catch (error) {
+    if (unreachable) { remaining.push(operation); continue; }
+    const recordKey = `${operation.kind}:${operation.recordId}`;
+    const known = revisions.get(recordKey);
+    const body = known === undefined ? operation.body : { ...operation.body, expected_revision: known };
+    try {
+      const result = await send({ ...operation, body });
+      if (operation.method === 'DELETE') revisions.delete(recordKey);
+      else if (result?.revision) revisions.set(recordKey, result.revision);
+    } catch (error) {
+      if (isUnconfigured(error) || isPermanentFailure(error)) continue;
+      unreachable = true;
       remaining.push(operation);
-      if (error instanceof Error && 'status' in error && (error as { status: number }).status === 409) {
-        remaining.push(...outbox.slice(index + 1));
-        break;
-      }
     }
   }
   if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
@@ -241,6 +286,14 @@ async function listPlannerItemsNow<T extends PlannerItem>(kind: Kind): Promise<T
 }
 
 export async function createPlannerItem<T extends PlannerItem>(kind: Kind, item: T): Promise<T> {
+  // Under the same lock as every other write to this kind: a widget completion
+  // landing between this read of the cache and its write used to be undone.
+  return serializeRecords(kind, () => createPlannerItemNow(kind, item));
+}
+
+async function createPlannerItemNow<T extends PlannerItem>(kind: Kind, item: T): Promise<T> {
+  const uid = getStorageUid();
+  const assertScope = () => { if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401); };
   const operation: OutboxOperation = {
     method: 'PUT', kind, recordId: item.id,
     body: {
@@ -250,20 +303,27 @@ export async function createPlannerItem<T extends PlannerItem>(kind: Kind, item:
       approved_for_ai: item._approvedForAi ?? true,
     },
   };
+  let saved: T;
   try {
     const server = await send(operation);
-    const saved = withLocalOnlyFields(kind, fromServer(server!) as T, item);
-    await saveCache(kind, [...await loadCache(kind), saved]);
-    // The record is already saved; privacy settings may legitimately refuse the
-    // index, and that must not turn a successful write into a failure.
-    try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
-    return saved;
+    assertScope();
+    saved = withLocalOnlyFields(kind, fromServer(server!) as T, item);
   } catch (error) {
-    if (error instanceof Error && 'status' in error && (error as { status: number }).status < 500) throw error;
-    await queue(operation);
-    await saveCache(kind, [...await loadCache(kind), { ...item, _revision: 1, _pending: true }]);
-    return { ...item, _revision: 1, _pending: true };
+    assertScope();
+    if (isPermanentFailure(error)) throw error;
+    saved = { ...item, _revision: 1, _pending: !isUnconfigured(error) };
+    await keepForLater(operation, error, uid);
   }
+  assertScope();
+  const items = await loadCache(kind);
+  assertScope();
+  await saveCache(kind, [...items.filter(existing => String(existing.id) !== String(item.id)), saved]);
+  if (!saved._pending) {
+    // The record is already saved; privacy settings may legitimately refuse
+    // the index, and that must not turn a successful write into a failure.
+    try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
+  }
+  return saved;
 }
 
 export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
@@ -311,17 +371,24 @@ async function updatePlannerItemNow<T extends PlannerItem>(kind: Kind, id: Plann
     return saved;
   } catch (error) {
     assertScope();
-    if (error instanceof Error && 'status' in error && (error as { status: number }).status < 500) throw error;
-    await queue(operation, operationUid);
+    if (isPermanentFailure(error)) throw error;
+    await keepForLater(operation, error, operationUid);
     assertScope();
-    const pending = { ...merged, _pending: true };
+    const pending = { ...merged, _pending: !isUnconfigured(error) };
     await saveCache(kind, items.map(item => item.id === id ? pending : item));
     return pending;
   }
 }
 
 export async function deletePlannerItem(kind: Kind, id: PlannerRecordId): Promise<void> {
+  return serializeRecords(kind, () => deletePlannerItemNow(kind, id));
+}
+
+async function deletePlannerItemNow(kind: Kind, id: PlannerRecordId): Promise<void> {
+  const uid = getStorageUid();
+  const assertScope = () => { if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401); };
   const items = await loadCache(kind);
+  assertScope();
   const current = items.find(item => item.id === id);
   if (!current) return;
   const operation: OutboxOperation = {
@@ -333,8 +400,12 @@ export async function deletePlannerItem(kind: Kind, id: PlannerRecordId): Promis
   };
   try { await send(operation); }
   catch (error) {
-    if (error instanceof Error && 'status' in error && (error as { status: number }).status < 500) throw error;
-    await queue(operation);
+    assertScope();
+    // Already gone on the server is the outcome asked for.
+    if (statusOf(error) === 404) { /* fall through to the cache */ }
+    else if (isPermanentFailure(error)) throw error;
+    else await keepForLater(operation, error, uid);
   }
+  assertScope();
   await saveCache(kind, items.filter(item => item.id !== id));
 }
