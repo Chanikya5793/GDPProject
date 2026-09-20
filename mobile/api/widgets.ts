@@ -80,9 +80,15 @@ export async function syncWidget(): Promise<number> {
       getItem<Partial<Settings>>('nw_settings', {}),
     ]);
     if (!current()) return 0;
+    // Titles are on unless the student switched them off themselves. A stored
+    // `false` without that decision is the old default carried forward, and
+    // SettingsContext rewrites it on its next load; publishing must agree with
+    // it in the meantime or the first widget after an update stays nameless.
+    const decided = settings.widgetTitlesDecided === true;
+    const showTitles = decided ? settings.widgetShowTitles !== false : true;
     const snapshot = buildWidgetSnapshot({
       tasks: tasks.filter(item => item.userId === uid), reminders: reminders.filter(item => item.userId === uid),
-      now: Date.now(), showTitles: settings.widgetShowTitles ?? false, owner,
+      now: Date.now(), showTitles, owner,
     });
     await bridge.publish(JSON.stringify(snapshot));
     return snapshot.items.length;

@@ -138,10 +138,10 @@ export default function WidgetsSiriSection() {
         <View style={s.rowInfo}>
           <Text style={s.rowLabel}>Show task and reminder titles</Text>
           <Text style={s.rowDesc}>
-            Turn on for a detailed agenda with titles and categories. These are
-            copied to shared device storage and may appear on your Lock Screen.
-            Notes and attachments stay private. Configurable widgets can hide titles
-            in Edit Widget. Off by default.
+            On by default. Titles and categories are copied to shared device storage
+            so widgets can show them, which means they may appear on your Lock Screen.
+            Notes and attachments stay private. Turn off for counts and times only;
+            configurable widgets can also hide titles in Edit Widget.
           </Text>
         </View>
         <Switch

@@ -15,9 +15,9 @@ iOS 17; Progress retains the app's iOS 16.4 floor.
 ## Use the widgets
 
 1. Install the updated native app and open it while signed in.
-2. In Settings, open Widgets & Siri. Enable titles for detailed agendas if you
-   want titles and categories copied to shared device storage. Notes and
-   attachments are never exported.
+2. Titles and categories are shown by default; they are copied to shared device
+   storage for the widget process. Settings → Widgets & Siri turns that off for
+   counts and times only. Notes and attachments are never exported.
 3. Add NW Planner widgets from the system widget gallery. Hold a configurable
    widget and choose Edit Widget to select sources, horizon, priority ordering,
    overdue/undated work, density, accent and title visibility where applicable.

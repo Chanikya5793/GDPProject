@@ -3,6 +3,7 @@ import { Settings } from '@/types';
 import { getItem, onStorageScopeChange, setItem } from '@/api/storage';
 import { DEFAULT_DAILY_TASK_LIMIT } from '@/utils/schedule';
 import { syncWidget } from '@/api/widgets';
+import { hydrateSettings } from '@/utils/settingsHydration';
 
 const DEFAULTS: Settings = {
   theme: 'system',
@@ -16,7 +17,7 @@ const DEFAULTS: Settings = {
   showCompleted: true,
   reminderDefault: 30,
   dueDateAlerts: true,
-  widgetShowTitles: false,
+  widgetShowTitles: true,
   autoBalance: true,
   dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 };
@@ -43,8 +44,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const load = () => {
       getItem<Settings>('nw_settings', DEFAULTS).then(stored => {
         if (cancelled) return;
-        setSettings({ ...DEFAULTS, ...stored });
+        const { settings: hydrated, migrated } = hydrateSettings(DEFAULTS, stored);
+        setSettings(hydrated);
         setLoaded(true);
+        // Persist the migrated value and republish the widgets with it, or
+        // they keep showing "Task" and "Reminder" until something else writes.
+        if (migrated) setItem('nw_settings', hydrated).then(() => syncWidget()).catch(() => {});
       });
     };
     load();
@@ -55,6 +60,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const updateSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => {
       const next = { ...prev, [key]: value };
+      // A choice made here is one the migration must never overturn.
+      if (key === 'widgetShowTitles') next.widgetTitlesDecided = true;
       setItem('nw_settings', next).then(() => {
         if (key === 'widgetShowTitles') return syncWidget();
       }).catch(() => {});
