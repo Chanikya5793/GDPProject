@@ -16,6 +16,8 @@ vi.mock('@/api/storage', () => {
   return {
     getItem: async <T,>(key: string, fallback: T) => (store.has(key) ? store.get(key) as T : fallback),
     setItem: async (key: string, value: unknown) => { store.set(key, value); },
+    getStorageUid: () => 'u1',
+    setStorageUid: () => {},
   };
 });
 
