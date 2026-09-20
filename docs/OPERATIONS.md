@@ -48,6 +48,25 @@ Then set `PLANNER_REQUIRE_VERIFIED_EMAIL` to `"true"` in the Cloud Run template 
 redeploy. Existing accounts are all unverified, so tell them to use *Resend* in the
 in-app banner after the switch.
 
+Microsoft 365 (the university's mail) files the message under **Junk** and tags it
+`[EXT]`; the in-app banner says so. Firebase invalidates an older verification link when a
+new one is requested, so the banner holds *Resend* for 60 seconds and tells the student
+that only the newest email works. While unverified, the clients poll Firebase every 8
+seconds and, on success, force a new ID token before reloading -- the token carries
+`email_verified` from when it was minted, and without the refresh the API kept refusing
+a freshly verified student until they signed out and back in.
+
+The web app carries its own link handler (`src/pages/AuthAction.jsx`): a verification
+link that lands on `https://chanikya5793.github.io/GDPProject/?mode=verifyEmail&oobCode=…`
+applies the code on a button press, so a mail scanner that pre-opens every link in an
+external message cannot use it up, and a dead link says what to do instead of Firebase's
+"expired or already been used" page. Firebase currently refuses to point the templates
+at it: *Customize action URL* fails in the console and the Admin API answers
+`EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED` for every URL, an anti-phishing restriction Google
+applies to some projects. Retry it periodically (Authentication → Templates → pencil →
+*Customize action URL* → `https://chanikya5793.github.io/GDPProject/`); until it takes,
+links open Firebase's hosted handler, which still verifies the account.
+
 ## Deploy
 
 Populate the variables validated by `scripts/deploy.sh`, authenticate `gcloud` with the
