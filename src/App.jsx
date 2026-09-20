@@ -15,6 +15,7 @@ import Tasks     from './pages/Tasks'
 import Reminders from './pages/Reminders'
 import Notes     from './pages/Notes'
 import Settings  from './pages/Settings'
+import AuthAction, { actionParams } from './pages/AuthAction'
 
 // PRIVATE ROUTE
 // Wraps all pages that requires login
@@ -46,11 +47,17 @@ function AppLayout({ children }) {
   )
 }
 
+// A verification link lands on the site root with ?mode=…&oobCode=… ahead of
+// the hash, so it is read here rather than routed. Kept outside the router:
+// it must work whether or not anyone is signed in.
+const ACTION = actionParams()
+
 // ROUTES
 function AppRoutes() {
   const { user, loading } = useAuth()
 
   if (loading) return <div className="auth-loading">Securing your planner…</div>
+  if (ACTION) return <AuthAction params={ACTION} />
 
   return (
     <Routes>

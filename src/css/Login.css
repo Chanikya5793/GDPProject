@@ -102,3 +102,10 @@
 .login-switch button:hover { 
   text-decoration: underline; 
 }
+
+.login-help {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
