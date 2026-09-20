@@ -62,6 +62,11 @@ on:
     # API would be noise, and every deploy is a new revision.
     paths:
       - "backend/**"
+      # The Cloud Run template carries the service's environment. A change
+      # there is a change to the running service: the verified-email flag
+      # was flipped in it and nothing deployed.
+      - "infra/cloudrun/**"
+      - "scripts/deploy.sh"
       - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
