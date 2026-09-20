@@ -12,6 +12,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="PLANNER_", extra="ignore")
 
     environment: str = "development"
+    # Whether a signed-in address must be verified before the API serves it.
+    # On by default: Firebase issues a full token before the verification mail
+    # is opened, so without this anyone could register any allowed-domain
+    # address. Off only while verification mail cannot be delivered -- the
+    # default Firebase sender is quarantined by the university's Microsoft
+    # tenant -- and to be turned back on the moment a custom sending domain or
+    # SMTP is configured. See docs/OPERATIONS.md.
+    require_verified_email: bool = True
     google_cloud_project: str
     google_cloud_location: str = "global"
     firebase_project_id: str
