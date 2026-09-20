@@ -30,6 +30,19 @@ describe('hydrateSettings', () => {
     expect(migrated).toBe(false);
   });
 
+  it('turns auto-balance off for an install that carried the old default it never chose', () => {
+    const { settings, migrated } = hydrateSettings({ ...defaults, autoBalance: false }, { ...defaults, autoBalance: true });
+    expect(settings.autoBalance).toBe(false);
+    expect(migrated).toBe(true);
+  });
+
+  it('keeps auto-balance on when the student turned it on themselves', () => {
+    const { settings } = hydrateSettings({ ...defaults, autoBalance: false }, {
+      ...defaults, autoBalance: true, autoBalanceDecided: true,
+    });
+    expect(settings.autoBalance).toBe(true);
+  });
+
   it('leaves every other setting as stored', () => {
     const { settings } = hydrateSettings(defaults, { ...defaults, theme: 'dark', dailyTaskLimit: 3 });
     expect(settings.theme).toBe('dark');

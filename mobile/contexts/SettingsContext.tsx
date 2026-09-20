@@ -3,7 +3,7 @@ import { Settings } from '@/types';
 import { getItem, onStorageScopeChange, setItem } from '@/api/storage';
 import { DEFAULT_DAILY_TASK_LIMIT } from '@/utils/schedule';
 import { syncWidget } from '@/api/widgets';
-import { hydrateSettings } from '@/utils/settingsHydration';
+import { decisionFlagFor, hydrateSettings } from '@/utils/settingsHydration';
 
 const DEFAULTS: Settings = {
   theme: 'system',
@@ -18,7 +18,7 @@ const DEFAULTS: Settings = {
   reminderDefault: 30,
   dueDateAlerts: true,
   widgetShowTitles: true,
-  autoBalance: true,
+  autoBalance: false,
   dailyTaskLimit: DEFAULT_DAILY_TASK_LIMIT,
 };
 
@@ -61,7 +61,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings(prev => {
       const next = { ...prev, [key]: value };
       // A choice made here is one the migration must never overturn.
-      if (key === 'widgetShowTitles') next.widgetTitlesDecided = true;
+      const decided = decisionFlagFor(key);
+      if (decided) next[decided] = true;
       setItem('nw_settings', next).then(() => {
         if (key === 'widgetShowTitles') return syncWidget();
       }).catch(() => {});

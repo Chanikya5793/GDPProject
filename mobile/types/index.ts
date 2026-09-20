@@ -127,7 +127,10 @@ export interface Settings {
    * from a deliberate off.
    */
   widgetTitlesDecided?: boolean;
+  /** Move lower-priority tasks off overloaded days without asking. Off by default. */
   autoBalance: boolean;
+  /** True once the student has set autoBalance themselves; see widgetTitlesDecided. */
+  autoBalanceDecided?: boolean;
   dailyTaskLimit: number;
 }
 
