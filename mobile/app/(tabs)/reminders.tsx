@@ -4,6 +4,7 @@ import {
   Modal, RefreshControl, Alert, Platform, Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
 import { Ionicons } from '@expo/vector-icons';
 import AskAiButton from '@/components/AskAiButton';
 import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
@@ -38,6 +39,7 @@ export default function RemindersScreen() {
   const { user } = useAuth();
   const { colors, accent, appearance } = useAppTheme();
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  usePlannerCacheUpdates('reminder', user?.id, setReminders);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
@@ -48,7 +50,7 @@ export default function RemindersScreen() {
   // the student already dealt with.
   const [draft, setDraft] = useState<LinkDraft>(EMPTY_DRAFT);
   const params = useLocalSearchParams<{
-    new?: string; due?: string; at?: string; notes?: string;
+    new?: string; due?: string; at?: string; notes?: string; focus?: string;
   }>();
 
   useEffect(() => {
@@ -69,6 +71,16 @@ export default function RemindersScreen() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    if (!params.focus || loading) return;
+    const item = reminders.find(reminder => String(reminder.id) === params.focus);
+    if (item) {
+      setEditingRem(item);
+      setModalVisible(true);
+    }
+    router.setParams({ focus: undefined });
+  }, [params.focus, reminders, loading]);
+
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
   const handleSave = async (form: Partial<Reminder>) => {
@@ -77,7 +89,7 @@ export default function RemindersScreen() {
       setReminders(prev => prev.map(r => r.id === editingRem.id ? updated : r));
     } else {
       const created = await createReminder({ ...form, userId: user!.id, title: form.title || '' });
-      setReminders(prev => [...prev, created]);
+      setReminders(prev => prev.some(item => item.id === created.id) ? prev : [...prev, created]);
     }
     setModalVisible(false);
     setEditingRem(null);

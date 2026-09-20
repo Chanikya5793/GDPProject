@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { Settings } from '@/types';
 import { getItem, onStorageScopeChange, setItem } from '@/api/storage';
 import { DEFAULT_DAILY_TASK_LIMIT } from '@/utils/schedule';
+import { syncWidget } from '@/api/widgets';
 
 const DEFAULTS: Settings = {
   theme: 'system',
@@ -54,14 +55,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const updateSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => {
       const next = { ...prev, [key]: value };
-      setItem('nw_settings', next);
+      setItem('nw_settings', next).then(() => {
+        if (key === 'widgetShowTitles') return syncWidget();
+      }).catch(() => {});
       return next;
     });
   }, []);
 
   const resetSettings = useCallback(() => {
     setSettings({ ...DEFAULTS });
-    setItem('nw_settings', DEFAULTS);
+    setItem('nw_settings', DEFAULTS).then(() => syncWidget()).catch(() => {});
   }, []);
 
   if (!loaded) return null;

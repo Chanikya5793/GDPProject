@@ -7,6 +7,7 @@ import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
@@ -136,6 +137,8 @@ export default function DashboardScreen() {
   const styles = makeStyles(appearance);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  usePlannerCacheUpdates('task', user?.id, setTasks);
+  usePlannerCacheUpdates('reminder', user?.id, setReminders);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [expandedStat, setExpandedStat] = useState<string | null>(null);

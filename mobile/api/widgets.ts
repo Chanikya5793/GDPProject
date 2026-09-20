@@ -1,106 +1,101 @@
-// The device half of the home screen widgets: pushing props out to WidgetKit.
-//
-// The only file besides widgets/*.tsx that touches expo-widgets. What may be
-// published is decided in utils/widgetSnapshot.ts; this pushes it.
-//
-// Worth being clear about the direction of travel, because it is the opposite
-// of how the rest of the app reads data. A widget never reads the planner: it
-// cannot, since records are encrypted under a key held in this app's Keychain
-// and WidgetKit runs elsewhere. Instead the app writes finished, already
-// minimised props into a shared App Group container each time the records
-// change. That container is plain, unencrypted, and not scoped to a user —
-// which is exactly why what goes into it is counts and clock times, and why
-// clearing it on sign-out is part of the contract rather than housekeeping.
-//
-// Every widget module must be imported here even if nothing calls it directly.
-// The native side stores a widget's layout when `createWidget` runs, and a
-// timeline push for a widget whose layout was never stored fails.
+import { NativeModules, Platform } from 'react-native';
+import * as Crypto from 'expo-crypto';
+import type { Reminder, Settings, Task } from '@/types';
+import { buildWidgetSnapshot } from '@/utils/widgetSnapshot';
+import { resolveWidgetCommand, type WidgetCommand } from '@/utils/widgetCommands';
+import { getItem, getStorageUid, onStorageScopeChange } from './storage';
+import { updatePlannerItem } from './plannerClient';
+import { addLog } from './logs';
 
-import { addUserInteractionListener } from 'expo-widgets';
-import { Reminder, Settings, Task } from '@/types';
-import {
-  buildWidgetTimeline,
-  EMPTY_WIDGET_PROPS,
-  TimelineEntry,
-} from '@/utils/widgetSnapshot';
-import DueToday from '@/widgets/DueToday';
-import Progress from '@/widgets/Progress';
-import ThisWeek from '@/widgets/ThisWeek';
-import UpNext from '@/widgets/UpNext';
-import { getItem } from './storage';
+interface WidgetBridge {
+  pendingCount(): Promise<number>;
+  publish(json: string): Promise<void>;
+  claim(owner: string): Promise<string>;
+  acknowledge(owner: string, commandId: string, notice: string): Promise<void>;
+  clear(): Promise<void>;
+}
 
-/** Every widget the app publishes. One timeline each, one clear each. */
-const WIDGETS = [DueToday, UpNext, ThisWeek, Progress];
+const bridge: WidgetBridge | undefined = Platform.OS === 'ios' ? NativeModules.PlannerWidgetsBridge : undefined;
+let generation = 0;
+let serial: Promise<unknown> = Promise.resolve();
+let previousUid = getStorageUid();
 
-/**
- * Refresh every widget from the records currently cached.
- *
- * A timeline rather than a single snapshot, because no code of ours runs once
- * the app is closed: without entries scheduled ahead, a widget showing "3 due
- * today" would still say so tomorrow morning.
- *
- * All four widgets get the same props. A widget's configuration is applied when
- * its layout renders, not when the timeline is built — the generated provider
- * reads the same stored entries whatever the student chose — so the app has to
- * publish the superset and let each layout narrow it.
- */
+// Serialize publication and clearing so late reads cannot republish a signed-out account.
+onStorageScopeChange(() => {
+  generation += 1;
+  const nextUid = getStorageUid();
+  // The first restoration must preserve taps made while the app was closed.
+  if (previousUid !== null || nextUid === null) void enqueue(() => bridge?.clear()).catch(() => {});
+  previousUid = nextUid;
+});
+
+function enqueue<T>(work: () => Promise<T> | undefined): Promise<T | undefined> {
+  const next = serial.catch(() => {}).then(work);
+  serial = next;
+  return next;
+}
+
 export async function syncWidget(): Promise<number> {
-  const [tasks, reminders, settings] = await Promise.all([
-    getItem<Task[]>('nw_tasks', []),
-    getItem<Reminder[]>('nw_reminders', []),
-    getItem<Partial<Settings>>('nw_settings', {}),
-  ]);
-
-  const entries = buildWidgetTimeline({
-    tasks,
-    reminders,
-    now: Date.now(),
-    showTitles: settings.widgetShowTitles ?? false,
-  });
-
-  for (const widget of WIDGETS) widget.updateTimeline(entries as TimelineEntry[]);
-  return entries.length;
+  const epoch = generation;
+  const uid = getStorageUid();
+  if (!bridge || !uid) return 0;
+  return await enqueue(async () => {
+    const current = () => generation === epoch && getStorageUid() === uid;
+    if (!current()) return 0;
+    const owner = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `planner-widgets:${uid}`);
+    if (!current()) return 0;
+    const commands: WidgetCommand[] = JSON.parse(await bridge.claim(owner));
+    for (const command of commands) {
+      if (!current()) return 0;
+      const key = command.kind === 'task' ? 'nw_tasks' : 'nw_reminders';
+      const records = await getItem<(Task | Reminder)[]>(key, []);
+      if (!current()) return 0;
+      const decision = resolveWidgetCommand(command, owner, records.filter(record => record.userId === uid));
+      if (decision.status === 'complete') {
+        const before = decision.record;
+        try {
+          // Preserve numeric/string IDs and use the ordinary encrypted outbox.
+          // Replays set completed=true, never toggle a completed item back.
+          const after = await updatePlannerItem(command.kind, before.id, { completed: true }, {
+            userId: uid, revision: command.revision ?? null, date: command.date, time: command.time,
+          });
+          if (!current()) return 0;
+          await addLog('completed', command.kind, after.title, { entityId: before.id, before, after });
+        } catch (error) {
+          if (!current()) return 0;
+          const status = (error as { status?: number }).status;
+          if (status === 409 || status === 404) {
+            await bridge.acknowledge(owner, command.id, 'An item changed. Open planner to review.');
+          }
+          // Other failures retain the durable command for the next refresh.
+          continue;
+        }
+      }
+      if (!current()) return 0;
+      await bridge.acknowledge(owner, command.id,
+        decision.status === 'stale' ? 'An item changed. Open planner to review.' : '');
+    }
+    const [tasks, reminders, settings] = await Promise.all([
+      getItem<Task[]>('nw_tasks', []), getItem<Reminder[]>('nw_reminders', []),
+      getItem<Partial<Settings>>('nw_settings', {}),
+    ]);
+    if (!current()) return 0;
+    const snapshot = buildWidgetSnapshot({
+      tasks: tasks.filter(item => item.userId === uid), reminders: reminders.filter(item => item.userId === uid),
+      now: Date.now(), showTitles: settings.widgetShowTitles ?? false, owner,
+    });
+    await bridge.publish(JSON.stringify(snapshot));
+    return snapshot.items.length;
+  }) ?? 0;
 }
 
-/**
- * Wipe every widget back to nothing.
- *
- * Called on sign-out. The App Group container outlives the session and belongs
- * to the app rather than to whoever was signed in, so without this a second
- * student on a shared phone would see the first one's day on the home screen —
- * and, with titles opted in, on the Lock Screen.
- */
-export function clearWidget(): void {
-  const blank = [{ date: new Date(), props: { ...EMPTY_WIDGET_PROPS } }];
-  for (const widget of WIDGETS) widget.updateTimeline(blank as TimelineEntry[]);
+export async function clearWidget(): Promise<void> {
+  generation += 1;
+  await enqueue(() => bridge?.clear());
 }
 
-/**
- * Handle a tick box tapped on a widget.
- *
- * The widget has already rewritten its own props by the time this runs, so the
- * student sees the box fill immediately; this is what makes the change real.
- *
- * It only arrives while the app is running — the native side posts the event
- * within its own process — so taps made against a closed app are lost here and
- * recovered by the ordinary refresh on next foreground, which rebuilds every
- * timeline from the records. That is why the widget's optimistic edit has to be
- * something a rebuild can correct rather than something it would contradict.
- */
-export function onWidgetAction(
-  complete: (kind: 'task' | 'reminder', recordId: string) => Promise<void>,
-): () => void {
-  const subscription = addUserInteractionListener(event => {
-    // "done:task:abc123". The kind rides along because a task and a reminder
-    // are completed through different endpoints, and the widget process has no
-    // way to ask which one an id belongs to.
-    const [action, kind, ...rest] = String(event.target || '').split(':');
-    const recordId = rest.join(':');
-    if (action !== 'done' || !recordId) return;
-    if (kind !== 'task' && kind !== 'reminder') return;
-    complete(kind, recordId)
-      .then(() => syncWidget())
-      .catch(() => {});
-  });
-  return () => subscription.remove();
+export function nativeWidgetsAvailable(): boolean { return Boolean(bridge); }
+
+export async function syncPendingWidgetActions(): Promise<void> {
+  if (bridge && await bridge.pendingCount() > 0) await syncWidget();
 }

@@ -50,7 +50,6 @@ import Foundation
 /// unlocked-this-device-only, and the ciphertext layout lives in JavaScript.
 enum PlannerSharedStore {
   static let suiteName = "group.com.nwmissouri.studentplanner"
-  private static let timelineKey = "__expo_widgets_DueToday_timeline"
 
   struct Snapshot {
     let dueToday: Int
@@ -62,32 +61,25 @@ enum PlannerSharedStore {
   }
 
   static func snapshot(at now: Date = Date()) -> Snapshot? {
-    guard let defaults = UserDefaults(suiteName: suiteName),
-          let raw = defaults.array(forKey: timelineKey) else { return nil }
-
-    let entries: [(date: Date, props: [String: Any])] = raw.compactMap { element in
-      guard let entry = element as? [String: Any],
-            let timestamp = entry["timestamp"] as? NSNumber,
-            let props = entry["props"] as? [String: Any] else { return nil }
-      return (Date(timeIntervalSince1970: timestamp.doubleValue / 1000), props)
+    let state = PlannerWidgetStore.read()
+    guard state.snapshot != nil else { return nil }
+    let items = state.items
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: now)
+    let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
+    let todayItems = items.filter { item in
+      guard let at = item.scheduled() else { return false }
+      return at >= today && at < tomorrow
     }
-    guard !entries.isEmpty else { return nil }
-
-    // The entry in force right now, chosen the same way WidgetKit would: the
-    // latest one that has already started, or the earliest if none has.
-    let current = entries.filter { $0.date <= now }.max { $0.date < $1.date }
-      ?? entries.min { $0.date < $1.date }
-    guard let props = current?.props else { return nil }
-
-    let nextAtMs = (props["nextAt"] as? NSNumber)?.doubleValue ?? 0
-
+    let next = todayItems.filter { !$0.done && !$0.time.isEmpty }
+      .compactMap { $0.scheduled() }.filter { $0 > now }.min()
     return Snapshot(
-      dueToday: (props["dueToday"] as? NSNumber)?.intValue ?? 0,
-      overdue: (props["overdue"] as? NSNumber)?.intValue ?? 0,
-      doneToday: (props["doneToday"] as? NSNumber)?.intValue ?? 0,
-      totalToday: (props["totalToday"] as? NSNumber)?.intValue ?? 0,
-      nextAt: nextAtMs > 0 ? Date(timeIntervalSince1970: nextAtMs / 1000) : nil,
-      empty: (props["empty"] as? NSNumber)?.boolValue ?? true
+      dueToday: todayItems.filter { !$0.done }.count,
+      overdue: items.filter { !$0.done && ($0.scheduled() ?? .distantFuture) < today }.count,
+      doneToday: todayItems.filter { $0.done }.count,
+      totalToday: todayItems.count,
+      nextAt: next,
+      empty: items.isEmpty
     )
   }
 }

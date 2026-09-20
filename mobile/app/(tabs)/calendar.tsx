@@ -4,6 +4,9 @@ import {
   RefreshControl, Modal, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
+import { parseLocalDateTime } from '@/utils/notificationPlan';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -42,6 +45,8 @@ export default function CalendarScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  usePlannerCacheUpdates('task', user?.id, setTasks);
+  usePlannerCacheUpdates('reminder', user?.id, setReminders);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<CalendarView>('month');
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
@@ -52,6 +57,20 @@ export default function CalendarScreen() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState(todayStr);
+  const params = useLocalSearchParams<{ date?: string }>();
+
+  useEffect(() => {
+    if (!params.date) return;
+    const at = parseLocalDateTime(params.date, '', 0);
+    if (at !== null) {
+      const date = new Date(at);
+      setSelectedDate(params.date);
+      setYear(date.getFullYear());
+      setMonth(date.getMonth());
+      setView('day');
+    }
+    router.setParams({ date: undefined });
+  }, [params.date]);
 
   const loadData = useCallback(async () => {
     if (!user) return;

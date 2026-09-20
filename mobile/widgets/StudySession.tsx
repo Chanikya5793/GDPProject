@@ -8,9 +8,9 @@ import type { StudySessionProps } from '@/utils/studySession';
 
 // The focus session, on the Lock Screen and in the Dynamic Island.
 //
-// Same sandbox rule as widgets/DueToday.tsx — read the note at the top of that
-// file. This body is stringified at build time and evaluated in a bare
-// JavaScriptCore context, so it may reference nothing outside itself.
+// This Live Activity still uses Expo's isolated widget runtime. Its body is
+// stringified at build time and evaluated in JavaScriptCore, so it may reference
+// nothing outside itself. The planner widgets use native SwiftUI separately.
 //
 // Three things differ from a home screen widget, and all three are easy to get
 // wrong:

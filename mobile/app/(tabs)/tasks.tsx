@@ -4,6 +4,7 @@ import {
   Modal, RefreshControl, Alert, LayoutAnimation, Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
 import { Ionicons } from '@expo/vector-icons';
 import AskAiButton from '@/components/AskAiButton';
 import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
@@ -102,6 +103,7 @@ export default function TasksScreen() {
   const { colors, accent, appearance } = useAppTheme();
 
   const [tasks, setTasks] = useState<Task[]>([]);
+  usePlannerCacheUpdates('task', user?.id, setTasks);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -114,7 +116,7 @@ export default function TasksScreen() {
   const [draft, setDraft] = useState<LinkDraft>(EMPTY_DRAFT);
   const params = useLocalSearchParams<{
     new?: string; due?: string; at?: string;
-    priority?: string; category?: string; notes?: string;
+    priority?: string; category?: string; notes?: string; focus?: string;
   }>();
 
   useEffect(() => {
@@ -145,6 +147,16 @@ export default function TasksScreen() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    if (!params.focus || loading) return;
+    const item = tasks.find(task => String(task.id) === params.focus);
+    if (item) {
+      setEditingTask(item);
+      setModalVisible(true);
+    }
+    router.setParams({ focus: undefined });
+  }, [params.focus, tasks, loading]);
+
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
   const handleToggle = async (id: PlannerRecordId) => {
@@ -170,7 +182,7 @@ export default function TasksScreen() {
       setTasks(prev => prev.map(t => t.id === editingTask.id ? updated : t));
     } else {
       const created = await createTask({ ...form, userId: user!.id, title: form.title || '' });
-      setTasks(prev => [...prev, created]);
+      setTasks(prev => prev.some(item => item.id === created.id) ? prev : [...prev, created]);
     }
     setModalVisible(false);
     setEditingTask(null);
