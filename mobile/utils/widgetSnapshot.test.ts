@@ -1,157 +1,84 @@
 import { describe, expect, it } from 'vitest';
-import { Reminder, Task } from '@/types';
-import {
-  buildWidgetSnapshot,
-  buildWidgetTimeline,
-  MAX_ITEMS,
-  MAX_TIMELINE_ENTRIES,
-  MAX_TITLE_LENGTH,
-} from './widgetSnapshot';
+import type { Reminder, Task } from '@/types';
+import { buildWidgetSnapshot, MAX_TITLE_LENGTH } from './widgetSnapshot';
+import { resolveWidgetCommand, type WidgetCommand } from './widgetCommands';
 
-const NOW = new Date(2026, 8, 7, 8, 0).getTime(); // Mon 2026-09-07, 08:00 local
+const task = (overrides: Partial<Task> = {}): Task => ({
+  id: 123, userId: 'student', title: 'Research outline', dueDate: '2026-09-17', dueTime: '',
+  priority: 'high', category: 'Private course', notes: 'Private notes', completed: false,
+  createdAt: '2026-09-01', _revision: 4, ...overrides,
+});
+const reminder: Reminder = { id: 'r:1', userId: 'student', title: 'Office hours', date: '2026-09-18',
+  time: '14:00', notes: 'Private appointment', createdAt: '2026-09-01' };
+const snapshot = (tasks: Task[], showTitles = false) => buildWidgetSnapshot({
+  tasks, reminders: [reminder], now: 1000, showTitles, owner: 'opaque-owner',
+});
+const command = (overrides: Partial<WidgetCommand> = {}): WidgetCommand => ({
+  id: 'command-1', owner: 'opaque-owner', kind: 'task', recordId: '123', revision: 4,
+  date: '2026-09-17', time: '', createdAt: 2000, ...overrides,
+});
 
-function task(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 't1', userId: 'u1', title: 'Essay draft',
-    dueDate: '2026-09-07', dueTime: '17:00',
-    priority: 'medium', category: 'Homework', notes: '',
-    completed: false, createdAt: '2026-09-01T00:00:00Z',
-    ...overrides,
-  };
-}
-
-function reminder(overrides: Partial<Reminder> = {}): Reminder {
-  return {
-    id: 'r1', userId: 'u1', title: 'Office hours',
-    date: '2026-09-07', time: '14:00', notes: '',
-    createdAt: '2026-09-01T00:00:00Z',
-    ...overrides,
-  };
-}
-
-function snap(tasks: Task[], reminders: Reminder[] = [], showTitles = false) {
-  return buildWidgetSnapshot({ tasks, reminders, now: NOW, showTitles });
-}
-
-describe('buildWidgetSnapshot', () => {
-  it('counts today across tasks and reminders', () => {
-    const result = snap([task()], [reminder()]);
-    expect(result.dueToday).toBe(2);
-    expect(result.overdue).toBe(0);
+describe('native widget snapshot', () => {
+  it('exports only the allowed metadata, withholding titles and custom categories by default', () => {
+    const value = snapshot([task()]);
+    const json = JSON.stringify(value);
+    for (const secret of ['Research outline', 'Private course', 'Private notes', 'Private appointment', 'Office hours', 'student']) {
+      expect(json).not.toContain(secret);
+    }
+    expect(value.items[0]).toEqual({ id: '123', kind: 'task', title: '', date: '2026-09-17', time: '',
+      category: '', priority: 'high', done: false, revision: 4, pending: false });
   });
-
-  it('names the next moment left today as a timestamp a layout can count down from', () => {
-    expect(snap([task()], [reminder()]).nextAt).toBe(new Date(2026, 8, 7, 14, 0).getTime());
+  it('exports opted-in titles, but never notes or identity', () => {
+    const value = snapshot([task()], true);
+    expect(value.items[0].title).toBe('Research outline');
+    expect(value.items[0].category).toBe('Private course');
+    expect(JSON.stringify(value)).not.toContain('Private notes');
+    expect(JSON.stringify(value)).not.toContain('userId');
   });
-
-  it('leaves nextAt at zero once the day is done', () => {
-    const done = buildWidgetSnapshot({
-      tasks: [task()], reminders: [], showTitles: false,
-      now: new Date(2026, 8, 7, 20, 0).getTime(),
-    });
-    expect(done.nextAt).toBe(0);
-    expect(done.dueToday).toBe(1);
+  it('does not lose records when the planner exceeds ten items', () => {
+    const value = snapshot(Array.from({ length: 600 }, (_, index) => task({ id: index, completed: index % 2 === 0 })));
+    expect(value.items).toHaveLength(601);
+    expect(value.items.filter(item => item.done)).toHaveLength(300);
   });
-
-  it('withholds every title unless they are allowed', () => {
-    const hidden = snap([task()], [reminder()]);
-    expect(hidden.items.every(item => item.title === '')).toBe(true);
-    expect(hidden.titlesAllowed).toBe(false);
-
-    const shown = snap([task()], [reminder()], true);
-    expect(shown.items.map(item => item.title)).toContain('Essay draft');
-    expect(shown.titlesAllowed).toBe(true);
+  it('preserves date-only and undated tasks without inventing a morning deadline', () => {
+    const value = snapshot([task(), task({ id: 'undated', dueDate: '' })]);
+    expect(value.items[0].time).toBe('');
+    expect(value.items[1].date).toBe('');
   });
-
-  it('truncates an allowed title rather than letting it run', () => {
-    const long = 'Comparative analysis of distributed consensus protocols';
-    const title = snap([task({ title: long })], [], true).items[0].title;
-    expect(title.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+  it('rejects impossible dates and malformed times', () => {
+    const value = snapshot([task({ dueDate: '2026-02-30' }), task({ dueTime: '27:00' }), task({ dueTime: 'abc' })]);
+    expect(value.items).toHaveLength(1);
+  });
+  it('bounds titles without splitting surrogate pairs', () => {
+    const title = snapshot([task({ title: '🎓'.repeat(120) })], true).items[0].title;
+    expect(Array.from(title)).toHaveLength(MAX_TITLE_LENGTH);
     expect(title.endsWith('…')).toBe(true);
+    expect(title).not.toContain('\uFFFD');
   });
-
-  it('separates overdue from due today and counts what is already done', () => {
-    const result = snap([
-      task({ id: 'old', dueDate: '2026-09-01' }),
-      task({ id: 'fin', completed: true }),
-      task(),
-    ]);
-    expect(result.overdue).toBe(1);
-    expect(result.dueToday).toBe(1);
-    expect(result.doneToday).toBe(1);
-    expect(result.totalToday).toBe(2);
-  });
-
-  it('leads the published list with overdue work', () => {
-    const result = snap([task({ id: 'old', dueDate: '2026-09-02' }), task()]);
-    expect(result.items[0].id).toBe('old');
-  });
-
-  it('carries category and priority so a widget can filter on them', () => {
-    const [item] = snap([task({ category: 'Exam', priority: 'high' })]).items;
-    expect(item.category).toBe('Exam');
-    expect(item.priority).toBe('high');
-    expect(item.kind).toBe('task');
-  });
-
-  it('caps how many items are published', () => {
-    const many = Array.from({ length: 25 }, (_, index) => task({ id: `t${index}` }));
-    expect(snap(many).items.length).toBeLessThanOrEqual(MAX_ITEMS);
-  });
-
-  it('builds a seven-day load starting today', () => {
-    const result = snap([task(), task({ id: 't2', dueDate: '2026-09-09' })]);
-    expect(result.days).toHaveLength(7);
-    expect(result.days[0].isToday).toBe(true);
-    expect(result.days[0].label).toBe('M');
-    expect(result.days[0].count).toBe(1);
-    expect(result.days[2].count).toBe(1);
-    expect(result.days[1].count).toBe(0);
-  });
-
-  it('reports an empty planner so a widget can say so', () => {
-    const result = snap([], []);
-    expect(result.empty).toBe(true);
-    expect(result.items).toEqual([]);
-  });
-
-  it('skips records with no date at all', () => {
-    expect(snap([task({ dueDate: '' })], [reminder({ date: '' })]).empty).toBe(true);
+  it('keeps tasks and reminders with identical IDs separate', () => {
+    const value = snapshot([task({ id: 'r:1' })]);
+    expect(value.items.map(item => `${item.kind}:${item.id}`)).toEqual(['task:r:1', 'reminder:r:1']);
   });
 });
 
-describe('buildWidgetTimeline', () => {
-  it('starts now and crosses midnight, so counts roll over unattended', () => {
-    const entries = buildWidgetTimeline({
-      tasks: [task()], reminders: [], now: NOW, showTitles: false,
-    });
-    expect(entries[0].date.getTime()).toBe(NOW);
-    const crossing = entries.find(entry => entry.date.getDate() === 8);
-    expect(crossing).toBeDefined();
-    expect(crossing!.props.dueToday).toBe(0);
+describe('durable widget command reconciliation', () => {
+  it('preserves the original ID type for the ordinary mutation endpoint', () => {
+    const result = resolveWidgetCommand(command(), 'opaque-owner', [task()]);
+    expect(result.status).toBe('complete');
+    if (result.status === 'complete') expect(result.record.id).toBe(123);
   });
-
-  it('adds an entry just after each upcoming item, so "next" advances', () => {
-    const entries = buildWidgetTimeline({
-      tasks: [task()], reminders: [reminder()], now: NOW, showTitles: false,
-    });
-    expect(entries[0].props.nextAt).toBe(new Date(2026, 8, 7, 14, 0).getTime());
-    const afterTwo = entries.find(entry => entry.date.getHours() === 14);
-    expect(afterTwo!.props.nextAt).toBe(new Date(2026, 8, 7, 17, 0).getTime());
+  it('treats a replay as already applied instead of reopening the item', () => {
+    expect(resolveWidgetCommand(command(), 'opaque-owner', [task({ completed: true })]).status).toBe('applied');
   });
-
-  it('returns entries in order and within the cap', () => {
-    const many = Array.from({ length: 30 }, (_, index) =>
-      task({ id: `t${index}`, dueTime: `${String(9 + (index % 12)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}` }));
-    const entries = buildWidgetTimeline({ tasks: many, reminders: [], now: NOW, showTitles: false });
-    expect(entries.length).toBeLessThanOrEqual(MAX_TIMELINE_ENTRIES);
-    const times = entries.map(entry => entry.date.getTime());
-    expect([...times].sort((a, b) => a - b)).toEqual(times);
+  it('discards another account and deleted records', () => {
+    expect(resolveWidgetCommand(command(), 'different-owner', [task()]).status).toBe('discard');
+    expect(resolveWidgetCommand(command(), 'opaque-owner', []).status).toBe('discard');
   });
-
-  it('still schedules the midnight rollover for an empty planner', () => {
-    const entries = buildWidgetTimeline({ tasks: [], reminders: [], now: NOW, showTitles: false });
-    expect(entries).toHaveLength(2);
-    expect(entries.every(entry => entry.props.empty)).toBe(true);
+  it.each([{ _revision: 5 }, { dueDate: '2026-09-19' }, { dueTime: '16:00' }])('rejects changed records: %s', change => {
+    expect(resolveWidgetCommand(command(), 'opaque-owner', [task(change)]).status).toBe('stale');
+  });
+  it('supports reminders and missing revisions in offline records', () => {
+    const action = command({ kind: 'reminder', recordId: 'r:1', revision: null, date: reminder.date, time: reminder.time });
+    expect(resolveWidgetCommand(action, 'opaque-owner', [reminder]).status).toBe('complete');
   });
 });

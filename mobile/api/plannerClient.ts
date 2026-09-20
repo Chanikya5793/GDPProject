@@ -1,5 +1,5 @@
-import { apiRequest, idempotencyKey } from './client';
-import { getItem, setItem } from './storage';
+import { ApiError, apiRequest, idempotencyKey } from './client';
+import { getItem, getStorageUid, setItem } from './storage';
 import { preserveAttachments } from '@/utils/attachments';
 import { Note, PlannerRecordId, Reminder, ServerAttachment, Task } from '@/types';
 import { auth } from '@/lib/firebase';
@@ -24,6 +24,21 @@ interface OutboxOperation {
 }
 
 const cacheKey = (kind: Kind) => `nw_${kind === 'note' ? 'notes' : `${kind}s`}`;
+const recordOperations = new Map<string, Promise<unknown>>();
+
+// Widget completions and a foreground refresh can arrive together. Serialize
+// cache reads and writes per account so an older fetch cannot undo a completion.
+function serializeRecords<T>(kind: Kind | 'outbox', operation: () => Promise<T>): Promise<T> {
+  const uid = getStorageUid();
+  const key = `${uid}:${kind}`;
+  const run = (recordOperations.get(key) ?? Promise.resolve()).catch(() => {}).then(() => {
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+    return operation();
+  });
+  recordOperations.set(key, run);
+  void run.finally(() => { if (recordOperations.get(key) === run) recordOperations.delete(key); }).catch(() => {});
+  return run;
+}
 
 function currentUid(): string {
   const uid = auth?.currentUser?.uid;
@@ -167,30 +182,51 @@ async function send(operation: OutboxOperation): Promise<ServerRecord | undefine
   );
 }
 
-async function queue(operation: OutboxOperation): Promise<void> {
-  const outbox = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
-  await setItem('nw_sync_outbox', [...outbox, operation]);
+async function queue(operation: OutboxOperation, expectedUid = getStorageUid()): Promise<void> {
+  await serializeRecords('outbox', async () => {
+    const outbox = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
+    if (getStorageUid() !== expectedUid) throw new ApiError('Account changed.', 401);
+    await setItem('nw_sync_outbox', [...outbox, operation]);
+  });
 }
 
 export async function flushOutbox(): Promise<number> {
+  return serializeRecords('outbox', flushOutboxNow);
+}
+
+async function flushOutboxNow(): Promise<number> {
+  const uid = getStorageUid();
   const outbox = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
   const remaining: OutboxOperation[] = [];
-  for (const operation of outbox) {
+  for (const [index, operation] of outbox.entries()) {
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
     try { await send(operation); }
     catch (error) {
       remaining.push(operation);
-      if (error instanceof Error && 'status' in error && (error as { status: number }).status === 409) break;
+      if (error instanceof Error && 'status' in error && (error as { status: number }).status === 409) {
+        remaining.push(...outbox.slice(index + 1));
+        break;
+      }
     }
   }
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
   await setItem('nw_sync_outbox', remaining);
   return remaining.length;
 }
 
 export async function listPlannerItems<T extends PlannerItem>(kind: Kind): Promise<T[]> {
+  return serializeRecords(kind, () => listPlannerItemsNow<T>(kind));
+}
+
+async function listPlannerItemsNow<T extends PlannerItem>(kind: Kind): Promise<T[]> {
+  const uid = getStorageUid();
   try {
     await flushOutbox();
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
     const records = await apiRequest<ServerRecord[]>(`/v1/records/${kind}`);
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
     const cached = kind === 'note' ? await loadCache(kind) as T[] : [];
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
     const items = records.map(record => {
       const saved = fromServer(record) as T;
       const local = cached.find(item => String(item.id) === String(saved.id));
@@ -199,6 +235,7 @@ export async function listPlannerItems<T extends PlannerItem>(kind: Kind): Promi
     await saveCache(kind, items);
     return items;
   } catch {
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
     return await loadCache(kind) as T[];
   }
 }
@@ -229,10 +266,32 @@ export async function createPlannerItem<T extends PlannerItem>(kind: Kind, item:
   }
 }
 
-export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>): Promise<T> {
+export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
+  expected?: { userId: string; revision: number | null; date: string; time: string },
+): Promise<T> {
+  return serializeRecords(kind, () => updatePlannerItemNow(kind, id, updates, expected));
+}
+
+async function updatePlannerItemNow<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
+  expected?: { userId: string; revision: number | null; date: string; time: string },
+): Promise<T> {
+  const operationUid = getStorageUid();
+  const assertScope = () => {
+    if (getStorageUid() !== operationUid || (expected && operationUid !== expected.userId)) {
+      throw new ApiError('Account changed.', 401);
+    }
+  };
+  assertScope();
   const items = await loadCache(kind) as T[];
+  assertScope();
   const current = items.find(item => item.id === id);
   if (!current) throw new Error('Record is unavailable in the encrypted cache');
+  if (expected) {
+    const date = 'dueDate' in current ? current.dueDate : 'date' in current ? current.date : '';
+    const time = 'dueTime' in current ? current.dueTime : 'time' in current ? current.time : '';
+    if (current.userId !== expected.userId || (current._revision ?? null) !== expected.revision ||
+        date !== expected.date || time !== expected.time) throw new ApiError('Item changed.', 409);
+  }
   const merged = { ...current, ...updates } as T;
   const operation: OutboxOperation = {
     method: 'PUT', kind, recordId: id,
@@ -243,13 +302,18 @@ export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: P
     },
   };
   try {
-    const saved = withLocalOnlyFields(kind, fromServer((await send(operation))!) as T, merged);
+    const server = await send(operation);
+    assertScope();
+    const saved = withLocalOnlyFields(kind, fromServer(server!) as T, merged);
     await saveCache(kind, items.map(item => item.id === id ? saved : item));
+    assertScope();
     try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
     return saved;
   } catch (error) {
+    assertScope();
     if (error instanceof Error && 'status' in error && (error as { status: number }).status < 500) throw error;
-    await queue(operation);
+    await queue(operation, operationUid);
+    assertScope();
     const pending = { ...merged, _pending: true };
     await saveCache(kind, items.map(item => item.id === id ? pending : item));
     return pending;

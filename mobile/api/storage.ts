@@ -11,6 +11,8 @@ const SENSITIVE_KEYS = [
 let authenticatedUid: string | null = null;
 const scopeListeners = new Set<() => void>();
 
+export function getStorageUid(): string | null { return authenticatedUid; }
+
 export function setStorageUid(uid: string | null): void {
   if (authenticatedUid === uid) return;
   authenticatedUid = uid;
@@ -35,16 +37,16 @@ function scope(): string {
   return authenticatedUid || 'device-settings';
 }
 
-function storageKey(key: string): string {
-  return `${VERSION}:${scope()}:${key}`;
+function storageKey(key: string, userScope = scope()): string {
+  return `${VERSION}:${userScope}:${key}`;
 }
 
-function keyId(): string {
-  return `planner_key_${scope().replace(/[^A-Za-z0-9_.-]/g, '_')}`;
+function keyId(userScope: string): string {
+  return `planner_key_${userScope.replace(/[^A-Za-z0-9_.-]/g, '_')}`;
 }
 
-async function getDeviceKey(): Promise<Uint8Array> {
-  const id = keyId();
+async function getDeviceKey(userScope: string): Promise<Uint8Array> {
+  const id = keyId(userScope);
   const existing = await SecureStore.getItemAsync(id, {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
@@ -56,27 +58,29 @@ async function getDeviceKey(): Promise<Uint8Array> {
   return generated;
 }
 
-function aad(key: string): Uint8Array {
-  return new TextEncoder().encode(`northwest-planner:mobile:v1:${scope()}:${key}`);
+function aad(key: string, userScope: string): Uint8Array {
+  return new TextEncoder().encode(`northwest-planner:mobile:v1:${userScope}:${key}`);
 }
 
 export async function getItem<T>(key: string, fallback: T): Promise<T> {
-  const raw = await AsyncStorage.getItem(storageKey(key));
+  const userScope = scope();
+  const raw = await AsyncStorage.getItem(storageKey(key, userScope));
   if (!raw) return fallback;
   const envelope = JSON.parse(raw) as { algorithm: string; nonce: string; ciphertext: string };
   if (envelope.algorithm !== 'XCHACHA20-POLY1305') throw new Error('Unsupported secure storage format');
   const cipher = xchacha20poly1305(
-    await getDeviceKey(), base64.decode(envelope.nonce), aad(key),
+    await getDeviceKey(userScope), base64.decode(envelope.nonce), aad(key, userScope),
   );
   const plaintext = cipher.decrypt(base64.decode(envelope.ciphertext));
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
 }
 
 export async function setItem(key: string, value: unknown): Promise<void> {
+  const userScope = scope();
   const nonce = await Crypto.getRandomBytesAsync(24);
-  const cipher = xchacha20poly1305(await getDeviceKey(), nonce, aad(key));
+  const cipher = xchacha20poly1305(await getDeviceKey(userScope), nonce, aad(key, userScope));
   const plaintext = new TextEncoder().encode(JSON.stringify(value));
-  await AsyncStorage.setItem(storageKey(key), JSON.stringify({
+  await AsyncStorage.setItem(storageKey(key, userScope), JSON.stringify({
     algorithm: 'XCHACHA20-POLY1305',
     nonce: base64.encode(nonce),
     ciphertext: base64.encode(cipher.encrypt(plaintext)),
@@ -101,4 +105,3 @@ export async function migrateLegacyStorage(uid: string): Promise<number> {
   }
   return migrated;
 }
-

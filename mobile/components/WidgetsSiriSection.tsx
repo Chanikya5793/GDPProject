@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Linking, Platform, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -6,28 +6,29 @@ import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useToast } from '@/components/Toast';
+import { nativeWidgetsAvailable, syncWidget } from '@/api/widgets';
 
 /** Kept in step by hand with the `widgets` array under expo-widgets in app.json. */
 const WIDGETS: { name: string; where: string; blurb: string }[] = [
   {
     name: 'Due Today',
     where: 'Home screen · Lock Screen',
-    blurb: 'How much is due, and what is next. Choose today, three days or the week.',
+    blurb: 'Your interactive agenda. Complete work, browse the whole list, and see deadlines and priority. Small, medium and large sizes.',
   },
   {
     name: 'Up Next',
     where: 'Home screen · Lock Screen',
-    blurb: 'The next thing, counting down. Tick it off without opening the app.',
+    blurb: 'A live deadline countdown, priority, and what comes after it. Check off tasks and reminders from the widget.',
   },
   {
     name: 'This Week',
     where: 'Home screen',
-    blurb: 'A bar per day, so you can see which day is worth protecting.',
+    blurb: 'Tap a day to explore its workload. The large widget includes that day’s agenda. Red marks high priority work.',
   },
   {
     name: 'Today’s Progress',
-    where: 'Lock Screen',
-    blurb: 'A ring of what you have finished today.',
+    where: 'Home screen · Lock Screen',
+    blurb: 'Progress for items due today, with overdue and unscheduled work on the medium Home Screen widget.',
   },
 ];
 
@@ -51,6 +52,7 @@ export default function WidgetsSiriSection() {
   const { colors, accent, appearance } = useAppTheme();
   const { settings, updateSetting } = useSettings();
   const toast = useToast();
+  const [refreshing, setRefreshing] = useState(false);
   const s = makeStyles(colors, appearance);
 
   const setWidgetTitles = useCallback((value: boolean) => {
@@ -72,6 +74,20 @@ export default function WidgetsSiriSection() {
     });
   }, [toast]);
 
+  const refreshWidgets = useCallback(async () => {
+    if (!nativeWidgetsAvailable()) {
+      toast.show('Install the updated iOS app to use native widgets.', 'info');
+      return;
+    }
+    setRefreshing(true);
+    try {
+      await syncWidget();
+      toast.show('Widget refresh requested. iOS controls when it appears.', 'info');
+    } catch {
+      toast.show('Could not refresh widgets. Try again after opening your planner.', 'info');
+    } finally { setRefreshing(false); }
+  }, [toast]);
+
   return (
     <View style={s.section}>
       <View style={s.sectionHeader}>
@@ -79,8 +95,9 @@ export default function WidgetsSiriSection() {
         <Text style={s.sectionTitle}>Widgets &amp; Siri</Text>
       </View>
       <Text style={s.blurb}>
-        Built from what is already stored on this device. Nothing about your work
-        is sent anywhere to put it on the home screen or answer a question.
+        Keep your agenda, deadlines and progress within reach. Widget checkboxes
+        save on this device, even while the app is closed. Open the planner to
+        apply those changes and sync them to your account.
       </Text>
 
       <Text style={s.groupLabel}>Widgets</Text>
@@ -96,17 +113,35 @@ export default function WidgetsSiriSection() {
       <Text style={s.hint}>
         To add one, press and hold the home screen, tap the add button and search
         for NW Planner. Press and hold a widget you have added to change what it
-        shows — that needs iOS 17 or later.
+        shows. Interactive widgets need iOS 17 or later. Large widgets have room
+        for more information; iPad also supports an extra-large agenda.
       </Text>
+
+      <Text style={s.hint}>
+        In Edit Widget, choose tasks, reminders, or both; sort by deadline or
+        priority; include overdue or unscheduled work; and pick an accent.
+        Tap a title to open that record. Use Undo while a completion is waiting
+        to sync. Dates without a time stay all-day until the day ends.
+      </Text>
+
+      {Platform.OS === 'ios' && (
+        <TouchableOpacity style={s.actionRow} onPress={refreshWidgets} disabled={refreshing}
+          accessibilityRole="button" accessibilityState={{ disabled: refreshing }}>
+          <Ionicons name="refresh-outline" size={16} color={accent.primary} />
+          <Text style={[s.actionText, { color: accent.primary }]}>
+            {refreshing ? 'Refreshing widgets…' : 'Refresh widgets now'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <View style={s.row}>
         <View style={s.rowInfo}>
-          <Text style={s.rowLabel}>Allow Titles on Widgets</Text>
+          <Text style={s.rowLabel}>Show task and reminder titles</Text>
           <Text style={s.rowDesc}>
-            Off by default, widgets show only counts and times. Turning this on
-            lets them show what a task is called — including on the Lock Screen,
-            which is readable without unlocking the phone. Each widget can still
-            hide titles on its own.
+            Turn on for a detailed agenda with titles and categories. These are
+            copied to shared device storage and may appear on your Lock Screen.
+            Notes and attachments stay private. Configurable widgets can hide titles
+            in Edit Widget. Off by default.
           </Text>
         </View>
         <Switch

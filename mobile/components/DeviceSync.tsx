@@ -12,10 +12,8 @@ import {
   syncScheduledNotifications,
   onNotificationTapped,
 } from '@/api/notifications';
-import { clearWidget, onWidgetAction, syncWidget } from '@/api/widgets';
+import { clearWidget, syncPendingWidgetActions, syncWidget } from '@/api/widgets';
 import { clearLiveActivities } from '@/api/liveActivity';
-import { updateTask } from '@/api/tasks';
-import { updateReminder } from '@/api/reminders';
 
 const ASKED_KEY = 'nw_notifications_asked';
 
@@ -51,7 +49,7 @@ export default function DeviceSync() {
       // Signed out. The system queue is not scoped to a user, so alerts naming
       // this student's work must go before anyone else can sign in.
       cancelAllNotifications().catch(() => {});
-      clearWidget();
+      clearWidget().catch(() => {});
       // Not covered by clearWidget: a Live Activity lives in ActivityKit
       // rather than the App Group, so it would otherwise outlast the session
       // and put the previous student's work on a shared phone's Lock Screen.
@@ -88,26 +86,20 @@ export default function DeviceSync() {
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active') sync();
     });
+    // The extension has its own process. Check its durable inbox while this
+    // app is active without spending WidgetKit reloads when nothing changed.
+    const actionsTimer = setInterval(() => {
+      if (active && AppState.currentState === 'active') syncPendingWidgetActions().catch(() => {});
+    }, 3000);
 
     return () => {
       active = false;
       if (timer.current) clearTimeout(timer.current);
+      clearInterval(actionsTimer);
       stopWatchingData();
       subscription.remove();
     };
   }, [user, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
-
-  // A tick box tapped on a widget. The widget has already redrawn itself; this
-  // is what makes it true. Taps made while the app was closed never arrive —
-  // the ordinary refresh above rebuilds every timeline from the records and
-  // quietly puts the box back.
-  useEffect(() => {
-    if (!user) return;
-    return onWidgetAction(async (kind, recordId) => {
-      if (kind === 'reminder') await updateReminder(recordId, { completed: true });
-      else await updateTask(recordId, { completed: true });
-    });
-  }, [user]);
 
   // A tapped alert should land on the thing it was about, not the home screen.
   useEffect(() => onNotificationTapped(payload => {
