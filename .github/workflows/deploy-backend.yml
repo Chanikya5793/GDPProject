@@ -135,10 +135,15 @@ jobs:
       - name: Deploy
         if: steps.configured.outputs.ready == 'true'
         run: |
+          # Source deploys keep the service's existing environment; the Cloud
+          # Run template under infra/ is only read by scripts/deploy.sh. Any
+          # setting this workflow is responsible for is stated here so a
+          # change to it actually ships.
           gcloud run deploy planner-api \
             --source . \
             --region=us-central1 \
             --platform=managed \
+            --update-env-vars=PLANNER_REQUIRE_VERIFIED_EMAIL=true \
             --quiet
 
       - name: Report the live revision
