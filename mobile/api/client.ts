@@ -47,6 +47,27 @@ export function describeDetail(detail: unknown, status: number): string {
   return `Planner request failed (${status})`;
 }
 
+/**
+ * Ask the API for nothing in particular, early, so it is awake when needed.
+ *
+ * The service scales to zero to avoid paying for an idle instance, which puts
+ * a container start in front of whoever asks first. Calling this as the app
+ * mounts, and again when it returns from the background, moves that start
+ * into the seconds spent on the splash screen rather than into the first
+ * real request.
+ *
+ * Deliberately silent and unawaited: it is an optimisation, and a warm-up
+ * that failed must never surface as an error or block anything.
+ */
+export function warmUpApi(): void {
+  if (!apiConfigured()) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  fetch(`${API_URL}/v1/signup-policy`, { method: 'GET', signal: controller.signal })
+    .catch(() => {})
+    .finally(() => clearTimeout(timer));
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!firebaseConfigured || !API_URL) throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured');
   if (!auth?.currentUser) throw new ApiError('Sign in is required.', 401, 'unauthenticated');
