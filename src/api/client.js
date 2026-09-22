@@ -59,6 +59,30 @@ export async function fetchSignupPolicy() {
 }
 
 /**
+ * Ask the API for nothing in particular, early, so it is awake when needed.
+ *
+ * The service scales to zero to avoid paying for an idle instance, which puts
+ * a container start in front of whoever asks first. Calling this the moment
+ * the app mounts moves that start into the seconds a student spends looking
+ * at the screen, instead of into their first real request.
+ *
+ * Deliberately silent and unawaited: it is an optimisation, and a warm-up
+ * that failed must never surface as an error or block anything.
+ */
+export function warmUpApi() {
+  if (!apiConfigured()) return
+  try {
+    fetch(`${API_URL}/v1/signup-policy`, {
+      method: 'GET',
+      signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // No network, or fetch refused outright. Nothing to do and nothing to say.
+  }
+}
+
+/**
  * Refuse before any request when the build cannot reach a planner API.
  *
  * Two different situations, deliberately told apart. No Firebase at all is

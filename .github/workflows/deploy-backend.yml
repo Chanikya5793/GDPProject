@@ -144,6 +144,8 @@ jobs:
             --region=us-central1 \
             --platform=managed \
             --update-env-vars=PLANNER_REQUIRE_VERIFIED_EMAIL=true \
+            --min-instances=0 \
+            --cpu-boost \
             --quiet
 
       - name: Report the live revision

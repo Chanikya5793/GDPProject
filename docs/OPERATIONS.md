@@ -95,6 +95,50 @@ List known-good revisions with `gcloud run revisions list --service "$GDP_SERVIC
 revision before moving 100% of traffic. Data schema v1 is backward-compatible; do not
 destroy Firestore or wrapped DEKs during rollback.
 
+Rollback reaches back five builds, not further. Both Artifact Registry
+repositories run a cleanup policy that keeps the five most recent images and
+deletes anything older than fourteen days, so revisions beyond that window
+still appear in `gcloud run revisions list` but their image is gone and they
+cannot be started. Five builds has been weeks of history in practice; if a
+release needs a longer guarantee, tag that image and add a Keep policy for the
+tag before it ages out.
+
+## Cost
+
+The project runs on Blaze but is meant to sit inside the no-cost quotas.
+Firestore and Authentication are well under theirs. Everything that has ever
+appeared on the bill came from Cloud Run, so that is where to look first.
+
+The one real trap is `min-instances`. A warm instance removes the cold start
+and bills 1 vCPU and 1 GiB around the clock, which was Rs 341 of a Rs 393
+month in September 2026 -- about 97% of the project's spend, under the SKU
+"Services Min Instance Memory". It is set to 0 in
+`infra/cloudrun/service.yaml.template` and stated again in
+`.github/workflows/deploy-backend.yml`, because that workflow deploys from
+source and keeps the service's existing configuration: a value that lives only
+in the template never actually ships. Do not raise it without deciding that the
+idle bill is worth paying.
+
+What pays for the cold start instead, none of which bills for idle time:
+startup CPU boost, bytecode precompiled into the image, a single uvicorn
+worker, the cloud clients built in the lifespan hook rather than on the first
+request, and both clients pinging `/v1/signup-policy` as they start.
+
+A budget of Rs 100 a month on billing account 01616A-5366CE-505D58 alerts at
+50, 90 and 100%. Deliberately alerts only. Firebase also offers a
+service-level spend cap, which pauses the service when it trips -- that would
+take the planner down mid semester over a few rupees, so it is left unset.
+
+The remaining few rupees are not worth chasing. One KMS key version is a flat
+monthly charge and is the price of envelope encryption. The build buckets and
+Artifact Registry now expire their own contents. Secret Manager holds two
+versions against a free six.
+
+`/healthz` is reachable only from inside the container. Google's frontend
+answers it with its own 404 and never forwards it, so the startup and liveness
+probes work while an external check of that path does not. Use
+`/v1/signup-policy` for anything outside.
+
 ## Answer generation provider
 
 Generation runs on Meta Muse Spark via the OpenAI-compatible Chat Completions protocol.

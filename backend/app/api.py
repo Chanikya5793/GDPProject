@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, List, Optional, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -326,12 +328,39 @@ def get_container(request: Request) -> Container:
 ContainerDep = Annotated[Container, Depends(get_container)]
 
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _prebuild_cloud_services(app: FastAPI):
+    """Pay for the cloud clients while the platform is still starting the
+    container, not on the first student's first request.
+
+    The service scales to zero, so this work -- a Firestore client, a KMS
+    client and two Secret Manager reads -- used to land on whoever asked
+    first. Cloud Run grants a startup CPU boost until the container reports
+    ready, which is exactly the window this now runs in.
+
+    Failure is deliberately not fatal: the container is left unset, and
+    get_container retries per request and answers 503 exactly as before.
+    Refusing to start would turn a transient Secret Manager blip into a crash
+    loop instead of a few failed requests.
+    """
+    if getattr(app.state, "container", None) is None:
+        try:
+            app.state.container = build_production_container(get_settings())
+        except Exception:
+            logger.warning("Could not pre-build cloud services at startup", exc_info=True)
+    yield
+
+
 def create_app(container: Container | None = None) -> FastAPI:
     app = FastAPI(
         title="Northwest Planner Copilot API",
         version="1.0.0",
         docs_url=None if os.getenv("PLANNER_ENVIRONMENT") == "production" else "/docs",
         redoc_url=None,
+        lifespan=_prebuild_cloud_services,
     )
     app.state.container = container
     raw_origins = os.getenv("PLANNER_ALLOWED_ORIGINS", '["http://localhost:5173"]')
