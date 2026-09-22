@@ -8,13 +8,18 @@ spec:
   template:
     metadata:
       annotations:
-        # One warm instance. Scaling to zero cost 15.8 seconds on the first
-        # request after any idle period, which is most of a student's first
-        # question of the day. This bills for an idle instance; drop it back to
-        # "0" if that is not worth it.
-        autoscaling.knative.dev/minScale: "1"
+        # Scale to zero. A warm instance removed the 15.8 second cold start
+        # but billed 24x7 for idle CPU and memory, which was 97% of the
+        # project's Cloud Run spend and the entire reason the bill left the
+        # free tier. The cold start is bought back instead by startup CPU
+        # boost, lazy client construction and a warm-up ping from the clients,
+        # none of which bill for idle time.
+        autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "10"
         run.googleapis.com/cpu-throttling: "true"
+        # Free: extra CPU during startup only, which roughly halves the cold
+        # start that scaling to zero reintroduces.
+        run.googleapis.com/startup-cpu-boost: "true"
     spec:
       serviceAccountName: ${GDP_SERVICE_ACCOUNT}
       containerConcurrency: 40
