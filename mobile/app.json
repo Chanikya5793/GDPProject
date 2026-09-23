@@ -72,9 +72,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device.",
-          "cameraPermission": false,
-          "microphonePermission": false
+          "photosPermission": "Attach images from your photo library to a note. Attachments stay encrypted on this device."
         }
       ],
       "./plugins/withoutPushEntitlement",
