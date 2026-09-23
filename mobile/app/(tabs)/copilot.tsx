@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tabBarSpace } from '@/utils/tabBarSpace';
 import { useToast } from '@/components/Toast';
+import TextPromptModal from '@/components/TextPromptModal';
 import { apiConfigured, apiRequest, apiStream, idempotencyKey } from '@/api/client';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
@@ -234,18 +235,27 @@ export default function CopilotScreen() {
     }]);
   };
 
+  // iOS has a native one-field prompt; elsewhere the same flow runs through
+  // TextPromptModal, because Alert.prompt does not exist there.
+  const [renaming, setRenaming] = useState<Conversation | null>(null);
+  const applyRename = async (thread: Conversation, title: string | undefined) => {
+    if (!title?.trim()) return;
+    try {
+      await apiRequest(`/v1/conversations/${encodeURIComponent(thread.conversation_id)}`, {
+        method: 'PATCH', body: JSON.stringify({ title: title.trim() }),
+      });
+      await loadConversations();
+    } catch (error) {
+      Alert.alert('Could not rename', (error as Error).message);
+    }
+  };
   const renameConversation = (thread: Conversation) => {
-    Alert.prompt?.('Rename conversation', undefined, async title => {
-      if (!title?.trim()) return;
-      try {
-        await apiRequest(`/v1/conversations/${encodeURIComponent(thread.conversation_id)}`, {
-          method: 'PATCH', body: JSON.stringify({ title: title.trim() }),
-        });
-        await loadConversations();
-      } catch (error) {
-        Alert.alert('Could not rename', (error as Error).message);
-      }
-    }, 'plain-text', thread.title);
+    if (Platform.OS === 'ios' && Alert.prompt) {
+      Alert.prompt('Rename conversation', undefined, title => { void applyRename(thread, title); },
+        'plain-text', thread.title);
+    } else {
+      setRenaming(thread);
+    }
   };
 
   const removeConversation = (thread: Conversation) => {
@@ -563,7 +573,7 @@ export default function CopilotScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
       {apiConfigured() && (
         <View style={styles.threadBar}>
           <TouchableOpacity style={styles.threadBarBtn} onPress={() => setShowThreads(true)}
@@ -581,7 +591,9 @@ export default function CopilotScreen() {
 
       <Modal visible={showThreads} animationType="slide" transparent
         onRequestClose={() => setShowThreads(false)}>
-        <View style={styles.threadSheet}>
+        <Pressable style={styles.threadBackdrop} onPress={() => setShowThreads(false)}
+          accessibilityLabel="Close conversations" />
+        <View style={[styles.threadSheet, { paddingBottom: 16 + insets.bottom }]}>
           <View style={styles.threadSheetHead}>
             <Text style={styles.threadSheetTitle}>Conversations</Text>
             <TouchableOpacity onPress={() => setShowThreads(false)} accessibilityLabel="Close">
@@ -615,6 +627,18 @@ export default function CopilotScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <TextPromptModal
+        visible={renaming !== null}
+        title="Rename conversation"
+        initialValue={renaming?.title ?? ''}
+        onCancel={() => setRenaming(null)}
+        onSubmit={title => {
+          const thread = renaming;
+          setRenaming(null);
+          if (thread) void applyRename(thread, title);
+        }}
+      />
 
       <ScrollView ref={scrollRef} style={styles.messages} contentContainerStyle={styles.messagesContent}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
@@ -783,6 +807,7 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
       marginTop: 'auto', maxHeight: '70%', backgroundColor: colors.card,
       borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, gap: 8,
     },
+    threadBackdrop: { flex: 1 },
     threadSheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     threadSheetTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
     threadRow: {

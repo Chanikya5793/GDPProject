@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="44dp"
+  android:gravity="center_vertical"
+  android:orientation="horizontal">
+
+  <ImageView
+    android:id="@+id/planner_row_check"
+    android:layout_width="40dp"
+    android:layout_height="40dp"
+    android:padding="9dp"
+    android:src="@drawable/planner_widget_unchecked" />
+
+  <LinearLayout
+    android:id="@+id/planner_row_body"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:paddingStart="4dp"
+    android:paddingEnd="6dp">
+
+    <TextView
+      android:id="@+id/planner_row_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:textColor="@color/planner_widget_text"
+      android:textSize="13sp" />
+
+    <TextView
+      android:id="@+id/planner_row_title_done"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:textColor="@color/planner_widget_faint"
+      android:textSize="13sp"
+      android:visibility="gone" />
+
+    <LinearLayout
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal">
+
+      <TextView
+        android:id="@+id/planner_row_overdue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
+        android:text="Overdue"
+        android:textColor="@color/planner_widget_danger"
+        android:textSize="10sp"
+        android:visibility="gone" />
+
+      <TextView
+        android:id="@+id/planner_row_detail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:textColor="@color/planner_widget_muted"
+        android:textSize="10sp" />
+
+      <TextView
+        android:id="@+id/planner_row_high"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:text="HIGH"
+        android:textColor="@color/planner_widget_danger"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+      <TextView
+        android:id="@+id/planner_row_pending"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:text="Tap to undo"
+        android:textColor="@color/planner_widget_accent"
+        android:textSize="10sp"
+        android:visibility="gone" />
+    </LinearLayout>
+  </LinearLayout>
+</LinearLayout>

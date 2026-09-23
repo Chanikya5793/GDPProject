@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform, Switch,
+  RefreshControl, Alert, Platform, Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
 import { Ionicons } from '@expo/vector-icons';
 import AskAiButton from '@/components/AskAiButton';
+import SheetModal from '@/components/SheetModal';
 import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -164,7 +165,7 @@ export default function RemindersScreen() {
 
       <ScrollView
         contentContainerStyle={s.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} colors={[accent.primary]} progressBackgroundColor={colors.card} />}
       >
         {groups.length === 0 ? (
           <View style={s.empty}>
@@ -292,7 +293,7 @@ function ReminderModal({
   });
 
   return (
-    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
+    <SheetModal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} onRequestClose={onClose}>
       <View style={ms.container}>
         <View style={ms.header}>
           <TouchableOpacity onPress={onClose}>
@@ -349,7 +350,7 @@ function ReminderModal({
           <TextInput style={[ms.input, { height: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Details..." placeholderTextColor={colors.textMuted} multiline />
         </ScrollView>
       </View>
-    </Modal>
+    </SheetModal>
   );
 }
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="planner_widget_paper">#121B1F</color>
+  <color name="planner_widget_text">#EEF2EF</color>
+  <color name="planner_widget_muted">#A3B0AA</color>
+  <color name="planner_widget_faint">#6B7773</color>
+  <color name="planner_widget_accent">#6BD6AD</color>
+  <color name="planner_widget_accent_soft">#296BD6AD</color>
+  <color name="planner_widget_danger">#FF9279</color>
+</resources>

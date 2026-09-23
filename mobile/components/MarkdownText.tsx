@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { Block, InlineToken, parseMarkdown } from '@/utils/markdown';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -25,7 +25,7 @@ function Inline({ spans, style }: { spans: InlineToken[]; style?: object }) {
             <Text
               key={key}
               style={[style, {
-                fontFamily: 'Courier',
+                fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
                 backgroundColor: colors.surfaceVariant,
                 color: colors.text,
               }]}

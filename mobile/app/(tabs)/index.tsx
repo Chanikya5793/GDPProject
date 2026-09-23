@@ -220,7 +220,7 @@ export default function DashboardScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} colors={[accent.primary]} progressBackgroundColor={colors.card} />
       }
     >
       {/* Header */}

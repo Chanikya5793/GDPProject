@@ -32,6 +32,28 @@ const WIDGETS: { name: string; where: string; blurb: string }[] = [
   },
 ];
 
+/** Kept in step by hand with the receivers in modules/planner-widgets-android. */
+const ANDROID_WIDGETS: typeof WIDGETS = [
+  {
+    name: 'Due Today',
+    where: 'Home screen',
+    blurb: 'Today’s tasks and reminders with anything overdue. Tick items off, tap one to open it, and page through the rest. Resize it to see more.',
+  },
+  {
+    name: 'Today’s Progress',
+    where: 'Home screen',
+    blurb: 'How much of today is done, with overdue and unscheduled counts.',
+  },
+];
+
+/** Kept in step by hand with plugins/withAndroidAppShortcuts.js. */
+const ANDROID_SHORTCUTS: { say: string; does: string }[] = [
+  { say: 'Add task', does: 'Opens a new task, ready to type.' },
+  { say: 'Add reminder', does: 'Same, for reminders.' },
+  { say: 'Ask Copilot', does: 'Opens the assistant.' },
+  { say: 'Calendar', does: 'Jumps straight to your calendar.' },
+];
+
 /** Kept in step by hand with PlannerAppShortcuts in plugins/withSiriShortcuts.js. */
 const PHRASES: { say: string; does: string }[] = [
   { say: '“Add a task to NW Planner”', does: 'Opens the form. You can say a due date, a priority and a category too.' },
@@ -54,6 +76,7 @@ export default function WidgetsSiriSection() {
   const toast = useToast();
   const [refreshing, setRefreshing] = useState(false);
   const s = makeStyles(colors, appearance);
+  const android = Platform.OS === 'android';
 
   const setWidgetTitles = useCallback((value: boolean) => {
     updateSetting('widgetShowTitles', value);
@@ -62,11 +85,11 @@ export default function WidgetsSiriSection() {
     // read, and the student is the only one who can weigh that.
     toast.show(
       value
-        ? 'Titles can now appear on the Lock Screen'
+        ? `Titles can now appear on ${android ? 'your home screen' : 'the Lock Screen'}`
         : 'Widgets are back to counts and times only',
       'info',
     );
-  }, [updateSetting, toast]);
+  }, [updateSetting, toast, android]);
 
   const openShortcuts = useCallback(() => {
     Linking.openURL('shortcuts://').catch(() => {
@@ -76,23 +99,23 @@ export default function WidgetsSiriSection() {
 
   const refreshWidgets = useCallback(async () => {
     if (!nativeWidgetsAvailable()) {
-      toast.show('Install the updated iOS app to use native widgets.', 'info');
+      toast.show('Install the latest version of the app to use widgets.', 'info');
       return;
     }
     setRefreshing(true);
     try {
       await syncWidget();
-      toast.show('Widget refresh requested. iOS controls when it appears.', 'info');
+      toast.show(android ? 'Widgets updated.' : 'Widget refresh requested. iOS controls when it appears.', 'info');
     } catch {
       toast.show('Could not refresh widgets. Try again after opening your planner.', 'info');
     } finally { setRefreshing(false); }
-  }, [toast]);
+  }, [toast, android]);
 
   return (
     <View style={s.section}>
       <View style={s.sectionHeader}>
         <Ionicons name="grid-outline" size={18} color={accent.primary} />
-        <Text style={s.sectionTitle}>Widgets &amp; Siri</Text>
+        <Text style={s.sectionTitle}>{android ? 'Widgets & shortcuts' : 'Widgets & Siri'}</Text>
       </View>
       <Text style={s.blurb}>
         Keep your agenda, deadlines and progress within reach. Widget checkboxes
@@ -101,7 +124,7 @@ export default function WidgetsSiriSection() {
       </Text>
 
       <Text style={s.groupLabel}>Widgets</Text>
-      {WIDGETS.map(widget => (
+      {(android ? ANDROID_WIDGETS : WIDGETS).map(widget => (
         <View key={widget.name} style={s.row}>
           <View style={s.rowInfo}>
             <Text style={s.rowLabel}>{widget.name}</Text>
@@ -110,21 +133,32 @@ export default function WidgetsSiriSection() {
           <Text style={s.where}>{widget.where}</Text>
         </View>
       ))}
-      <Text style={s.hint}>
-        To add one, press and hold the home screen, tap the add button and search
-        for NW Planner. Press and hold a widget you have added to change what it
-        shows. Interactive widgets need iOS 17 or later. Large widgets have room
-        for more information; iPad also supports an extra-large agenda.
-      </Text>
+      {android ? (
+        <Text style={s.hint}>
+          To add one, touch and hold an empty spot on the home screen, tap Widgets
+          and find NW Planner. Ticks made on the widget are saved on this device and
+          applied the next time you open the planner; tap one again before then to
+          undo it.
+        </Text>
+      ) : (
+        <>
+          <Text style={s.hint}>
+            To add one, press and hold the home screen, tap the add button and search
+            for NW Planner. Press and hold a widget you have added to change what it
+            shows. Interactive widgets need iOS 17 or later. Large widgets have room
+            for more information; iPad also supports an extra-large agenda.
+          </Text>
 
-      <Text style={s.hint}>
-        In Edit Widget, choose tasks, reminders, or both; sort by deadline or
-        priority; include overdue or unscheduled work; and pick an accent.
-        Tap a title to open that record. Use Undo while a completion is waiting
-        to sync. Dates without a time stay all-day until the day ends.
-      </Text>
+          <Text style={s.hint}>
+            In Edit Widget, choose tasks, reminders, or both; sort by deadline or
+            priority; include overdue or unscheduled work; and pick an accent.
+            Tap a title to open that record. Use Undo while a completion is waiting
+            to sync. Dates without a time stay all-day until the day ends.
+          </Text>
+        </>
+      )}
 
-      {Platform.OS === 'ios' && (
+      {(Platform.OS === 'ios' || android) && (
         <TouchableOpacity style={s.actionRow} onPress={refreshWidgets} disabled={refreshing}
           accessibilityRole="button" accessibilityState={{ disabled: refreshing }}>
           <Ionicons name="refresh-outline" size={16} color={accent.primary} />
@@ -138,10 +172,9 @@ export default function WidgetsSiriSection() {
         <View style={s.rowInfo}>
           <Text style={s.rowLabel}>Show task and reminder titles</Text>
           <Text style={s.rowDesc}>
-            On by default. Titles and categories are copied to shared device storage
-            so widgets can show them, which means they may appear on your Lock Screen.
-            Notes and attachments stay private. Turn off for counts and times only;
-            configurable widgets can also hide titles in Edit Widget.
+            {android
+              ? 'On by default. Titles and categories are copied out of the encrypted store so widgets can show them, which means they appear on your home screen. Notes and attachments stay private. Turn off for counts and times only.'
+              : 'On by default. Titles and categories are copied to shared device storage so widgets can show them, which means they may appear on your Lock Screen. Notes and attachments stay private. Turn off for counts and times only; configurable widgets can also hide titles in Edit Widget.'}
           </Text>
         </View>
         <Switch
@@ -154,26 +187,46 @@ export default function WidgetsSiriSection() {
         />
       </View>
 
-      <Text style={s.groupLabel}>Say to Siri</Text>
-      {PHRASES.map(phrase => (
-        <View key={phrase.say} style={s.stackRow}>
-          <Text style={s.phrase}>{phrase.say}</Text>
-          <Text style={s.rowDesc}>{phrase.does}</Text>
-        </View>
-      ))}
+      {android ? (
+        <>
+          <Text style={s.groupLabel}>App shortcuts</Text>
+          {ANDROID_SHORTCUTS.map(shortcut => (
+            <View key={shortcut.say} style={s.stackRow}>
+              <Text style={s.phrase}>{shortcut.say}</Text>
+              <Text style={s.rowDesc}>{shortcut.does}</Text>
+            </View>
+          ))}
+          <Text style={s.footnote}>
+            Touch and hold the NW Planner icon to see these, and drag one onto the
+            home screen to keep it there. Adding a task this way opens the app, so
+            the record is written the same way a typed one is — encrypted, logged,
+            and queued if you are offline.
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={s.groupLabel}>Say to Siri</Text>
+          {PHRASES.map(phrase => (
+            <View key={phrase.say} style={s.stackRow}>
+              <Text style={s.phrase}>{phrase.say}</Text>
+              <Text style={s.rowDesc}>{phrase.does}</Text>
+            </View>
+          ))}
 
-      <TouchableOpacity style={s.actionRow} onPress={openShortcuts} accessibilityRole="button">
-        <Ionicons name="open-outline" size={16} color={accent.primary} />
-        <Text style={[s.actionText, { color: accent.primary }]}>
-          Build your own in the Shortcuts app
-        </Text>
-      </TouchableOpacity>
+          <TouchableOpacity style={s.actionRow} onPress={openShortcuts} accessibilityRole="button">
+            <Ionicons name="open-outline" size={16} color={accent.primary} />
+            <Text style={[s.actionText, { color: accent.primary }]}>
+              Build your own in the Shortcuts app
+            </Text>
+          </TouchableOpacity>
 
-      <Text style={s.footnote}>
-        Adding a task by voice opens the app so the record is written the same
-        way a typed one is — encrypted, logged, and queued if you are offline.
-        Asking what is due answers without opening anything.
-      </Text>
+          <Text style={s.footnote}>
+            Adding a task by voice opens the app so the record is written the same
+            way a typed one is — encrypted, logged, and queued if you are offline.
+            Asking what is due answers without opening anything.
+          </Text>
+        </>
+      )}
     </View>
   );
 }

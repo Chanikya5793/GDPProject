@@ -1,0 +1,6 @@
+{
+  "name": "planner-widgets-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android home screen widgets for NW Planner, the counterpart of plugins/widgets on iOS."
+}

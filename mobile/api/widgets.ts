@@ -1,4 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo';
 import * as Crypto from 'expo-crypto';
 import type { Reminder, Settings, Task } from '@/types';
 import { buildWidgetSnapshot } from '@/utils/widgetSnapshot';
@@ -15,7 +16,13 @@ interface WidgetBridge {
   clear(): Promise<void>;
 }
 
-const bridge: WidgetBridge | undefined = Platform.OS === 'ios' ? NativeModules.PlannerWidgetsBridge : undefined;
+// iOS: plugins/widgets/PlannerWidgetsBridge.swift. Android: the local Expo
+// module in modules/planner-widgets-android, which keeps the same contract.
+const bridge: WidgetBridge | undefined = Platform.OS === 'ios'
+  ? NativeModules.PlannerWidgetsBridge
+  : Platform.OS === 'android'
+    ? requireOptionalNativeModule<WidgetBridge>('PlannerWidgetsBridge') ?? undefined
+    : undefined;
 let generation = 0;
 let serial: Promise<unknown> = Promise.resolve();
 let previousUid = getStorageUid();

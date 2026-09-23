@@ -24,6 +24,7 @@
     "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
+    "expo-system-ui": "~57.0.4",
     "expo-web-browser": "~57.0.3",
     "expo-widgets": "~57.0.20",
     "firebase": "^12.17.1",
@@ -53,7 +54,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:ios": "eas build --platform ios --profile production --local",
-    "submit:ios": "eas submit --platform ios"
+    "submit:ios": "eas submit --platform ios",
+    "build:android": "eas build --platform android --profile production",
+    "build:android:apk": "eas build --platform android --profile production-apk"
   },
   "private": true
 }

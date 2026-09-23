@@ -20,6 +20,8 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: accent.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        // Android keeps the bar in the layout, so it would ride up on the keyboard.
+        tabBarHideOnKeyboard: Platform.OS === 'android',
         tabBarStyle: {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.tabBarBorder,

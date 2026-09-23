@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -105,8 +105,9 @@ export default function FocusSession({ dueToday = 0 }: { dueToday?: number }) {
           <Text style={s.title}>Focus session</Text>
         </View>
         <Text style={s.blurb}>
-          A countdown on your Lock Screen and in the Dynamic Island, so you can
-          put the phone down.
+          {Platform.OS === 'android'
+            ? 'A countdown in your notifications, and an alert when it ends, so you can put the phone down.'
+            : 'A countdown on your Lock Screen and in the Dynamic Island, so you can put the phone down.'}
         </Text>
         <View style={s.presets}>
           {SESSION_PRESETS.map(minutes => (

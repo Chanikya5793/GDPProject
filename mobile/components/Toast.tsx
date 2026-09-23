@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { useSettings } from '@/contexts/SettingsContext';
-import { tabBarSpace } from '@/utils/tabBarSpace';
+import { toastClearance } from '@/utils/tabBarSpace';
 import { current, dismiss, enqueue, makeToast, Toast, ToastKind } from '@/utils/toastQueue';
 
 interface ToastApi {
@@ -78,7 +78,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           pointerEvents="box-none"
           style={[
             styles.wrap,
-            { bottom: 12 + tabBarSpace(insets.bottom) },
+            { bottom: 12 + toastClearance(insets.bottom) },
             {
               opacity: slide,
               transform: [{ translateY: slide.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],

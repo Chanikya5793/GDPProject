@@ -1,0 +1,28 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Not exported: the system delivers widget updates regardless, and our
+         own completion taps arrive through PendingIntents we created. -->
+    <receiver
+      android:name="expo.modules.plannerwidgets.DueTodayWidgetProvider"
+      android:exported="false"
+      android:label="@string/planner_widget_due_today">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/planner_widget_due_today_info" />
+    </receiver>
+    <receiver
+      android:name="expo.modules.plannerwidgets.ProgressWidgetProvider"
+      android:exported="false"
+      android:label="@string/planner_widget_progress">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/planner_widget_progress_info" />
+    </receiver>
+  </application>
+</manifest>

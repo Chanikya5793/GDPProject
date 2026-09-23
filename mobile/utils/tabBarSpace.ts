@@ -11,3 +11,12 @@ export const IOS_TAB_BAR_HEIGHT = 49;
 export function tabBarSpace(bottomInset: number): number {
   return Platform.OS === 'ios' ? IOS_TAB_BAR_HEIGHT + bottomInset : 0;
 }
+
+/**
+ * Where a floating toast clears the tab bar. Unlike tabBarSpace this is the
+ * same on both platforms: Android's bar is in the layout rather than floating,
+ * but a toast is drawn over the whole window, bar and gesture area included.
+ */
+export function toastClearance(bottomInset: number): number {
+  return IOS_TAB_BAR_HEIGHT + bottomInset;
+}

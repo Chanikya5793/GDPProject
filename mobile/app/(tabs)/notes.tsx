@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image, Switch,
+  RefreshControl, Alert, Platform, KeyboardAvoidingView, ScrollView, Image, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AskAiButton from '@/components/AskAiButton';
+import SheetModal from '@/components/SheetModal';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
@@ -108,7 +109,7 @@ export default function NotesScreen() {
         data={filtered}
         keyExtractor={n => String(n.id)}
         contentContainerStyle={s.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} colors={[accent.primary]} progressBackgroundColor={colors.card} />}
         ListEmptyComponent={
           <View style={s.empty}>
             <Ionicons name="document-text-outline" size={48} color={colors.textMuted} />
@@ -211,10 +212,14 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
 
   const pickImage = async () => {
     if (!note) return;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Photo access needed', 'Allow photo access to attach an image to this note.');
-      return;
+    // Android opens the system photo picker, which needs no permission; the
+    // storage permission this would ask for is blocked in app.json.
+    if (Platform.OS === 'ios') {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Photo access needed', 'Allow photo access to attach an image to this note.');
+        return;
+      }
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -301,7 +306,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
   });
 
   return (
-    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={handleClose}>
+    <SheetModal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} onRequestClose={handleClose}>
       <KeyboardAvoidingView style={es.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={es.header}>
           <TouchableOpacity onPress={handleClose}>
@@ -447,7 +452,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
         />
         )}
       </KeyboardAvoidingView>
-    </Modal>
+    </SheetModal>
   );
 }
 

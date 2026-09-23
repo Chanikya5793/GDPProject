@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -145,12 +146,13 @@ export default function SettingsScreen() {
   };
 
   const s = makeStyles(colors, accent, appearance);
+  const insets = useSafeAreaInsets();
   const profileChanged = name !== user?.name || email !== user?.email;
 
   const initials = (user?.name || 'U').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}>
+    <ScrollView style={s.container} contentContainerStyle={[s.content, { paddingBottom: 20 + insets.bottom }]}>
       {/* Profile */}
       <View style={s.section}>
         <View style={s.sectionHeader}>

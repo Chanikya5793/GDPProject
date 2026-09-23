@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
-  Modal, RefreshControl, Alert, LayoutAnimation, Switch,
+  RefreshControl, Alert, LayoutAnimation, Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
 import { Ionicons } from '@expo/vector-icons';
 import AskAiButton from '@/components/AskAiButton';
+import SheetModal from '@/components/SheetModal';
 import { EMPTY_DRAFT, fullDraftFromLink, LinkDraft, wantsNewRecord } from '@/utils/draftFromLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -345,7 +346,7 @@ export default function TasksScreen() {
 
       <ScrollView
         contentContainerStyle={s.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} colors={[accent.primary]} progressBackgroundColor={colors.card} />}
       >
         {loading ? (
           <Text style={s.emptyText}>Loading tasks…</Text>
@@ -529,7 +530,7 @@ function RescheduleModal({
   const rs = rescheduleStyles(colors, accent, appearance);
 
   return (
-    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
+    <SheetModal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} onRequestClose={onClose}>
       <View style={rs.container}>
         {/* Header */}
         <View style={rs.header}>
@@ -648,7 +649,7 @@ function RescheduleModal({
           </View>
         )}
       </View>
-    </Modal>
+    </SheetModal>
   );
 }
 
@@ -708,7 +709,7 @@ function TaskModal({
   const ms = modalStyles(colors, accent, appearance);
 
   return (
-    <Modal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} presentationStyle="pageSheet" onRequestClose={onClose}>
+    <SheetModal visible={visible} animationType={modalAnimation(appearance.reducedMotion, 'slide')} onRequestClose={onClose}>
       <View style={ms.container}>
         <View style={ms.header}>
           <TouchableOpacity onPress={onClose}>
@@ -828,7 +829,7 @@ function TaskModal({
           />
         </ScrollView>
       </View>
-    </Modal>
+    </SheetModal>
   );
 }
 

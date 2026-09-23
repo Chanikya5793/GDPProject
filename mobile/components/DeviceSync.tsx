@@ -8,6 +8,7 @@ import { getItem, setItem } from '@/api/storage';
 import {
   cancelAllNotifications,
   configureNotifications,
+  ensureAndroidChannel,
   requestNotificationPermission,
   syncScheduledNotifications,
   onNotificationTapped,
@@ -37,7 +38,12 @@ export default function DeviceSync() {
   const { settings } = useSettings();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { configureNotifications(); }, []);
+  useEffect(() => {
+    configureNotifications();
+    // Created up front: Android files alerts under a fallback channel, with
+    // none of this one's settings, when the channel does not exist yet.
+    ensureAndroidChannel().catch(() => {});
+  }, []);
 
   useEffect(() => {
     // A restored session is still resolving, so `user` is briefly null on every
@@ -102,9 +108,25 @@ export default function DeviceSync() {
   }, [user, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
 
   // A tapped alert should land on the thing it was about, not the home screen.
-  useEffect(() => onNotificationTapped(payload => {
-    router.push(payload.kind === 'reminder' ? '/(tabs)/reminders' : '/(tabs)/tasks');
-  }), []);
+  // Subscribed once someone is signed in: a cold-start tap is replayed on
+  // subscribe, and navigating before the session and the navigator exist
+  // would either throw or be bounced to the login screen.
+  const signedIn = Boolean(user) && !loading;
+  useEffect(() => {
+    if (!signedIn) return;
+    return onNotificationTapped(payload => {
+      if (payload.kind === 'focus') {
+        setTimeout(() => router.navigate('/(tabs)'), 0);
+        return;
+      }
+      const screen = payload.kind === 'reminder' ? '/(tabs)/reminders' : '/(tabs)/tasks';
+      setTimeout(() => {
+        router.push(payload.recordId
+          ? { pathname: screen, params: { focus: String(payload.recordId) } }
+          : screen);
+      }, 0);
+    });
+  }, [signedIn]);
 
   return null;
 }
