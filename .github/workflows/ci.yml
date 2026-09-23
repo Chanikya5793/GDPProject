@@ -117,7 +117,8 @@ jobs:
       - run: npx expo prebuild --platform android --no-install --clean
         env:
           CI: 1
-      - run: ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon
+      # Release, so the lint checks that only run for release builds run here too.
+      - run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
         working-directory: mobile/android
 
   backend:

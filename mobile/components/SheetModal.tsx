@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Keyboard, KeyboardAvoidingView, Modal, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/theme/useAppTheme';
@@ -23,6 +23,15 @@ export default function SheetModal({
 }) {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+  // The keyboard covers the navigation bar, and the avoiding view already
+  // pads by the whole keyboard; keeping the bar's inset too leaves a gap.
+  const [keyboardShown, setKeyboardShown] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardShown(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardShown(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
 
   if (Platform.OS === 'ios') {
     return (
@@ -36,7 +45,7 @@ export default function SheetModal({
     <Modal visible={visible} animationType={animationType} onRequestClose={onRequestClose}
       statusBarTranslucent navigationBarTranslucent>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+        <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: keyboardShown ? 0 : insets.bottom }}>
           {children}
         </View>
       </KeyboardAvoidingView>

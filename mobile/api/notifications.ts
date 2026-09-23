@@ -24,7 +24,7 @@ import {
   PlannedNotification,
 } from '@/utils/notificationPlan';
 import { formatRemaining, StudySessionProps } from '@/utils/studySession';
-import { getItem } from './storage';
+import { getItem, setItem } from './storage';
 
 // Android fixes a channel's importance when it is first created, so raising it
 // to heads-up meant a new id; the old, silent one is removed on sight.
@@ -36,6 +36,7 @@ const LEGACY_ANDROID_CHANNELS = ['planner-alerts'];
 // the shade when the time runs out with nothing of ours running.
 const FOCUS_CHANNEL = 'focus-session';
 const FOCUS_ID = 'focus-session';
+const CHANNEL_MIGRATED_KEY = 'nw_alert_channel_v2';
 
 export interface SyncResult {
   scheduled: number;
@@ -165,6 +166,16 @@ export async function syncScheduledNotifications(): Promise<SyncResult> {
     budget: NOTIFICATION_BUDGET,
   });
 
+  // Alerts scheduled by an earlier build carry no channel (or the old one),
+  // and the diff compares identifiers only; drop them once so they are
+  // rescheduled on the current channel.
+  if (Platform.OS === 'android' && !await getItem<boolean>(CHANNEL_MIGRATED_KEY, false)) {
+    for (const request of await Notifications.getAllScheduledNotificationsAsync()) {
+      if (request.identifier !== FOCUS_ID) await Notifications.cancelScheduledNotificationAsync(request.identifier);
+    }
+    await setItem(CHANNEL_MIGRATED_KEY, true);
+  }
+
   const pending = await Notifications.getAllScheduledNotificationsAsync();
   const { cancel, schedule: toSchedule } = diffNotificationPlan(
     // The focus session's alert is not part of the plan; left in, the diff
@@ -267,9 +278,26 @@ export async function showFocusSession(props: StudySessionProps): Promise<void> 
   });
 }
 
-/** Take the focus session's card and pending alert away. */
-export async function clearFocusSession(): Promise<void> {
+/**
+ * Take the focus session's card and pending alert away.
+ *
+ * `finished` is the timer running out rather than the student stopping it:
+ * the card is then replaced by a quiet "finished" one instead of vanishing,
+ * as the Live Activity lingers on iOS, and one the alarm already posted stays.
+ */
+export async function clearFocusSession(finished = false): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.cancelScheduledNotificationAsync(FOCUS_ID).catch(() => {});
-  await Notifications.dismissNotificationAsync(FOCUS_ID).catch(() => {});
+  if (!finished) {
+    await Notifications.dismissNotificationAsync(FOCUS_ID).catch(() => {});
+    return;
+  }
+  const shown = await Notifications.getPresentedNotificationsAsync().catch(() => []);
+  const card = shown.find(item => item.request.identifier === FOCUS_ID);
+  if (card && card.request.content.title === 'Focus session finished') return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: FOCUS_ID,
+    content: { title: 'Focus session finished', body: 'Time for a break.', data: { kind: 'focus' } },
+    trigger: { channelId: FOCUS_CHANNEL },
+  }).catch(() => {});
 }

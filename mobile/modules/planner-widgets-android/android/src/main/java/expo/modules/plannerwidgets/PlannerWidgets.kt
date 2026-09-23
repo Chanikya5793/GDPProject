@@ -25,7 +25,9 @@ object PlannerWidgets {
   const val ACTION_UNDO = "expo.modules.plannerwidgets.UNDO"
   const val ACTION_PAGE = "expo.modules.plannerwidgets.PAGE"
   private const val ROW_HEIGHT_DP = 44
-  private const val HEADER_HEIGHT_DP = 78
+  private const val HEADER_HEIGHT_DP = 62
+  private const val PAGER_HEIGHT_DP = 28
+  private const val NOTICE_HEIGHT_DP = 30
   private const val STALE_MS = 24 * 60 * 60 * 1000L
 
   fun refreshAll(context: Context) {
@@ -107,6 +109,7 @@ object PlannerWidgets {
       views.setTextViewText(R.id.planner_summary, "")
       views.setTextViewText(R.id.planner_empty, context.getString(R.string.planner_widget_signed_out))
       views.setViewVisibility(R.id.planner_empty, View.VISIBLE)
+      views.setViewVisibility(R.id.planner_rows, View.GONE)
       views.setViewVisibility(R.id.planner_pager, View.GONE)
       views.setViewVisibility(R.id.planner_notice, View.GONE)
       views.setOnClickPendingIntent(R.id.planner_empty, open(context, widgetId * 10 + 3, "nwplanner://tasks"))
@@ -130,16 +133,21 @@ object PlannerWidgets {
     if (items.isEmpty()) {
       views.setTextViewText(R.id.planner_empty, context.getString(R.string.planner_widget_empty))
       views.setViewVisibility(R.id.planner_empty, View.VISIBLE)
+      views.setViewVisibility(R.id.planner_rows, View.GONE)
       views.setViewVisibility(R.id.planner_pager, View.GONE)
       views.setOnClickPendingIntent(R.id.planner_empty, open(context, widgetId * 10 + 3, "nwplanner://tasks"))
       return views
     }
     views.setViewVisibility(R.id.planner_empty, View.GONE)
+    views.setViewVisibility(R.id.planner_rows, View.VISIBLE)
 
     val options = manager.getAppWidgetOptions(widgetId)
     val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
       .takeIf { it > 0 } ?: options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180)
-    val capacity = ((height - HEADER_HEIGHT_DP) / ROW_HEIGHT_DP).coerceIn(1, 8)
+    val room = height - HEADER_HEIGHT_DP - (if (notice != null) NOTICE_HEIGHT_DP else 0)
+    // The pager only appears when the rows overflow, and then takes a row's room.
+    val capacity = (if (items.size * ROW_HEIGHT_DP <= room) room / ROW_HEIGHT_DP
+      else (room - PAGER_HEIGHT_DP) / ROW_HEIGHT_DP).coerceIn(1, 8)
     val pages = (items.size + capacity - 1) / capacity
     val page = state.page(widgetId).coerceIn(0, pages - 1)
     val shown = items.drop(page * capacity).take(capacity)
@@ -174,6 +182,10 @@ object PlannerWidgets {
     row.setViewVisibility(R.id.planner_row_overdue, if (overdue) View.VISIBLE else View.GONE)
     row.setViewVisibility(R.id.planner_row_high, if (item.priority == "high" && !item.done) View.VISIBLE else View.GONE)
     row.setViewVisibility(R.id.planner_row_pending, if (item.pending) View.VISIBLE else View.GONE)
+    // Only a tap the app has not picked up yet can be taken back; one it has
+    // claimed is on its way to the account.
+    row.setTextViewText(R.id.planner_row_pending,
+      if (item.pending && state.pendingCommandId(item.key) != null) "Tap to undo" else "Syncing…")
     row.setImageViewResource(R.id.planner_row_check,
       if (item.done) R.drawable.planner_widget_checked else R.drawable.planner_widget_unchecked)
 

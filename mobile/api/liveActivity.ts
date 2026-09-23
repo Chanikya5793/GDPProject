@@ -52,12 +52,12 @@ function attach(): LiveActivity<StudySessionProps> | null {
   return handle;
 }
 
-async function remember(props: StudySessionProps | null): Promise<void> {
+async function remember(props: StudySessionProps | null, finished = false): Promise<void> {
   await setItem(STATE_KEY, props);
   // Android has no Live Activity; the session shows as a notification instead.
   // Both no-ops on iOS.
   if (props) await showFocusSession(props).catch(() => {});
-  else await clearFocusSession().catch(() => {});
+  else await clearFocusSession(finished).catch(() => {});
 }
 
 /** The session this device thinks is running, if any. */
@@ -153,7 +153,7 @@ export async function endSession(linger = false): Promise<void> {
     }
   }
   handle = null;
-  await remember(null);
+  await remember(null, linger);
 }
 
 /**
