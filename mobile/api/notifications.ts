@@ -23,9 +23,20 @@ import {
   NOTIFICATION_BUDGET,
   PlannedNotification,
 } from '@/utils/notificationPlan';
-import { getItem } from './storage';
+import { formatRemaining, StudySessionProps } from '@/utils/studySession';
+import { getItem, setItem } from './storage';
 
-const ANDROID_CHANNEL = 'planner-alerts';
+// Android fixes a channel's importance when it is first created, so raising it
+// to heads-up meant a new id; the old, silent one is removed on sight.
+const ANDROID_CHANNEL = 'planner-alerts-v2';
+const LEGACY_ANDROID_CHANNELS = ['planner-alerts'];
+
+// Android's stand-in for the iOS Live Activity. One identifier for both the
+// ongoing card and the alert that ends it, so the alert replaces the card in
+// the shade when the time runs out with nothing of ours running.
+const FOCUS_CHANNEL = 'focus-session';
+const FOCUS_ID = 'focus-session';
+const CHANNEL_MIGRATED_KEY = 'nw_alert_channel_v2';
 
 export interface SyncResult {
   scheduled: number;
@@ -55,14 +66,29 @@ export function configureNotifications(): void {
   });
 }
 
-/** Android needs a channel before anything can be delivered; iOS ignores this. */
-async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL, {
-    name: 'Task and reminder alerts',
-    importance: Notifications.AndroidImportance.DEFAULT,
-    sound: 'default',
-  });
+/**
+ * Android needs a channel before anything can be delivered, and Android 13
+ * will not show the permission prompt until one exists; iOS ignores this.
+ * HIGH importance is what gives the heads-up banner iOS shows by default.
+ */
+let channelReady: Promise<void> | null = null;
+export function ensureAndroidChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return Promise.resolve();
+  channelReady ??= (async () => {
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL, {
+      name: 'Task and reminder alerts',
+      description: 'Due dates and reminders you have scheduled in the planner.',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+      vibrationPattern: [0, 250, 150, 250],
+      // Private: the lock screen says an alert arrived without showing its text.
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+    });
+    for (const legacy of LEGACY_ANDROID_CHANNELS) {
+      await Notifications.deleteNotificationChannelAsync(legacy).catch(() => {});
+    }
+  })().catch(error => { channelReady = null; throw error; });
+  return channelReady;
 }
 
 /** Whether alerts are already allowed, without prompting for them. */
@@ -79,13 +105,13 @@ export async function hasNotificationPermission(): Promise<boolean> {
  * left waiting for a prompt that will never appear.
  */
 export async function requestNotificationPermission(): Promise<boolean> {
+  await ensureAndroidChannel().catch(() => {});
   const existing = await Notifications.getPermissionsAsync();
   if (existing.granted) return true;
   if (!existing.canAskAgain) return false;
   const asked = await Notifications.requestPermissionsAsync({
     ios: { allowAlert: true, allowSound: true, allowBadge: false },
   });
-  if (asked.granted) await ensureAndroidChannel();
   return asked.granted;
 }
 
@@ -100,11 +126,13 @@ async function schedule(item: PlannedNotification): Promise<void> {
       // payload is stored by the OS outside the app's encrypted cache, so it
       // carries no more of the record than the text already on screen.
       data: { kind: item.kind, recordId: item.recordId },
-      ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL } : null),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: new Date(item.at),
+      // On the trigger, not the content: SDK 57 reads it from here, and a
+      // channelId spread into the content is silently dropped.
+      channelId: ANDROID_CHANNEL,
     },
   });
 }
@@ -119,6 +147,7 @@ async function schedule(item: PlannedNotification): Promise<void> {
  */
 export async function syncScheduledNotifications(): Promise<SyncResult> {
   if (!await hasNotificationPermission()) return NO_SYNC;
+  await ensureAndroidChannel();
 
   const [tasks, reminders, settings] = await Promise.all([
     getItem<Task[]>('nw_tasks', []),
@@ -137,9 +166,21 @@ export async function syncScheduledNotifications(): Promise<SyncResult> {
     budget: NOTIFICATION_BUDGET,
   });
 
+  // Alerts scheduled by an earlier build carry no channel (or the old one),
+  // and the diff compares identifiers only; drop them once so they are
+  // rescheduled on the current channel.
+  if (Platform.OS === 'android' && !await getItem<boolean>(CHANNEL_MIGRATED_KEY, false)) {
+    for (const request of await Notifications.getAllScheduledNotificationsAsync()) {
+      if (request.identifier !== FOCUS_ID) await Notifications.cancelScheduledNotificationAsync(request.identifier);
+    }
+    await setItem(CHANNEL_MIGRATED_KEY, true);
+  }
+
   const pending = await Notifications.getAllScheduledNotificationsAsync();
   const { cancel, schedule: toSchedule } = diffNotificationPlan(
-    pending.map(request => request.identifier),
+    // The focus session's alert is not part of the plan; left in, the diff
+    // would cancel it as stale.
+    pending.map(request => request.identifier).filter(id => id !== FOCUS_ID),
     plan,
   );
 
@@ -161,12 +202,102 @@ export async function cancelAllNotifications(): Promise<void> {
   await Notifications.dismissAllNotificationsAsync();
 }
 
-/** Fires when a notification is tapped. Returns an unsubscribe function. */
+const handledResponses = new Set<string>();
+
+/**
+ * Fires when a notification is tapped. Returns an unsubscribe function.
+ *
+ * A tap that launched the app from cold happened before this listener
+ * existed — on Android almost always — so the last response is replayed once,
+ * and only if nobody has handled it yet.
+ */
 export function onNotificationTapped(
   handler: (payload: { kind?: string; recordId?: string }) => void,
 ): () => void {
-  const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+  let live = true;
+  const deliver = (response: Notifications.NotificationResponse) => {
+    const id = response.notification.request.identifier;
+    if (!live || handledResponses.has(id)) return;
+    handledResponses.add(id);
     handler((response.notification.request.content.data || {}) as { kind?: string; recordId?: string });
+    Notifications.clearLastNotificationResponse();
+  };
+  const subscription = Notifications.addNotificationResponseReceivedListener(deliver);
+  const last = Notifications.getLastNotificationResponse();
+  if (last) deliver(last);
+  return () => { live = false; subscription.remove(); };
+}
+
+
+/**
+ * Show a running focus session outside the app, on Android.
+ *
+ * iOS has the Live Activity for this (api/liveActivity.ts); Android gets an
+ * ongoing notification that says when the session ends, and an alert at that
+ * moment which takes the ongoing one's place. Quietly does nothing without
+ * notification permission — the in-app countdown still runs.
+ */
+export async function showFocusSession(props: StudySessionProps): Promise<void> {
+  if (Platform.OS !== 'android' || !await hasNotificationPermission()) return;
+  await ensureAndroidChannel();
+  await Notifications.setNotificationChannelAsync(FOCUS_CHANNEL, {
+    name: 'Focus session',
+    description: 'The countdown for a focus session while it runs.',
+    importance: Notifications.AndroidImportance.LOW,
+    showBadge: false,
   });
-  return () => subscription.remove();
+  await Notifications.cancelScheduledNotificationAsync(FOCUS_ID).catch(() => {});
+
+  const paused = props.pausedAt > 0;
+  const until = new Date(props.endsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const subject = props.titlesAllowed && props.label ? props.label : props.category;
+  await Notifications.scheduleNotificationAsync({
+    identifier: FOCUS_ID,
+    content: {
+      title: paused ? 'Focus session paused' : 'Focusing',
+      body: [paused ? `${formatRemaining(props, Date.now())} left` : `Until ${until}`, subject]
+        .filter(Boolean).join(' · '),
+      sticky: true,
+      autoDismiss: false,
+      data: { kind: 'focus' },
+    },
+    trigger: { channelId: FOCUS_CHANNEL },
+  });
+  if (paused) return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: FOCUS_ID,
+    content: {
+      title: 'Focus session finished',
+      body: 'Time for a break.',
+      sound: 'default',
+      data: { kind: 'focus' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(props.endsAt), channelId: ANDROID_CHANNEL,
+    },
+  });
+}
+
+/**
+ * Take the focus session's card and pending alert away.
+ *
+ * `finished` is the timer running out rather than the student stopping it:
+ * the card is then replaced by a quiet "finished" one instead of vanishing,
+ * as the Live Activity lingers on iOS, and one the alarm already posted stays.
+ */
+export async function clearFocusSession(finished = false): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Notifications.cancelScheduledNotificationAsync(FOCUS_ID).catch(() => {});
+  if (!finished) {
+    await Notifications.dismissNotificationAsync(FOCUS_ID).catch(() => {});
+    return;
+  }
+  const shown = await Notifications.getPresentedNotificationsAsync().catch(() => []);
+  const card = shown.find(item => item.request.identifier === FOCUS_ID);
+  if (card && card.request.content.title === 'Focus session finished') return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: FOCUS_ID,
+    content: { title: 'Focus session finished', body: 'Time for a break.', data: { kind: 'focus' } },
+    trigger: { channelId: FOCUS_CHANNEL },
+  }).catch(() => {});
 }

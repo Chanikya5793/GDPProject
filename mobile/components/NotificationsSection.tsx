@@ -63,7 +63,7 @@ export default function NotificationsSection() {
     } else {
       // iOS only prompts once ever. After that the only way back is the system
       // Settings app, so say that rather than letting the button do nothing.
-      toast.show('Allow notifications in iOS Settings to get alerts', 'info');
+      toast.show(`Allow notifications in ${Platform.OS === 'android' ? 'Android' : 'iOS'} Settings to get alerts`, 'info');
       Linking.openSettings().catch(() => {});
     }
   }, [toast]);
@@ -144,7 +144,7 @@ export default function NotificationsSection() {
       </View>
 
       <Text style={s.footnote}>
-        iOS holds a limited number of pending alerts, so the nearest ones are
+        The phone holds a limited number of pending alerts, so the nearest ones are
         scheduled first and the rest follow as those pass. Signing out clears
         every alert from this device.
       </Text>

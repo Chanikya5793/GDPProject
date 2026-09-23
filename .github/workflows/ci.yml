@@ -92,6 +92,35 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
 
+  # Compiles the Android app, including the Kotlin widget module and the
+  # generated manifest, so native breakage shows up here rather than on EAS.
+  mobile-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - run: npm ci
+      - run: npx expo-doctor
+      - run: npx expo prebuild --platform android --no-install --clean
+        env:
+          CI: 1
+      # Release, so the lint checks that only run for release builds run here too.
+      - run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+        working-directory: mobile/android
+
   backend:
     runs-on: ubuntu-latest
     defaults:

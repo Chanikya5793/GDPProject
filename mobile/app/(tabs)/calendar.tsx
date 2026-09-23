@@ -349,7 +349,7 @@ function MonthView({
 
   return (
     <ScrollView
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} colors={[accent.primary]} progressBackgroundColor={colors.card} />}
     >
       <View style={s.dayHeaderRow}>
         {headers.map((d, i) => (
@@ -481,10 +481,22 @@ function TimeGrid({
 
   // Open on the current hour rather than at midnight, which is almost never
   // where the day's work is.
-  useEffect(() => {
+  // Android often runs the effect before the grid has laid out, when there is
+  // nothing to scroll yet, so the first content-size callback tries again.
+  const scrolledFor = useRef('');
+  const scrollToNow = useCallback(() => {
     const target = Math.max(0, (new Date().getHours() - 1) * HOUR_HEIGHT);
     scrollRef.current?.scrollTo({ y: target, animated: false });
-  }, [dates[0], dates.length]);
+  }, []);
+  useEffect(() => {
+    scrollToNow();
+  }, [dates[0], dates.length, scrollToNow]);
+  const onGridSized = useCallback(() => {
+    const key = `${dates[0]}:${dates.length}`;
+    if (scrolledFor.current === key) return;
+    scrolledFor.current = key;
+    scrollToNow();
+  }, [dates[0], dates.length, scrollToNow]);
 
   useEffect(() => {
     const id = setInterval(() => setNowMinutes(minutesIntoDay(new Date())), 60000);
@@ -554,7 +566,8 @@ function TimeGrid({
 
         <ScrollView
           ref={scrollRef}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} />}
+          onContentSizeChange={onGridSized}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent.primary} colors={[accent.primary]} progressBackgroundColor={colors.card} />}
         >
           <View>
             {HOURS.map(hour => (

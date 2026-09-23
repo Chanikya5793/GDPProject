@@ -24,7 +24,17 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "package": "com.nwmissouri.studentplanner"
+      "package": "com.nwmissouri.studentplanner",
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -67,6 +77,7 @@
       ],
       "./plugins/withoutPushEntitlement",
       "./plugins/withSiriShortcuts",
+      "./plugins/withAndroidAppShortcuts",
       [
         "expo-widgets",
         {

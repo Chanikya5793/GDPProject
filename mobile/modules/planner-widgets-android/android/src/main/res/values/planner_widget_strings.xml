@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="planner_widget_due_today">Due Today</string>
+  <string name="planner_widget_due_today_description">Today\'s tasks and reminders, with anything overdue. Tick items off without opening the app.</string>
+  <string name="planner_widget_progress">Today\'s Progress</string>
+  <string name="planner_widget_progress_description">How much of today\'s work is done, with overdue and unscheduled counts.</string>
+  <string name="planner_widget_signed_out">Open NW Planner and sign in to see your work here.</string>
+  <string name="planner_widget_signed_out_short">Open NW Planner to get started</string>
+  <string name="planner_widget_empty">Nothing due today. Room to plan ahead.</string>
+  <string name="planner_widget_add">Add a task</string>
+  <string name="planner_widget_previous">Previous page</string>
+  <string name="planner_widget_next">Next page</string>
+</resources>

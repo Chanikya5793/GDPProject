@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Labels for plugins/withAndroidAppShortcuts.js; kept in step with
+     ANDROID_SHORTCUTS in components/WidgetsSiriSection.tsx. -->
+<resources>
+  <string name="planner_shortcut_task_short">Add task</string>
+  <string name="planner_shortcut_task_long">Add a task</string>
+  <string name="planner_shortcut_reminder_short">Add reminder</string>
+  <string name="planner_shortcut_reminder_long">Add a reminder</string>
+  <string name="planner_shortcut_copilot_short">Ask Copilot</string>
+  <string name="planner_shortcut_copilot_long">Ask Copilot about your planner</string>
+  <string name="planner_shortcut_calendar_short">Calendar</string>
+  <string name="planner_shortcut_calendar_long">Open your calendar</string>
+</resources>

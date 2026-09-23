@@ -7,11 +7,23 @@ const mocks = vi.hoisted(() => ({
   commands: [] as Record<string, unknown>[],
   publish: vi.fn(), clear: vi.fn(), claim: vi.fn(), acknowledge: vi.fn(), update: vi.fn(), log: vi.fn(),
   read: vi.fn(),
+  os: 'ios' as 'ios' | 'android' | 'web',
+  androidModule: true,
 }));
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' }, NativeModules: { PlannerWidgetsBridge: {
+// The same fake bridge stands in for the iOS native module and the Android
+// Expo module, which share one contract.
+const bridge = () => ({
   publish: mocks.publish, clear: mocks.clear, claim: mocks.claim, acknowledge: mocks.acknowledge,
   pendingCount: async () => mocks.commands.length,
-} } }));
+});
+vi.mock('react-native', () => ({
+  Platform: { get OS() { return mocks.os; } },
+  NativeModules: { get PlannerWidgetsBridge() { return mocks.os === 'ios' ? bridge() : undefined; } },
+}));
+vi.mock('expo', () => ({
+  requireOptionalNativeModule: (name: string) =>
+    mocks.os === 'android' && mocks.androidModule && name === 'PlannerWidgetsBridge' ? bridge() : null,
+}));
 vi.mock('expo-crypto', () => ({ CryptoDigestAlgorithm: { SHA256: 'sha256' },
   digestStringAsync: async (_: string, value: string) => `hash:${value}` }));
 vi.mock('@/api/storage', () => ({ getStorageUid: () => mocks.uid, getItem: mocks.read,
@@ -27,6 +39,8 @@ const action = { id: 'action', owner: 'hash:planner-widgets:u1', kind: 'task', r
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks();
   mocks.uid = null;
+  mocks.os = 'ios';
+  mocks.androidModule = true;
   mocks.records = { nw_tasks: [{ ...task }], nw_reminders: [], nw_settings: { widgetShowTitles: true } };
   mocks.commands = [];
   mocks.publish.mockResolvedValue(undefined);
@@ -127,5 +141,35 @@ describe('native widget sync lifecycle', () => {
     await api.clearWidget();
     expect(mocks.publish).not.toHaveBeenCalled();
     expect(mocks.clear).toHaveBeenCalled();
+  });
+});
+
+describe('platform bridges', () => {
+  it('publishes through the Android widget module', async () => {
+    mocks.os = 'android'; mocks.uid = 'u1';
+    const api = await import('@/api/widgets');
+    expect(api.nativeWidgetsAvailable()).toBe(true);
+    expect(await api.syncWidget()).toBe(1);
+    expect(JSON.parse(mocks.publish.mock.calls[0][0]).items[0].title).toBe('Assignment');
+  });
+  it('applies taps queued on an Android widget', async () => {
+    mocks.os = 'android'; mocks.uid = 'u1'; mocks.commands = [{ ...action }];
+    const api = await import('@/api/widgets');
+    await api.syncPendingWidgetActions();
+    expect(mocks.update).toHaveBeenCalledWith('task', 7, { completed: true },
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' });
+    expect(mocks.commands).toHaveLength(0);
+  });
+  it('does nothing on an Android build without the module', async () => {
+    mocks.os = 'android'; mocks.uid = 'u1'; mocks.androidModule = false;
+    const api = await import('@/api/widgets');
+    expect(api.nativeWidgetsAvailable()).toBe(false);
+    expect(await api.syncWidget()).toBe(0);
+    expect(mocks.publish).not.toHaveBeenCalled();
+  });
+  it('does nothing on the web', async () => {
+    mocks.os = 'web'; mocks.uid = 'u1';
+    const api = await import('@/api/widgets');
+    expect(await api.syncWidget()).toBe(0);
   });
 });
