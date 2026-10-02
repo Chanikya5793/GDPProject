@@ -5,6 +5,7 @@ import {
 } from 'firebase/auth';
 import { User } from '@/types';
 import { setStorageUid } from '@/api/storage';
+import { campusEmail } from '@/utils/campusEmail';
 import { auth, firebaseConfigured } from '@/lib/firebase';
 import { DEMO_USER_KEY, makeDemoUser, parseStoredDemoUser } from '@/utils/demoAuth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -90,7 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (typed: string, password: string) => {
+    const email = campusEmail(typed);
     if (!firebaseConfigured || !auth) {
       if (!email?.trim()) return { success: false, error: 'Enter an email address.' };
       setUser(await persistDemoUser(makeDemoUser(null, email)));
@@ -103,7 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) { return { success: false, error: message(error) }; }
   };
 
-  const register = async (name: string, email: string, password: string) => {
+  const register = async (name: string, typed: string, password: string) => {
+    const email = campusEmail(typed);
     if (!firebaseConfigured || !auth) {
       if (!email?.trim()) return { success: false, error: 'Enter an email address.' };
       setUser(await persistDemoUser(makeDemoUser(name, email)));

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { campusEmail } from '../utils/campusEmail'
 import '../css/Login.css'
 
 // mode state switches between signing in and registering
@@ -58,10 +59,15 @@ export default function Login() {
           )}
 
           <div className="form-group">
-            <label className="form-label">Email</label>
-            <input className="form-input" type="email" value={email}
+            <label className="form-label" htmlFor="login-email">S number or NW email</label>
+            {/* type="text": the browser's email check would refuse a bare S number */}
+            <input id="login-email" className="form-input" type="text" value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="bobbybearcat@nwmissouri.edu" required />
+              autoComplete="username" autoCapitalize="none" spellCheck={false}
+              placeholder="S123456" required />
+            {email.trim() && !email.includes('@') && (
+              <p className="login-hint">Signs in as {campusEmail(email)}</p>
+            )}
           </div>
 
           <div className="form-group">
