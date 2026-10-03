@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -554,12 +555,30 @@ def create_app(container: Container | None = None) -> FastAPI:
                 "indexed_entity_types": [], "index_attachments": False,
                 "retain_chat": False, "chat_retention_days": 0,
             })
+        elif not previous.ai_enabled and not body.indexed_entity_types:
+            # Turning the copilot off clears the types, so a client that sends
+            # only the switch on would leave nothing indexed, silently. Installed
+            # app builds still do; restore the defaults here for them.
+            body = body.model_copy(update={
+                "indexed_entity_types": PrivacySettings().indexed_entity_types,
+            })
         result = services.repository.set_privacy(user.uid, body)
         if not body.ai_enabled:
             services.indexing.delete_user_index(user.uid)
         else:
-            for entity_type in set(previous.indexed_entity_types) - set(body.indexed_entity_types):
+            was_indexed = set(previous.indexed_entity_types) if previous.ai_enabled else set()
+            for entity_type in was_indexed - set(body.indexed_entity_types):
                 services.vector_store.delete_entity_type(user.uid, entity_type)
+            # Attachment text changes every vector of every indexed type.
+            if body.index_attachments != previous.index_attachments:
+                to_index = set(body.indexed_entity_types)
+            else:
+                to_index = set(body.indexed_entity_types) - was_indexed
+            # The settings are saved and a failure is audited; records still
+            # index one by one as they are saved.
+            if to_index:
+                with contextlib.suppress(Exception):
+                    services.indexing.backfill(user.uid, sorted(to_index, key=lambda kind: kind.value))
         if not body.retain_chat:
             services.repository.delete_chats(user.uid)
         services.audit.record(user.uid, "privacy_changed", metadata={
