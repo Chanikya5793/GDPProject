@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
+import { campusEmail } from '@/utils/campusEmail';
 
 export default function LoginScreen() {
   const { login, register } = useAuth();
@@ -80,17 +81,22 @@ export default function LoginScreen() {
           )}
 
           <View style={styles.field}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>S number or NW email</Text>
             <TextInput
               style={styles.input}
               value={email}
               onChangeText={setEmail}
-              placeholder="you@email.com"
+              placeholder="S123456"
               placeholderTextColor={colors.textMuted}
               keyboardType="email-address"
+              textContentType="username"
+              autoComplete="username"
               autoCapitalize="none"
               autoCorrect={false}
             />
+            {email.trim() && !email.includes('@') ? (
+              <Text style={styles.hint}>Signs in as {campusEmail(email)}</Text>
+            ) : null}
           </View>
 
           <View style={styles.field}>
@@ -197,6 +203,11 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
       fontWeight: '500',
       color: colors.textSecondary,
       marginBottom: 6,
+    },
+    hint: {
+      fontSize: 12,
+      color: colors.textMuted,
+      marginTop: 6,
     },
     input: {
       backgroundColor: colors.surfaceVariant,

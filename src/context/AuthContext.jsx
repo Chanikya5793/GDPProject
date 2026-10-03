@@ -13,6 +13,7 @@ import {
 import { auth, firebaseConfigured, persistenceReady } from '../lib/firebase'
 import { fetchSignupPolicy } from '../api/client'
 import { refusalFor } from '../utils/signupPolicy'
+import { campusEmail } from '../utils/campusEmail'
 
 const AuthContext = createContext(null)
 
@@ -120,7 +121,8 @@ export function AuthProvider({ children }) {
     return () => unsubscribe()
   }, [])
 
-  const login = async (email, password) => {
+  const login = async (typed, password) => {
+    const email = campusEmail(typed)
     if (!firebaseConfigured || !auth) {
       if (!email?.trim()) return { success: false, error: 'Enter an email address.' }
       setUser(persistDemoUser(demoUser(null, email)))
@@ -146,7 +148,8 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const register = async (name, email, password) => {
+  const register = async (name, typed, password) => {
+    const email = campusEmail(typed)
     if (!firebaseConfigured || !auth) {
       if (!email?.trim()) return { success: false, error: 'Enter an email address.' }
       setUser(persistDemoUser(demoUser(name, email)))
