@@ -3,13 +3,13 @@
 ## Cloud prerequisites
 
 Use a dedicated Firebase/GCP project. Enable Firebase Email/Password authentication,
-Firestore Native mode, Vertex AI, Cloud KMS, Secret Manager, Cloud Run, Cloud Build,
+Firestore Native mode, Cloud KMS, Secret Manager, Cloud Run, Cloud Build,
 and Artifact Registry. Never point these scripts at an unrelated project.
 
 Create a regional KMS key ring and AES-256 software CryptoKey. Create a 32-byte random
 MCP session secret in Secret Manager and pin its numeric version in
 `GDP_MCP_SECRET_RESOURCE`; `latest` is rejected by the application. Grant the Cloud Run
-service account only `roles/datastore.user`, `roles/aiplatform.user`,
+service account only `roles/datastore.user`,
 `roles/cloudkms.cryptoKeyEncrypterDecrypter` on that key, and
 `roles/secretmanager.secretAccessor` on that secret.
 
@@ -20,8 +20,30 @@ gcloud firestore indexes composite create \
   --project "$GDP_GCP_PROJECT" --database='(default)' \
   --collection-group=planner_vectors --query-scope=COLLECTION \
   --field-config=field-path=uid,order=ASCENDING \
+  --field-config=field-path=index_version,order=ASCENDING \
   --field-config='field-path=embedding,vector-config={"dimension":"768","flat":"{}"}'
 ```
+
+The vector is built locally from record words. It is not a hosted embedding.
+For an existing installation, create the versioned index and deploy the new
+backend, then run the explicit migration below. The new query only reads
+`local-lexical-v1` vectors, so old vectors cannot produce false matches. Search
+may miss older approved records until the migration completes.
+
+```sh
+cd backend
+.venv/bin/python -m scripts.reindex_local --project "$GDP_GCP_PROJECT" \
+  --kms-key-name "$GDP_KMS_KEY_NAME" --apply
+```
+
+The script reindexes approved records for opted-in users and removes legacy
+vectors after successful backfill. Use Application Default Credentials with
+Firestore and KMS access. Search is lexical after this change; paraphrases that
+share no words may need the assistant's exact `find` or `agenda` tools. The
+planner briefing still supplies current records to the assistant.
+After the new revision is serving, remove `roles/aiplatform.user` from the
+runtime service account and disable the Vertex AI API if no other workload in
+the GCP project uses it. This repository does not call that API.
 
 Deploy `firestore.rules`; all browser/mobile Firestore access is denied because planner
 traffic goes through FastAPI with verified Firebase ID tokens.
@@ -141,17 +163,11 @@ probes work while an external check of that path does not. Use
 
 ## Answer generation provider
 
-Generation runs on Meta Muse Spark via the OpenAI-compatible Chat Completions protocol.
-`PLANNER_ANSWER_PROVIDER` selects the backend:
-
-- `muse` (deployed default) — `PLANNER_MUSE_MODEL`, default `muse-spark-1.2-contributor`,
-  against `PLANNER_MUSE_BASE_URL`.
-- `vertex` — the original `gemini-2.5-flash` path, kept so the provider can be rolled
-  back without a code change.
-
-**Embeddings never move.** Meta's API has no embeddings endpoint, so `VertexEmbeddingClient`
-and `gemini-embedding-001` still serve indexing and query embedding regardless of this
-setting. Google Cloud remains a hard dependency; only generation is portable.
+Generation runs only on Meta Muse Spark through the OpenAI-compatible Chat
+Completions protocol. `PLANNER_MUSE_MODEL` defaults to
+`muse-spark-1.3-contributor` against `PLANNER_MUSE_BASE_URL`. Search vectors
+are generated inside the API process. Google Cloud remains in use for Firebase,
+Firestore, KMS, Secret Manager, and Cloud Run.
 
 ### The API key
 
@@ -171,20 +187,18 @@ export GDP_MUSE_SECRET_RESOURCE=projects/$GDP_GCP_PROJECT/secrets/muse-api-key/v
 
 ### Contributor tier: prompts are training data
 
-`muse-spark-1.2-contributor` is discounted **in exchange for permission to train on
-prompts and completions**. The standard-tier models (`muse-spark-1.1`, `muse-spark-1.2`)
-carry the opposite guarantee.
+`muse-spark-1.3-contributor` is discounted **in exchange for permission to train on
+prompts and completions**.
 
-A prompt here is not just the user's question. It carries `record_text` for every
-retrieved record — task titles and notes, note bodies, and approved attachment text.
+A prompt here is not just the user's question. It carries approved records in the
+planner briefing and `record_text` for retrieved records, including task titles,
+notes, note bodies, and approved attachment text.
 On the contributor tier that content is available to Meta for training.
 
 This is a deliberate choice. It is disclosed to users in Settings, sourced from
 `GET /v1/ai-info` so the wording cannot drift from the deployed model, and every
 `generation` audit event records `provider` and `trains_on_prompts`. Switching to
-`muse-spark-1.2` flips all three automatically. Note the contributor tier also drops the
-service-wide limit from 3,000 to 100 requests/min, well above the per-user chat budget
-below but worth watching under load.
+The contributor tier's lower service-wide rate limit is worth watching under load.
 
 ## Planner daily capacity
 
@@ -212,7 +226,7 @@ looks. A day can trip one and not the other.
 ## Copilot rate limiting
 
 `POST /v1/copilot/chat` is metered per authenticated UID with a token bucket, so a
-signed-in caller cannot loop the endpoint and run up Vertex/Gemini spend.
+signed-in caller cannot loop the endpoint and run up Muse Spark spend.
 
 - `PLANNER_CHAT_RATE_LIMIT_REQUESTS` (default 20) is both the bucket capacity and the
   per-window allowance, so a user may burst up to 20 and then settles into the

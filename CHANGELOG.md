@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Current provider migration
+
+- The backend now uses Meta Muse Spark 1.3 Contributor for every generated answer.
+  Search vectors are generated locally. The old Google AI SDK and provider path
+  are removed, and the Firestore index is versioned so legacy vectors are not
+  searched. Existing deployments must create the new index and run the
+  documented reindex command after deploying this backend.
+
 ### Added
 
 - **The assistant reads the whole planner, not five search hits** — every turn

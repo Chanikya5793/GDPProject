@@ -3,6 +3,12 @@
 Recorded 2026-08-13 on branch `feature/secure-rag-copilot`. “Verified” below means
 exercised in this checkout. It does not mean deployed or physically device-tested.
 
+This is a historical evidence snapshot. The current backend uses Meta Muse Spark
+1.3 Contributor for answers and locally generated lexical vectors for search.
+The older provider and the original scores below are not evidence of current
+live search quality. See `README.md` and `docs/OPERATIONS.md` for the current
+architecture and migration procedure.
+
 ## Exact implemented architecture
 
 1. React/Vite and Expo 56 use Firebase Authentication and send fresh Firebase ID tokens
