@@ -10,6 +10,8 @@ from google.cloud.firestore_v1.vector import Vector
 
 from .models import EntityType, PlannerRecord
 
+INDEX_VERSION = "local-lexical-v1"
+
 
 @dataclass(frozen=True)
 class VectorHit:
@@ -44,12 +46,15 @@ class FirestoreVectorStore:
             "entity_type": record.content.entity_type.value,
             "record_id": record.record_id,
             "revision": record.revision,
+            "index_version": INDEX_VERSION,
             "embedding": Vector(embedding),
             "updated_at": firestore.SERVER_TIMESTAMP,
         })
 
     def search(self, uid: str, embedding: List[float], limit: int) -> List[VectorHit]:
-        query = self.collection.where("uid", "==", uid).find_nearest(
+        query = self.collection.where("uid", "==", uid).where(
+            "index_version", "==", INDEX_VERSION
+        ).find_nearest(
             vector_field="embedding",
             query_vector=Vector(embedding),
             distance_measure=DistanceMeasure.COSINE,
@@ -59,7 +64,7 @@ class FirestoreVectorStore:
         hits = []
         for snapshot in query.stream():
             data = snapshot.to_dict()
-            if data.get("uid") != uid:
+            if data.get("uid") != uid or data.get("index_version") != INDEX_VERSION:
                 raise RuntimeError("Vector store violated UID isolation")
             hits.append(VectorHit(
                 entity_type=EntityType(data["entity_type"]),

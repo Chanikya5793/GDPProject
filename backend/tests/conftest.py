@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +7,7 @@ from app.ai import GeneratedAnswer
 from app.api import create_app
 from app.audit import AuditLogger, MemoryAuditSink
 from app.auth import AuthenticatedUser, get_verifier
+from app.local_embeddings import LocalEmbeddingClient
 from app.mcp_api import McpSessionManager, McpToolService
 from app.planner import PlannerEngine
 from app.proposals import ProposalService
@@ -25,22 +24,6 @@ class FakeVerifier:
             from fastapi import HTTPException
             raise HTTPException(status_code=401, detail="bad token")
         return AuthenticatedUser(uid=token[4:])
-
-
-class FakeEmbeddings:
-    dimensions = 8
-
-    def _vector(self, text: str):
-        values = [0.0] * self.dimensions
-        for token in text.lower().split():
-            values[int(hashlib.sha256(token.encode()).hexdigest(), 16) % self.dimensions] += 1.0
-        return values
-
-    def embed_document(self, text: str, title: str):
-        return self._vector(f"{title} {text}")
-
-    def embed_query(self, text: str):
-        return self._vector(text)
 
 
 class FakeGenerator:
@@ -63,7 +46,7 @@ def services():
     vectors = MemoryVectorStore()
     sink = MemoryAuditSink()
     audit = AuditLogger(sink, b"test-audit-salt")
-    embeddings = FakeEmbeddings()
+    embeddings = LocalEmbeddingClient()
     generator = FakeGenerator()
     planner = PlannerEngine(max_daily_minutes=120)
     retrieval = RetrievalService(repository, vectors, embeddings, audit, limit=5)
@@ -109,4 +92,3 @@ def task_request(title="Write report", expected_revision=None, key="request-0001
         "idempotency_key": key,
         "approved_for_ai": approved,
     }
-

@@ -20,6 +20,7 @@ def settings(**overrides):
         google_cloud_project="p", firebase_project_id="p",
         kms_key_name="projects/p/locations/us/keyRings/r/cryptoKeys/k",
         mcp_session_secret_resource="projects/p/secrets/mcp/versions/1",
+        muse_api_key_resource="projects/p/secrets/muse/versions/1",
     )
     return Settings(**{**base, **overrides})
 

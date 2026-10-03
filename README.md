@@ -2,20 +2,20 @@
 
 GDPProject is an offline-capable planner with Firebase Authentication, encrypted web and
 mobile storage, and a user-scoped FastAPI RAG copilot. Planner mutations remain ordinary
-deterministic application operations: Gemini may explain records and produce a typed
+deterministic application operations: Muse Spark may explain records and produce a typed
 proposal, but only an explicit confirmation with the previewed revision can apply it.
 
 ## Architecture
 
-- React/Vite web and Expo 56 mobile clients obtain Firebase ID tokens and call the same API.
+- React/Vite web and Expo mobile clients obtain Firebase ID tokens and call the same API.
 - Web offline data uses non-extractable AES-GCM keys in IndexedDB; mobile uses
   XChaCha20-Poly1305 with a 256-bit key held by Expo SecureStore.
 - FastAPI validates strict Pydantic contracts and derives UID only from the verified token.
 - Firestore payloads use per-user AES-256-GCM DEKs wrapped by Cloud KMS. Record coordinates
   and revision are authenticated as additional data.
-- Vertex `gemini-embedding-001` embeddings are stored without plaintext in Firestore vector
-  documents. Every KNN query has a mandatory UID prefilter.
-- Gemini 2.5 Flash receives only approved retrieved records inside explicit untrusted-data
+- Local lexical vectors are stored without plaintext in Firestore vector documents.
+  Every KNN query has mandatory UID and index-version prefilters.
+- Meta Muse Spark 1.3 Contributor receives approved planner data inside explicit untrusted-data
   boundaries. Responses must cite retrieved record IDs/revisions or abstain.
 - Six read-only JSON-RPC MCP tools use an authenticated, UID-bound signed session. UID is
   never a tool argument.
@@ -58,7 +58,7 @@ cd backend && .venv/bin/python evals/run_eval.py
 
 The versioned evaluation has 30 retrieval/abstention/action queries and includes a second
 UID corpus. `RESUME_EVIDENCE.md` records measured local results and clearly separates them
-from live Vertex, Cloud Run, web-browser, simulator, and physical-device validation.
+from live Meta Model API, Cloud Run, web-browser, simulator, and physical-device validation.
 
 Deployment and rollback procedures are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 

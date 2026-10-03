@@ -1,9 +1,9 @@
 """Deterministic offline contract evaluation for retrieval and action safety.
 
-The production adapter uses Vertex AI embeddings. This evaluator intentionally has no
-cloud dependency: it tests metric calculation, UID partitioning, citations, abstention,
-and typed-action extraction against a versioned corpus. Live Vertex evaluation uses the
-same schema and should replace ``retrieve`` with production predictions in CI/CD.
+Production search vectors are generated locally. This evaluator tests metric
+calculation, UID partitioning, citations, abstention, and typed-action extraction
+against a versioned corpus. Live search evaluation should replace ``retrieve``
+with production predictions before claiming search quality in deployment.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ def evaluate(dataset: dict[str, Any]) -> dict[str, Any]:
         "cross_user_leakage_count": leakage,
         "cross_user_leakage_rate": round(leakage / citation_total, 4),
         "failures": failures,
-        "evaluation_mode": "offline deterministic contract; production Vertex run not executed",
+        "evaluation_mode": "offline deterministic contract; production search run not executed",
     }
 
 

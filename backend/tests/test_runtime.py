@@ -46,8 +46,8 @@ def test_production_container_wires_cloud_adapters(monkeypatch):
     monkeypatch.setattr("app.runtime.firestore.Client", lambda **_kwargs: marker)
     for name in (
         "FirestoreKeyStore", "GoogleKmsKeyWrapper", "EnvelopeCipher",
-        "FirestorePlannerRepository", "FirestoreVectorStore", "VertexEmbeddingClient",
-        "GeminiAnswerGenerator", "FirestoreAuditSink", "AuditLogger", "PlannerEngine",
+        "FirestorePlannerRepository", "FirestoreVectorStore", "LocalEmbeddingClient",
+        "FirestoreAuditSink", "AuditLogger", "PlannerEngine",
         "RetrievalService", "IndexingService", "ProposalService", "CopilotService",
         "McpSessionManager", "McpToolService",
     ):
@@ -59,6 +59,7 @@ def test_production_container_wires_cloud_adapters(monkeypatch):
         google_cloud_project="gdp", firebase_project_id="gdp",
         kms_key_name="projects/gdp/locations/us/keyRings/planner/cryptoKeys/user-data",
         mcp_session_secret_resource="projects/gdp/secrets/mcp/versions/1",
+        muse_api_key_resource="projects/gdp/secrets/muse/versions/1",
     )
     container = build_production_container(settings)
     assert container.repository is marker

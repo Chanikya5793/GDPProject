@@ -5,10 +5,11 @@ from dataclasses import dataclass
 
 from google.cloud import firestore
 
-from .ai import AnswerGenerator, GeminiAnswerGenerator, MuseAnswerGenerator, VertexEmbeddingClient
+from .ai import AnswerGenerator, MuseAnswerGenerator
 from .audit import AuditLogger, AuditSink
 from .config import Settings
 from .crypto import EnvelopeCipher, FirestoreKeyStore, GoogleKmsKeyWrapper
+from .local_embeddings import LocalEmbeddingClient
 from .mcp_api import McpSessionManager, McpToolService
 from .planner import PlannerEngine
 from .proposals import ProposalService
@@ -30,19 +31,13 @@ class FirestoreAuditSink(AuditSink):
 
 
 def build_answer_generator(settings: Settings, secrets: SecretResolver) -> AnswerGenerator:
-    """Pick the generation backend. Embeddings always stay on Vertex — Meta's
-    API has no embeddings endpoint, so retrieval cannot move with it."""
-    if settings.answer_provider == "muse":
-        api_key = secrets.access(settings.muse_api_key_resource).decode().strip()
-        return MuseAnswerGenerator(
-            api_key=api_key,
-            model=settings.muse_model,
-            base_url=settings.muse_base_url,
-            timeout_seconds=settings.muse_timeout_seconds,
-            reasoning_effort=settings.muse_reasoning_effort,
-        )
-    return GeminiAnswerGenerator(
-        settings.google_cloud_project, settings.google_cloud_location, settings.gemini_model
+    api_key = secrets.access(settings.muse_api_key_resource).decode().strip()
+    return MuseAnswerGenerator(
+        api_key=api_key,
+        model=settings.muse_model,
+        base_url=settings.muse_base_url,
+        timeout_seconds=settings.muse_timeout_seconds,
+        reasoning_effort=settings.muse_reasoning_effort,
     )
 
 
@@ -68,10 +63,7 @@ def build_production_container(settings: Settings) -> Container:
     )
     repository = FirestorePlannerRepository(client, cipher)
     vector_store = FirestoreVectorStore(client)
-    embeddings = VertexEmbeddingClient(
-        settings.google_cloud_project, settings.google_cloud_location,
-        settings.embedding_model, settings.embedding_dimensions,
-    )
+    embeddings = LocalEmbeddingClient()
     secret_resolver = SecretResolver()
     generator = build_answer_generator(settings, secret_resolver)
     secret = secret_resolver.access(settings.mcp_session_secret_resource)
@@ -104,4 +96,3 @@ def build_production_container(settings: Settings) -> Container:
         mcp_tools=McpToolService(repository, retrieval, planner, audit),
         rate_limiter=rate_limiter,
     )
-

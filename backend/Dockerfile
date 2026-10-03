@@ -3,7 +3,7 @@ FROM python:3.12-slim AS runtime
 # Bytecode is deliberately written, and precompiled below. The usual
 # PYTHONDONTWRITEBYTECODE=1 keeps an image small, but this service scales to
 # zero, so every cold start was recompiling the whole dependency tree --
-# including google-cloud and google-genai -- on a single throttled vCPU.
+# including Google Cloud clients -- on a single throttled vCPU.
 ENV PYTHONUNBUFFERED=1 \
     PORT=8080
 
