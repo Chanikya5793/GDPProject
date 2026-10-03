@@ -6,7 +6,6 @@ import httpx
 import pytest
 
 from app.ai import (
-    GeminiAnswerGenerator,
     GenerationTimeout,
     MuseAnswerGenerator,
     strict_json_schema,
@@ -29,7 +28,7 @@ class FakeSecrets:
         return self.value
 
 
-def muse(handler, model="muse-spark-1.2-contributor", **kwargs):
+def muse(handler, model="muse-spark-1.3-contributor", **kwargs):
     transport = httpx.MockTransport(handler)
     return MuseAnswerGenerator(
         api_key="test-key", model=model, client=httpx.Client(transport=transport), **kwargs
@@ -56,7 +55,7 @@ class TestRequestShape:
         assert result.answer == ANSWER["answer"]
         assert seen["url"] == "https://api.meta.ai/v1/chat/completions"
         assert seen["auth"] == "Bearer test-key"
-        assert seen["body"]["model"] == "muse-spark-1.2-contributor"
+        assert seen["body"]["model"] == "muse-spark-1.3-contributor"
 
     def test_requests_schema_constrained_json(self):
         seen = {}
@@ -211,20 +210,15 @@ class TestFailureHandling:
 
     def test_an_api_key_is_required(self):
         with pytest.raises(ValueError):
-            MuseAnswerGenerator(api_key="", model="muse-spark-1.2")
+            MuseAnswerGenerator(api_key="", model="muse-spark-1.3-contributor")
 
 
 class TestTierDisclosure:
     def test_contributor_model_reports_that_prompts_train_the_model(self):
-        assert muse(ok(), model="muse-spark-1.2-contributor").trains_on_prompts is True
+        assert muse(ok(), model="muse-spark-1.3-contributor").trains_on_prompts is True
 
     def test_standard_model_reports_that_prompts_do_not_train_the_model(self):
-        assert muse(ok(), model="muse-spark-1.2").trains_on_prompts is False
-
-    def test_vertex_never_trains_on_prompts(self):
-        assert GeminiAnswerGenerator.trains_on_prompts is False
-        assert GeminiAnswerGenerator.provider == "vertex"
-
+        assert muse(ok(), model="muse-spark-1.3").trains_on_prompts is False
 
 def settings(**overrides):
     base = dict(
@@ -236,19 +230,23 @@ def settings(**overrides):
 
 
 class TestProviderSelection:
-    def test_defaults_to_vertex(self):
-        assert settings().answer_provider == "vertex"
-
     def test_muse_provider_requires_a_key_resource_at_startup(self):
         # Better to fail on boot than on the first user question.
         with pytest.raises(ValueError):
-            settings(answer_provider="muse")
+            settings()
+
+    def test_settings_reject_other_models(self):
+        with pytest.raises(ValueError):
+            settings(
+                muse_api_key_resource="projects/p/secrets/muse/versions/1",
+                muse_model="muse-spark-1.3",
+            )
 
     def test_builds_a_muse_generator_from_the_secret_resource(self):
         resource = "projects/p/secrets/muse/versions/3"
         secrets = FakeSecrets()
         generator = build_answer_generator(
-            settings(answer_provider="muse", muse_api_key_resource=resource), secrets
+            settings(muse_api_key_resource=resource), secrets
         )
 
         assert isinstance(generator, MuseAnswerGenerator)
@@ -266,7 +264,6 @@ class TestProviderSelection:
         secrets = FakeSecrets(b"  padded-key\n")
         generator = build_answer_generator(
             settings(
-                answer_provider="muse",
                 muse_api_key_resource="projects/p/secrets/muse/versions/1",
             ),
             secrets,

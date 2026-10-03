@@ -21,12 +21,9 @@ class Settings(BaseSettings):
     # SMTP is configured. See docs/OPERATIONS.md.
     require_verified_email: bool = True
     google_cloud_project: str
-    google_cloud_location: str = "global"
     firebase_project_id: str
     kms_key_name: str
     firestore_database: str = "(default)"
-    answer_provider: Literal["vertex", "muse"] = "vertex"
-    gemini_model: str = "gemini-2.5-flash"
     muse_base_url: str = "https://api.meta.ai/v1"
     # Muse Spark 1.3, contributor tier. Its release notes name the two things
     # this assistant kept getting wrong on 1.2 -- "long instruction following,
@@ -35,7 +32,7 @@ class Settings(BaseSettings):
     # duplicate is exactly a long instruction with a constraint about an
     # irreversible action. The contributor tier trains on prompts, as 1.2's
     # did; the Settings screen already discloses that.
-    muse_model: str = "muse-spark-1.3-contributor"
+    muse_model: Literal["muse-spark-1.3-contributor"] = "muse-spark-1.3-contributor"
     muse_api_key_resource: str = ""
     # Muse Spark spends most of its output on hidden reasoning, and it does all of
     # it before emitting the first answer token, so this sets how long the student
@@ -88,15 +85,13 @@ class Settings(BaseSettings):
     # generation surfaces as this app's own explained 504 rather than a bare
     # platform 500.
     muse_timeout_seconds: int = Field(default=120, ge=5, le=300)
-    embedding_model: str = "gemini-embedding-001"
-    embedding_dimensions: int = 768
     allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     mcp_session_secret_resource: str = ""
     chat_retention_days: int = Field(default=30, ge=0, le=365)
     retrieval_limit: int = Field(default=5, ge=1, le=20)
-    # See DEFAULT_MAX_DISTANCE in rag.py. Lower it if unrelated records still
-    # come back for a message that is not about the planner at all.
-    retrieval_max_distance: float = Field(default=0.7, ge=0.05, le=2.0)
+    # See DEFAULT_MAX_DISTANCE in rag.py. Generous for long notes, with an
+    # exact token-overlap check to reject hash collisions.
+    retrieval_max_distance: float = Field(default=0.98, ge=0.05, le=2.0)
     # How many extra generations the assistant may spend looking things up
     # before it has to answer. Every turn already arrives with a briefing and a
     # search, so most questions never use one; 0 turns the loop off entirely.
@@ -124,10 +119,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_muse_key(self) -> "Settings":
         # Fail at startup rather than on the first user question.
-        if self.answer_provider == "muse" and not self.muse_api_key_resource:
-            raise ValueError(
-                "muse_api_key_resource is required when answer_provider is 'muse'"
-            )
+        if not self.muse_api_key_resource:
+            raise ValueError("muse_api_key_resource is required")
         return self
 
     @model_validator(mode="after")
@@ -151,4 +144,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
-

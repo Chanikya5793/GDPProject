@@ -18,6 +18,7 @@ from .ai import (
 )
 from .audit import AuditLogger
 from .injection import safe_excerpt
+from .local_embeddings import has_lexical_overlap
 from .models import (
     ChatTurn,
     Citation,
@@ -187,17 +188,17 @@ class IndexingService:
 # source-valid answer". A greeting has nothing to cite because nothing in the
 # planner is about it.
 #
-# Measured against the embeddings the tests use: a direct match sits at 0.08, a
-# related question at 0.44, a greeting at 0.81. 0.7 separates them with room on
-# both sides. It could not be measured against the deployed embedding model from
-# here, which is why it is a setting rather than a constant.
+# Local lexical vectors may yield a high cosine distance for a single word in a
+# long note. A separate token-overlap check removes false matches from hash
+# collisions, so this cutoff can be generous.
 #
 # Being strict costs little now. Retrieval used to be the only thing the model
 # saw, so dropping a loose match lost information; the briefing carries the whole
 # planner on every turn, so a record missed here is still in front of the model.
 # A wrong record in the prompt is worse than a missing one.
-DEFAULT_MAX_DISTANCE = 0.7
-# How many more neighbours to pull when the search is narrowed to one kind.
+DEFAULT_MAX_DISTANCE = 0.98
+# Pull extra candidates because hash collisions and an entity-type filter may
+# discard the nearest vectors after the record is checked.
 KIND_OVERFETCH = 5
 
 
@@ -221,14 +222,12 @@ class RetrievalService:
         if not settings.ai_enabled:
             self.audit.record(uid, "retrieval", "denied", {"reason": "opt_out"})
             raise PermissionError("AI is disabled")
-        # A kind is a filter on the neighbours, not on the index, so the store
-        # is asked for more than will be kept. The model narrowing a search to
-        # notes and getting five tasks back was what sent it on to a second and
-        # third lookup for the same thing.
-        wanted = self.limit * KIND_OVERFETCH if entity_type else self.limit
+        # Entity type and real word overlap are checked after vector search,
+        # so request enough candidates to still fill the answer after filtering.
+        wanted = self.limit * KIND_OVERFETCH
         try:
             query_vector = self.embeddings.embed_query(query)
-            hits = self.vector_store.search(uid, query_vector, wanted)
+            hits = self.vector_store.search(uid, query_vector, wanted) if any(query_vector) else []
         except Exception as exc:
             self.audit.record(uid, "failure", "failed", {
                 "stage": "retrieval", "error_type": type(exc).__name__,
@@ -252,6 +251,8 @@ class RetrievalService:
             if not record.approved_for_ai or record.revision != hit.revision:
                 continue
             text = record_text(record, include_attachments=settings.index_attachments)
+            if not has_lexical_overlap(query, text):
+                continue
             records.append(record)
             citations.append(Citation(
                 citation_id=f"S{index}", entity_type=hit.entity_type,
@@ -282,7 +283,7 @@ class CopilotService:
     """Answers a question by looking at the planner, possibly more than once.
 
     A turn always starts with two things the model did not have to ask for: a
-    deterministic briefing of the whole planner, and a semantic search on the
+    deterministic briefing of the whole planner, and a word-based search on the
     question. That alone settles most questions in a single generation. When it
     does not, the model returns lookups instead of prose, the server runs them,
     and it is asked again with the results, up to ``max_tool_rounds`` times.
@@ -555,7 +556,7 @@ class CopilotService:
 
         A record the student kept out of the assistant is still answered about
         when they point at it. That flag keeps records out of the *ambient*
-        view -- the index, semantic search, the briefing and every tool, which
+        view -- the index, text search, the briefing and every tool, which
         are the cases where the assistant reaches for things nobody named. This
         is the opposite: one record, named by the student, for one turn. It
         never enters `session.records`, so the tools still cannot see it, and

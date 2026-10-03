@@ -117,12 +117,12 @@ describe('copilot evidence and confirmation UI', () => {
 })
 
 describe('first-run disclosure', () => {
-  const info = { provider: 'Meta', model: 'muse-spark-1.2-contributor', trains_on_prompts: true }
+  const info = { provider: 'Meta', model: 'muse-spark-1.3-contributor', trains_on_prompts: true }
 
   it('names the provider and model that will see planner records', () => {
     render(<FirstRunNotice info={info} onAcknowledge={() => {}} />)
     expect(screen.getByText(/Meta/)).toBeInTheDocument()
-    expect(screen.getByText(/muse-spark-1.2-contributor/)).toBeInTheDocument()
+    expect(screen.getByText(/muse-spark-1.3-contributor/)).toBeInTheDocument()
   })
 
   it('states plainly when the tier trains on what is sent', () => {

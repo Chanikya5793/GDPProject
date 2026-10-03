@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { AI_NOTICE_KEY, noticeParagraphs } from './aiNotice';
 
-const training = { provider: 'Meta', model: 'muse-spark-1.2-contributor', trains_on_prompts: true };
-const notTraining = { ...training, model: 'muse-spark-1.2', trains_on_prompts: false };
+const training = { provider: 'Meta', model: 'muse-spark-1.3-contributor', trains_on_prompts: true };
+const notTraining = { ...training, model: 'muse-spark-1.3', trains_on_prompts: false };
 
 describe('noticeParagraphs', () => {
   it('names the provider and model that will receive planner records', () => {
     const text = noticeParagraphs(training).join(' ');
     expect(text).toContain('Meta');
-    expect(text).toContain('muse-spark-1.2-contributor');
+    expect(text).toContain('muse-spark-1.3-contributor');
   });
 
   it('states plainly when the tier trains on what is sent', () => {

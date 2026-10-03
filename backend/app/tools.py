@@ -1,9 +1,9 @@
 """Read-only planner views the assistant can ask for on its own.
 
-Semantic retrieval answers one shape of question: "what did I write about the
+Text retrieval answers one shape of question: "what did I write about the
 chemistry exam". It cannot answer the shapes students actually ask most often.
 "What is due today", "how many things am I behind on", "what does my week look
-like" are date and count questions, and cosine similarity over five records can
+like" are date and count questions, and search over five records can
 neither count nor filter by day. The assistant used to get those five records
 and nothing else, so it either guessed or abstained.
 
@@ -59,7 +59,7 @@ def record_text(record: PlannerRecord, include_attachments: bool = False) -> str
 
 
 class RecordSearch(Protocol):
-    """Semantic retrieval, as the toolbox needs it. Declared structurally so
+    """Text retrieval, as the toolbox needs it. Declared structurally so
     this module does not have to import the service that implements it."""
 
     def retrieve(self, uid: str, query: str) -> Tuple[List[PlannerRecord], List[Citation]]: ...

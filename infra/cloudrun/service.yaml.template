@@ -51,8 +51,6 @@ spec:
               value: production
             - name: PLANNER_GOOGLE_CLOUD_PROJECT
               value: ${GDP_GCP_PROJECT}
-            - name: PLANNER_GOOGLE_CLOUD_LOCATION
-              value: ${GDP_VERTEX_LOCATION}
             - name: PLANNER_FIREBASE_PROJECT_ID
               value: ${GDP_FIREBASE_PROJECT_ID}
             - name: PLANNER_KMS_KEY_NAME
@@ -69,12 +67,8 @@ spec:
             # read as a sequence, and Cloud Run rejects a non-string env value.
             - name: PLANNER_ALLOWED_ORIGINS
               value: '${GDP_ALLOWED_ORIGINS}'
-            - name: PLANNER_ANSWER_PROVIDER
-              value: muse
-            # The -contributor tier was withdrawn by Meta and now answers
-            # model_not_found, taking the whole assistant down with it. The
-            # standard tier also does not train on prompts, which the Settings
-            # screen and the first-run notice report from /v1/ai-info.
+            # The Settings screen and first-run notice report the provider's
+            # contributor training policy from /v1/ai-info.
             # The assistant chooses its own lookups and can propose several
             # changes at once, and that choosing is the reasoning step, so it is
             # not starved here. Muse Spark bills reasoning cheaply enough that

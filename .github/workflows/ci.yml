@@ -133,7 +133,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e '.[dev]'
-      - run: ruff check app tests evals
+      - run: ruff check app tests evals scripts
       - run: pytest --cov=app --cov-branch --cov-report=term --cov-report=xml
       - run: python evals/run_eval.py
       - uses: actions/upload-artifact@v4

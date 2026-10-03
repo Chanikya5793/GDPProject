@@ -5,8 +5,6 @@ from enum import Enum
 from typing import Any, Dict, Iterator, List, Literal, Optional, Protocol, Union
 
 import httpx
-from google import genai
-from google.genai import types
 from pydantic import Field, field_validator
 
 from .models import EntityType, ProposalOperation, StrictModel
@@ -59,8 +57,8 @@ SYSTEM_INSTRUCTION = (
     "Looking things up. When the briefing does not cover what was asked, put one or "
     "more lookups in tool_requests, leave answer empty, and you will be run again "
     "with the results. The tools are:\n"
-    "  search: find records by meaning. Use it for topics and wording, \"what did I "
-    "write about the lab report\". Set query.\n"
+    "  search: find records by shared words in titles and text. Use it for "
+    "topics and wording, \"what did I write about the lab report\". Set query.\n"
     "  find: filter records exactly. Set any of entity_type, status (open, completed, "
     "any), priority, start and end as a due-date window, and query as a substring. "
     "Use it to count things or to pull a specific slice.\n"
@@ -358,83 +356,6 @@ StreamItem = Union[str, GeneratedAnswer]
 
 class StreamingAnswerGenerator(AnswerGenerator, Protocol):
     def generate_stream(self, prompt: str) -> Iterator[StreamItem]: ...
-
-
-# Per call, in milliseconds, for the Vertex clients. HttpOptions leaves the
-# timeout unset, which is unbounded: a hung Vertex call held a worker until the
-# platform killed the request as a bare 500, the exact failure the Muse
-# adapter's timeout exists to avoid. Under the Cloud Run request timeout so a
-# slow generation is reported by this app rather than the platform.
-VERTEX_TIMEOUT_MS = 120_000
-
-
-class VertexEmbeddingClient:
-    def __init__(self, project: str, location: str, model: str, dimensions: int):
-        self.client = genai.Client(
-            vertexai=True, project=project, location=location,
-            http_options=types.HttpOptions(api_version="v1", timeout=VERTEX_TIMEOUT_MS),
-        )
-        self.model = model
-        self.dimensions = dimensions
-
-    def _embed(self, text: str, task_type: str, title: str | None = None) -> List[float]:
-        response = self.client.models.embed_content(
-            model=self.model,
-            contents=text,
-            config=types.EmbedContentConfig(
-                task_type=task_type, output_dimensionality=self.dimensions, title=title
-            ),
-        )
-        if not response.embeddings:
-            raise RuntimeError("Vertex AI returned no embedding")
-        return list(response.embeddings[0].values or [])
-
-    def embed_document(self, text: str, title: str) -> List[float]:
-        return self._embed(text, "RETRIEVAL_DOCUMENT", title)
-
-    def embed_query(self, text: str) -> List[float]:
-        return self._embed(text, "RETRIEVAL_QUERY")
-
-
-class GeminiAnswerGenerator:
-    provider = "vertex"
-    trains_on_prompts = False
-
-    def __init__(self, project: str, location: str, model: str):
-        self.client = genai.Client(
-            vertexai=True, project=project, location=location,
-            http_options=types.HttpOptions(api_version="v1", timeout=VERTEX_TIMEOUT_MS),
-        )
-        self.model = model
-
-    def generate(self, prompt: str) -> GeneratedAnswer:
-        try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    response_mime_type="application/json",
-                    response_schema=GeneratedAnswer,
-                    system_instruction=SYSTEM_INSTRUCTION,
-                ),
-            )
-        except Exception as exc:
-            # The SDK raises its own error types for a timeout and for an
-            # overloaded model; both are "try again", not a server fault.
-            if _looks_like_timeout(exc):
-                raise GenerationTimeout("Gemini did not answer in time") from exc
-            raise
-        if not response.text:
-            raise RuntimeError("Gemini returned an empty response")
-        return GeneratedAnswer.model_validate(json_document(response.text))
-
-
-def _looks_like_timeout(exc: Exception) -> bool:
-    name = type(exc).__name__.lower()
-    text = str(exc).lower()
-    return "timeout" in name or "timed out" in text or "deadline" in text
-
 
 
 def json_document(text: str) -> Any:
