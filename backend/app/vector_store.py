@@ -11,6 +11,7 @@ from google.cloud.firestore_v1.vector import Vector
 from .models import EntityType, PlannerRecord
 
 INDEX_VERSION = "local-lexical-v1"
+BATCH_WRITES = 400
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class VectorHit:
 
 class VectorStore(Protocol):
     def index(self, uid: str, record: PlannerRecord, embedding: List[float]) -> None: ...
+    def index_many(self, uid: str, items: List[Tuple[PlannerRecord, List[float]]]) -> None: ...
     def search(self, uid: str, embedding: List[float], limit: int) -> List[VectorHit]: ...
     def delete_record(self, uid: str, entity_type: EntityType, record_id: str) -> None: ...
     def delete_user(self, uid: str) -> int: ...
@@ -40,8 +42,8 @@ class FirestoreVectorStore:
     def document_id(uid: str, entity_type: EntityType, record_id: str) -> str:
         return f"{uid}:{entity_type.value}:{record_id}"
 
-    def index(self, uid: str, record: PlannerRecord, embedding: List[float]) -> None:
-        self.collection.document(self.document_id(uid, record.content.entity_type, record.record_id)).set({
+    def _document(self, uid: str, record: PlannerRecord, embedding: List[float]) -> dict:
+        return {
             "uid": uid,
             "entity_type": record.content.entity_type.value,
             "record_id": record.record_id,
@@ -49,7 +51,22 @@ class FirestoreVectorStore:
             "index_version": INDEX_VERSION,
             "embedding": Vector(embedding),
             "updated_at": firestore.SERVER_TIMESTAMP,
-        })
+        }
+
+    def _reference(self, uid: str, record: PlannerRecord):
+        return self.collection.document(self.document_id(uid, record.content.entity_type, record.record_id))
+
+    def index(self, uid: str, record: PlannerRecord, embedding: List[float]) -> None:
+        self._reference(uid, record).set(self._document(uid, record, embedding))
+
+    def index_many(self, uid: str, items: List[Tuple[PlannerRecord, List[float]]]) -> None:
+        # Firestore caps a batch at 500 writes; one set() per record would be
+        # hundreds of round trips for a student with a semester of reminders.
+        for start in range(0, len(items), BATCH_WRITES):
+            batch = self.client.batch()
+            for record, embedding in items[start:start + BATCH_WRITES]:
+                batch.set(self._reference(uid, record), self._document(uid, record, embedding))
+            batch.commit()
 
     def search(self, uid: str, embedding: List[float], limit: int) -> List[VectorHit]:
         query = self.collection.where("uid", "==", uid).where(
@@ -106,6 +123,10 @@ class MemoryVectorStore:
         self.vectors[(uid, record.content.entity_type, record.record_id)] = (
             record.revision, list(embedding)
         )
+
+    def index_many(self, uid: str, items: List[Tuple[PlannerRecord, List[float]]]) -> None:
+        for record, embedding in items:
+            self.index(uid, record, embedding)
 
     @staticmethod
     def _cosine_distance(left: List[float], right: List[float]) -> float:

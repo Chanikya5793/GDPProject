@@ -53,7 +53,13 @@ const DEFAULT_RETENTION_DAYS = 30;
  */
 export function setAiEnabled(privacy: AiPrivacy, enabled: boolean): AiPrivacy {
   if (!enabled) return defaultPrivacy();
-  return { ...privacy, ai_enabled: true };
+  // Off cleared the types, so keeping that empty list switched the copilot on
+  // with nothing searchable and no sign of it. Each record still needs its own
+  // approval, so restoring the types sends nothing the user did not approve.
+  const types = privacy.indexed_entity_types.length
+    ? privacy.indexed_entity_types
+    : [...INDEXABLE_TYPES];
+  return { ...privacy, ai_enabled: true, indexed_entity_types: types };
 }
 
 export function toggleIndexedType(privacy: AiPrivacy, type: IndexableType): AiPrivacy {

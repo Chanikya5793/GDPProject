@@ -25,6 +25,8 @@ const ACCENT_COLORS = [
   { id: 'amber',  label: 'Amber',  color: '#D97706' },
 ]
 
+// Record types the backend can index; matches EntityType in backend/app/models.py.
+const INDEXABLE_TYPES = ['task', 'reminder', 'note', 'schedule']
 const CATEGORIES = ['Homework', 'Exam', 'Project', 'Reading', 'Lab', 'Other']
 
 /* ─── Toggle Switch ─── */
@@ -445,7 +447,13 @@ export default function Settings() {
                 <span className="settings-row-desc">Complete opt-out. Turning this off also deletes your vector index.</span>
               </div>
               <Toggle checked={privacy.ai_enabled}
-                onChange={value => updatePrivacy(value ? { ai_enabled: true } : {
+                onChange={value => updatePrivacy(value ? {
+                  ai_enabled: true,
+                  // Off cleared the types; switching on with that empty list
+                  // left nothing searchable. Records still need their own approval.
+                  indexed_entity_types: privacy.indexed_entity_types.length
+                    ? privacy.indexed_entity_types : [...INDEXABLE_TYPES],
+                } : {
                   ai_enabled: false, indexed_entity_types: [], index_attachments: false,
                   retain_chat: false, chat_retention_days: 0,
                 })}
@@ -458,7 +466,7 @@ export default function Settings() {
                 <span className="settings-row-desc">Only individually approved records from these types can be indexed.</span>
               </div>
               <div className="settings-theme-picker">
-                {['task', 'reminder', 'note', 'schedule'].map(type => (
+                {INDEXABLE_TYPES.map(type => (
                   <button key={type}
                     className={`settings-theme-btn${privacy.indexed_entity_types.includes(type) ? ' active' : ''}`}
                     onClick={() => toggleIndexedType(type)} disabled={!privacy.ai_enabled}>

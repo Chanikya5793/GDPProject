@@ -41,12 +41,19 @@ describe('setAiEnabled', () => {
     expect(setAiEnabled(on, false)).toEqual(defaultPrivacy());
   });
 
-  it('turning it on does not silently opt anything in', () => {
+  it('turning it on restores the record types, and nothing more sensitive', () => {
+    // An empty list left search with nothing to look through. Records still
+    // need their own approval; attachments and retention stay off.
     const enabled = setAiEnabled(DEFAULT_PRIVACY, true);
     expect(enabled.ai_enabled).toBe(true);
-    expect(enabled.indexed_entity_types).toEqual([]);
+    expect(enabled.indexed_entity_types).toEqual(['task', 'reminder', 'note', 'schedule']);
     expect(enabled.index_attachments).toBe(false);
     expect(enabled.retain_chat).toBe(false);
+  });
+
+  it('returns a caller-owned list when it restores the types', () => {
+    setAiEnabled(DEFAULT_PRIVACY, true).indexed_entity_types.pop();
+    expect(setAiEnabled(DEFAULT_PRIVACY, true).indexed_entity_types).toHaveLength(4);
   });
 
   it('keeps the existing selections when re-enabling an already-on setting', () => {

@@ -80,6 +80,46 @@ def test_privacy_removing_one_entity_type_deletes_that_vector_partition(client, 
     assert response.json()["indexed_entity_types"] == ["task"]
 
 
+def _privacy(enabled=True, kinds=(), attachments=False):
+    return {
+        "ai_enabled": enabled, "indexed_entity_types": list(kinds),
+        "index_attachments": attachments, "retain_chat": False, "chat_retention_days": 0,
+    }
+
+
+def test_privacy_turning_ai_back_on_restores_the_default_types(client, auth):
+    client.put("/v1/privacy", json=_privacy(enabled=False), headers=auth)
+    # What a client sends when it flips only the switch: off had cleared the list.
+    response = client.put("/v1/privacy", json=_privacy(enabled=True), headers=auth)
+    assert response.json()["indexed_entity_types"] == ["task", "reminder", "note", "schedule"]
+
+
+def test_privacy_an_empty_list_stays_empty_while_ai_stays_on(client, auth):
+    response = client.put("/v1/privacy", json=_privacy(kinds=[]), headers=auth)
+    assert response.json()["indexed_entity_types"] == []
+
+
+def test_privacy_enabling_a_type_indexes_its_existing_approved_records(client, auth, services):
+    client.put("/v1/privacy", json=_privacy(kinds=["note"]), headers=auth)
+    client.put("/v1/records/task/t1", json=task_request("Lab report", key="request-0101", approved=True),
+               headers=auth)
+    client.put("/v1/records/task/t2", json=task_request("Private", key="request-0102"), headers=auth)
+    assert services.vector_store.vectors == {}
+
+    client.put("/v1/privacy", json=_privacy(kinds=["note", "task"]), headers=auth)
+
+    assert set(services.vector_store.vectors) == {("alice", EntityType.task, "t1")}
+    assert any(event.metadata.get("backfill") == 1 for event in services.test_sink.events)
+
+
+def test_privacy_reenabling_ai_indexes_existing_records(client, auth, services):
+    client.put("/v1/records/task/t1", json=task_request("Lab report", key="request-0201", approved=True),
+               headers=auth)
+    client.put("/v1/privacy", json=_privacy(enabled=False), headers=auth)
+    client.put("/v1/privacy", json=_privacy(enabled=True), headers=auth)
+    assert ("alice", EntityType.task, "t1") in services.vector_store.vectors
+
+
 def test_mcp_initialize_and_tools_are_session_bound(client, auth):
     initialized = client.post("/mcp", json={
         "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
