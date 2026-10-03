@@ -36,7 +36,9 @@ def main() -> None:
     embeddings = LocalEmbeddingClient()
     old_documents = list(store.collection.stream())
     uids = {document.id.split(":", 1)[0] for document in old_documents}
-    uids.update(document.id for document in client.collection("users").stream())
+    # list_documents, not stream: a user document exists only as the parent of
+    # its records and settings, and stream() skips such missing parents.
+    uids.update(reference.id for reference in client.collection("users").list_documents())
     indexed = 0
     for uid in sorted(uids):
         privacy = repository.get_privacy(uid)
