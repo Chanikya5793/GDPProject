@@ -168,6 +168,32 @@
   align-items: start;
 }
 
+.task-date-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.task-date-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.task-date-group-label.today {
+  color: var(--green);
+}
+
+.task-date-group-label.past {
+  color: var(--red);
+}
+
 /* ═══════════════════════════════════════
    TASK CARD — Slot + expandable card
    ═══════════════════════════════════════ */

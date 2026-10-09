@@ -257,6 +257,7 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
   }
 
   return (
+    
     <div className="task-card-slot">
       <div
         className={`task-card${task.completed ? ' task-done' : ` task-priority-${styleKey}${ep.wasEscalated && !isOverdue ? ' task-escalated' : ''}`}${urgency}`}
@@ -538,6 +539,18 @@ export default function Tasks() {
     if (sortBy === 'priority') return (PRIO_ORDER[a.priority] ?? 3) - (PRIO_ORDER[b.priority] ?? 3)
     return a.title.localeCompare(b.title)
   })
+  
+  const groupedTasks = [...filtered.reduce((groups, task) => {
+    const date = task.dueDate || ''
+    if (!groups.has(date)) groups.set(date, [])
+    groups.get(date).push(task)
+    return groups
+  }, new Map())]
+    .sort(([dateA], [dateB]) => {
+      if (!dateA) return 1
+      if (!dateB) return -1
+      return dateA.localeCompare(dateB)
+    })
 
   const activeCount = tasks.filter(t => !t.completed).length
   const completedCount = tasks.filter(t => t.completed).length
@@ -658,9 +671,19 @@ export default function Tasks() {
             <p>Try adjusting your filters or add a new task.</p>
           </div>
         ) : (
-          <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
-            {filtered.map(task => (
-              <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
+          <div className="task-date-groups">
+            {groupedTasks.map(([date, groupTasks]) => (
+              <section key={date || 'no-due-date'} className="task-date-group">
+                <h2 className={`task-date-group-label${date === todayStr ? ' today' : ''}${date && date < todayStr ? ' past' : ''}`}>
+                  {date && date < todayStr && <AlertTriangle size={14} aria-hidden="true" />}
+                  {date ? formatDate(date) : 'No due date'}
+                </h2>
+                <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
+                  {groupTasks.map(task => (
+                    <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
