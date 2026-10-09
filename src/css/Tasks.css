@@ -168,6 +168,45 @@
   align-items: start;
 }
 
+.task-date-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.task-date-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.task-date-group-label.today {
+  color: var(--green);
+}
+
+.task-date-group-label.past {
+  color: var(--red);
+}
+
+/* Says "overdue" to a screen reader; the red and the icon say it to everyone else. */
+.task-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ═══════════════════════════════════════
    TASK CARD — Slot + expandable card
    ═══════════════════════════════════════ */
