@@ -12,6 +12,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import AskAiButton from '../components/AskAiButton'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } from '../utils/schedule'
+import { groupTasksByDate } from '../utils/taskGroups'
 import '../css/Tasks.css'
 import LoadFailed from '../components/LoadFailed'
 
@@ -30,7 +31,9 @@ function formatDate(dateStr) {
   const tomorrowStr = localDateStr(tom)
   if (dateStr === todayStr) return 'Today'
   if (dateStr === tomorrowStr) return 'Tomorrow'
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  // A date in another year needs it, or last October's overdue work reads as this week's.
+  const year = dateStr.slice(0, 4) === todayStr.slice(0, 4) ? undefined : 'numeric'
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year })
 }
 
 function friendlyDate(dateStr) {
@@ -257,7 +260,6 @@ function TaskCard({ task, onToggle, onEdit, onDelete, dueDateAlerts }) {
   }
 
   return (
-    
     <div className="task-card-slot">
       <div
         className={`task-card${task.completed ? ' task-done' : ` task-priority-${styleKey}${ep.wasEscalated && !isOverdue ? ' task-escalated' : ''}`}${urgency}`}
@@ -535,22 +537,24 @@ export default function Tasks() {
   if (priorityFilter !== 'all') filtered = filtered.filter(t => t.priority === priorityFilter)
   if (categoryFilter !== 'all') filtered = filtered.filter(t => t.category === categoryFilter)
   filtered.sort((a, b) => {
-    if (sortBy === 'dueDate') return (a.dueDate || '').localeCompare(b.dueDate || '')
+    if (sortBy === 'dueDate') {
+      // Within a day, timed tasks first in clock order, then the untimed ones.
+      return (a.dueDate || '').localeCompare(b.dueDate || '')
+        || (a.dueTime || '24:00').localeCompare(b.dueTime || '24:00')
+    }
     if (sortBy === 'priority') return (PRIO_ORDER[a.priority] ?? 3) - (PRIO_ORDER[b.priority] ?? 3)
     return a.title.localeCompare(b.title)
   })
-  
-  const groupedTasks = [...filtered.reduce((groups, task) => {
-    const date = task.dueDate || ''
-    if (!groups.has(date)) groups.set(date, [])
-    groups.get(date).push(task)
-    return groups
-  }, new Map())]
-    .sort(([dateA], [dateB]) => {
-      if (!dateA) return 1
-      if (!dateB) return -1
-      return dateA.localeCompare(dateB)
-    })
+  // Sections per day only when sorting by date; split by day, a priority or
+  // title sort would only order each day rather than the whole list.
+  const dateGroups = sortBy === 'dueDate' ? groupTasksByDate(filtered, todayStr) : null
+  const renderCards = list => (
+    <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
+      {list.map(task => (
+        <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
+      ))}
+    </div>
+  )
 
   const activeCount = tasks.filter(t => !t.completed).length
   const completedCount = tasks.filter(t => t.completed).length
@@ -670,23 +674,20 @@ export default function Tasks() {
             <h3>No tasks found</h3>
             <p>Try adjusting your filters or add a new task.</p>
           </div>
-        ) : (
+        ) : dateGroups ? (
           <div className="task-date-groups">
-            {groupedTasks.map(([date, groupTasks]) => (
-              <section key={date || 'no-due-date'} className="task-date-group">
-                <h2 className={`task-date-group-label${date === todayStr ? ' today' : ''}${date && date < todayStr ? ' past' : ''}`}>
-                  {date && date < todayStr && <AlertTriangle size={14} aria-hidden="true" />}
-                  {date ? formatDate(date) : 'No due date'}
+            {dateGroups.map(group => (
+              <section key={group.date || 'no-due-date'} className="task-date-group">
+                <h2 className={`task-date-group-label${group.isToday ? ' today' : ''}${group.overdue ? ' past' : ''}`}>
+                  {group.overdue && <AlertTriangle size={14} aria-hidden="true" />}
+                  {group.date ? formatDate(group.date) : 'No due date'}
+                  {group.overdue && <span className="task-visually-hidden">, overdue</span>}
                 </h2>
-                <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
-                  {groupTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
-                  ))}
-                </div>
+                {renderCards(group.tasks)}
               </section>
             ))}
           </div>
-        )}
+        ) : renderCards(filtered)}
       </div>
 
       {showModal && (

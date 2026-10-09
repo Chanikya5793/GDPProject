@@ -194,6 +194,19 @@
   color: var(--red);
 }
 
+/* Says "overdue" to a screen reader; the red and the icon say it to everyone else. */
+.task-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ═══════════════════════════════════════
    TASK CARD — Slot + expandable card
    ═══════════════════════════════════════ */
