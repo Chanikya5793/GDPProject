@@ -42,6 +42,15 @@ describe('cached iOS launch and bounded cloud refresh', () => {
     await api.refreshPlannerData(true);
     expect(mocks.request).toHaveBeenCalledTimes(6);
   });
+  it('follows a running refresh once with every kind another device changed meanwhile', async () => {
+    const api = await import('@/api/plannerClient');
+    const launch = api.refreshPlannerData(true);
+    await Promise.all([launch, api.refreshPlannerData(true, ['task']), api.refreshPlannerData(true, ['note'])]);
+    const paths = mocks.request.mock.calls.map(call => call[0]);
+    // The launch read all three; one follow-up read just the two that moved.
+    expect(paths).toEqual(['/v1/records/task', '/v1/records/reminder', '/v1/records/note',
+      '/v1/records/task', '/v1/records/note']);
+  });
   it('deduplicates overlapping reads of one record kind', async () => {
     const api = await import('@/api/plannerClient');
     await Promise.all([api.listPlannerItems('task'), api.listPlannerItems('task')]);

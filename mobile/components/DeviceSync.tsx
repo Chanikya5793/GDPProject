@@ -15,6 +15,7 @@ import {
 } from '@/api/notifications';
 import { clearWidget, syncPendingWidgetActions, syncWidget } from '@/api/widgets';
 import { clearLiveActivities } from '@/api/liveActivity';
+import { watchPlannerChanges } from '@/api/liveSync';
 
 const ASKED_KEY = 'nw_notifications_asked';
 
@@ -99,15 +100,22 @@ export default function DeviceSync() {
     refresh();
     const stopWatchingData = onPlannerDataChanged(sync);
     const stopWatchingCloud = onPlannerSyncChanged(sync);
+    // Changes from other devices arrive live while this app is in front;
+    // the listener is dropped in the background, where iOS would suspend it.
+    const uid = user.id;
+    let stopLive = AppState.currentState === 'active' ? watchPlannerChanges(uid) : () => {};
     // Widgets are only tappable while this app is in the background, so
     // coming back is the moment to look; no polling while active.
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') { sync(); refresh(); }
+      stopLive();
+      stopLive = () => {};
+      if (state === 'active') { sync(); refresh(); stopLive = watchPlannerChanges(uid); }
     });
 
     return () => {
       active = false;
       if (timer.current) clearTimeout(timer.current);
+      stopLive();
       stopWatchingData();
       stopWatchingCloud();
       subscription.remove();

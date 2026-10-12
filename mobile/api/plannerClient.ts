@@ -4,7 +4,7 @@ import { preserveAttachments } from '@/utils/attachments';
 import { Note, PlannerRecordId, Reminder, ServerAttachment, Task } from '@/types';
 import { auth } from '@/lib/firebase';
 
-type Kind = 'task' | 'reminder' | 'note';
+export type Kind = 'task' | 'reminder' | 'note';
 type PlannerItem = Task | Reminder | Note;
 
 interface ServerRecord {
@@ -95,12 +95,32 @@ export async function readCachedPlannerItems<T extends PlannerItem>(kind: Kind):
   return items.filter(item => item.userId === uid) as T[];
 }
 
-/** One refresh on launch/resume or explicit pull. No cloud polling or keep-alive. */
-export function refreshPlannerData(force = false): Promise<void> {
+const ALL_KINDS: readonly Kind[] = ['task', 'reminder', 'note'];
+const followUps = new Map<string, { kinds: Set<Kind>; run: Promise<void> }>();
+
+/** Refresh on launch/resume, an explicit pull, or a change another device
+ * made (api/liveSync). No cloud polling or keep-alive. `kinds` narrows a
+ * live-change refresh to the lists that actually moved. */
+export function refreshPlannerData(force = false, changed?: readonly Kind[]): Promise<void> {
   const uid = getStorageUid();
   if (!uid || auth?.currentUser?.uid !== uid) return Promise.resolve();
+  const kinds = changed ?? ALL_KINDS;
   const active = syncs.get(uid);
-  if (active) return active;
+  if (active) {
+    // Launch, resume and pull requests share the running refresh. A live
+    // change may postdate the running fetch, so it gets one follow-up that
+    // everything reported meanwhile shares.
+    if (!changed) return active;
+    const pending = followUps.get(uid);
+    if (pending) { kinds.forEach(kind => pending.kinds.add(kind)); return pending.run; }
+    const next = { kinds: new Set(kinds), run: Promise.resolve() };
+    next.run = active.catch(() => {}).then(() => {
+      followUps.delete(uid);
+      return refreshPlannerData(true, [...next.kinds]);
+    });
+    followUps.set(uid, next);
+    return next.run;
+  }
   if (!force && Date.now() - (lastAttempt.get(uid) ?? 0) < 30_000) return Promise.resolve();
   lastAttempt.set(uid, Date.now());
   const run = (async () => {
@@ -112,7 +132,7 @@ export function refreshPlannerData(force = false): Promise<void> {
     try {
       // All three consume one coalesced outbox flush. Wait for every kind before
       // declaring the cloud copy current, even when one request fails early.
-      const results = await Promise.allSettled((['task', 'reminder', 'note'] as const).map(refreshPlannerItems));
+      const results = await Promise.allSettled(kinds.map(refreshPlannerItems));
       const failed = results.find(result => result.status === 'rejected');
       if (failed?.status === 'rejected') throw failed.reason;
       if (getStorageUid() !== uid) return;

@@ -47,6 +47,10 @@ export function describeDetail(detail: unknown, status: number): string {
   return `Planner request failed (${status})`;
 }
 
+/** Names this running app in the backend's change marker, so the live
+ * listener can skip the echo of our own writes. Per launch is enough. */
+export const CLIENT_ID = `app-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!firebaseConfigured || !API_URL) throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured');
   if (!auth?.currentUser) throw new ApiError('Sign in is required.', 401, 'unauthenticated');
@@ -77,6 +81,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${token}`,
+        'X-Planner-Client': CLIENT_ID,
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...options.headers,
       },
