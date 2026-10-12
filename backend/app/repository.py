@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from contextvars import ContextVar
 from threading import RLock
 from typing import Dict, List, Optional, Protocol, Tuple
 
@@ -80,6 +81,19 @@ class ProposalStateError(RuntimeError):
     """The proposal is no longer pending: a reject or another confirm got there first."""
 
 
+# Which device made the current request (the X-Planner-Client header). The
+# change marker records it so a device can ignore the echo of its own write.
+# Advisory only: it is not authenticated and never used for authorization.
+current_client: ContextVar[str] = ContextVar("current_client", default="")
+
+
+def _marker_fields(kinds: List[str], now: datetime) -> Dict[str, object]:
+    return {
+        "version": firestore.Increment(1), "updated_at": now, "by": current_client.get(),
+        **{kind: firestore.Increment(1) for kind in kinds},
+    }
+
+
 class PlannerRepository(Protocol):
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]: ...
     def get_record(self, uid: str, entity_type: EntityType, record_id: str) -> PlannerRecord: ...
@@ -90,7 +104,7 @@ class PlannerRepository(Protocol):
         self, uid: str, entity_type: EntityType, record_id: str, expected_revision: int,
         idempotency_key: str,
     ) -> None: ...
-    def get_sync_version(self, uid: str) -> int: ...
+    def get_sync_marker(self, uid: str) -> Dict[str, object]: ...
     def get_planner_settings(self, uid: str) -> PlannerSettings: ...
     def set_planner_settings(self, uid: str, settings: PlannerSettings) -> PlannerSettings: ...
     def get_privacy(self, uid: str) -> PrivacySettings: ...
@@ -130,14 +144,17 @@ class MemoryPlannerRepository:
         # question, response, created_at, expires_at
         self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime, datetime]] = {}
         self.conversations: Dict[Tuple[str, str], ConversationDetail] = {}
-        self.sync_versions: Dict[str, int] = {}
+        self.sync_markers: Dict[str, Dict[str, object]] = {}
         self._lock = RLock()
 
-    def get_sync_version(self, uid: str) -> int:
-        return self.sync_versions.get(uid, 0)
+    def get_sync_marker(self, uid: str) -> Dict[str, object]:
+        return deepcopy(self.sync_markers.get(uid, {"version": 0}))
 
-    def _bump_sync(self, uid: str) -> None:
-        self.sync_versions[uid] = self.sync_versions.get(uid, 0) + 1
+    def _bump_sync(self, uid: str, kind: EntityType) -> None:
+        marker = self.sync_markers.setdefault(uid, {"version": 0})
+        marker["version"] = int(marker["version"]) + 1
+        marker[kind.value] = int(marker.get(kind.value, 0)) + 1
+        marker["by"] = current_client.get()
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
         return [
@@ -190,7 +207,7 @@ class MemoryPlannerRepository:
             )
             self.records[key] = result
             self.idempotency[idem_key] = (request_hash, result)
-            self._bump_sync(uid)
+            self._bump_sync(uid, entity_type)
             return deepcopy(result)
 
     def delete_record(
@@ -215,7 +232,7 @@ class MemoryPlannerRepository:
                 raise RevisionConflict("Record changed since it was read")
             del self.records[key]
             self.idempotency[idem_key] = (request_hash, None)
-            self._bump_sync(uid)
+            self._bump_sync(uid, entity_type)
 
     def get_planner_settings(self, uid: str) -> PlannerSettings:
         return deepcopy(self.planner_settings.get(uid, PlannerSettings()))
@@ -389,15 +406,16 @@ class FirestorePlannerRepository:
     def _sync_ref(self, uid: str):
         return self.client.collection("users").document(uid).collection("meta").document("sync")
 
-    def _bump_sync(self, txn, uid: str, now: datetime) -> None:
-        # Content-free change marker. Clients may read this one document
-        # (firestore.rules) and listen to it, then refetch through the API.
-        # A blind transform, so it adds no read to the transaction.
-        txn.set(self._sync_ref(uid), {"version": firestore.Increment(1), "updated_at": now}, merge=True)
+    def _bump_sync(self, txn, uid: str, kind: EntityType, now: datetime) -> None:
+        # Content-free change marker: counters per kind and the writing device.
+        # Clients may read this one document (firestore.rules), listen to it,
+        # and refetch only the kinds that moved through the API. A blind
+        # transform, so it adds no read to the transaction.
+        txn.set(self._sync_ref(uid), _marker_fields([kind.value], now), merge=True)
 
-    def get_sync_version(self, uid: str) -> int:
+    def get_sync_marker(self, uid: str) -> Dict[str, object]:
         snapshot = self._sync_ref(uid).get()
-        return int((snapshot.to_dict() or {}).get("version", 0)) if snapshot.exists else 0
+        return (snapshot.to_dict() or {"version": 0}) if snapshot.exists else {"version": 0}
 
     def _record_ref(self, uid: str, entity_type: EntityType, record_id: str):
         return self.client.collection("users").document(uid).collection("records").document(
@@ -487,7 +505,7 @@ class FirestorePlannerRepository:
                 "record_path": ref.path,
                 "created_at": now,
             })
-            self._bump_sync(txn, uid, now)
+            self._bump_sync(txn, uid, entity_type, now)
             return None
 
         apply(transaction)
@@ -530,7 +548,7 @@ class FirestorePlannerRepository:
                 "operation": "delete",
                 "created_at": now,
             })
-            self._bump_sync(txn, uid, now)
+            self._bump_sync(txn, uid, entity_type, now)
 
         apply(transaction)
 
@@ -700,7 +718,7 @@ class FirestorePlannerRepository:
                 "created_at": now,
             })
             txn.update(proposal_ref, {"status": "confirmed", "updated_at": now})
-            self._bump_sync(txn, uid, now)
+            self._bump_sync(txn, uid, proposal.entity_type, now)
 
         apply(transaction)
         return self.get_proposal(uid, proposal.proposal_id)

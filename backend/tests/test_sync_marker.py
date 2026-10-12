@@ -4,24 +4,24 @@ from conftest import task_request
 
 def test_every_write_moves_the_change_marker(client, auth, services):
     repo = services.repository
-    assert repo.get_sync_version("alice") == 0
+    assert repo.get_sync_marker("alice")["version"] == 0
     client.put("/v1/records/task/t1", json=task_request(), headers=auth)
-    after_create = repo.get_sync_version("alice")
+    after_create = repo.get_sync_marker("alice")["version"]
     assert after_create > 0
     client.put("/v1/records/task/t1", json=task_request("Edited", 1, "request-0002"), headers=auth)
-    after_edit = repo.get_sync_version("alice")
+    after_edit = repo.get_sync_marker("alice")["version"]
     assert after_edit > after_create
     client.request("DELETE", "/v1/records/task/t1",
                    json={"expected_revision": 2, "idempotency_key": "request-0003"}, headers=auth)
-    assert repo.get_sync_version("alice") > after_edit
-    assert repo.get_sync_version("bob") == 0
+    assert repo.get_sync_marker("alice")["version"] > after_edit
+    assert repo.get_sync_marker("bob")["version"] == 0
 
 
 def test_a_replayed_write_does_not_move_the_marker(client, auth, services):
     client.put("/v1/records/task/t1", json=task_request(), headers=auth)
-    version = services.repository.get_sync_version("alice")
+    version = services.repository.get_sync_marker("alice")["version"]
     client.put("/v1/records/task/t1", json=task_request(), headers=auth)
-    assert services.repository.get_sync_version("alice") == version
+    assert services.repository.get_sync_marker("alice")["version"] == version
 
 
 def test_complete_marks_done_and_keeps_the_rest(client, auth):
@@ -64,3 +64,14 @@ def test_complete_is_only_for_tasks_and_reminders(client, auth):
     missing = client.post("/v1/records/task/nope/complete",
                           json={"idempotency_key": "widget-0002"}, headers=auth)
     assert missing.status_code == 404
+
+
+def test_the_marker_names_the_kind_and_the_device_that_wrote(client, auth, services):
+    client.put("/v1/records/task/t1", json=task_request(),
+               headers={**auth, "X-Planner-Client": "phone-abcdef12"})
+    marker = services.repository.get_sync_marker("alice")
+    assert marker["task"] == 1 and "reminder" not in marker
+    assert marker["by"] == "phone-abcdef12"
+    client.put("/v1/records/task/t1", json=task_request("Edited", 1, "request-0002"),
+               headers={**auth, "X-Planner-Client": "bad id!"})
+    assert services.repository.get_sync_marker("alice")["by"] == ""

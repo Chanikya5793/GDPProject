@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, List, Optional, Union
@@ -48,7 +49,9 @@ from .models import (
 from .proposals import InvalidProposal
 from .rag import AgentStep
 from .ratelimit import RateLimitExceeded
-from .repository import IdempotencyConflict, NotFound, ProposalStateError, RevisionConflict
+from .repository import (
+    IdempotencyConflict, NotFound, ProposalStateError, RevisionConflict, current_client,
+)
 from .runtime import Container, build_production_container
 from .signup_policy import get_signup_policy
 
@@ -330,6 +333,7 @@ ContainerDep = Annotated[Container, Depends(get_container)]
 
 
 logger = logging.getLogger(__name__)
+CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")
 
 
 @asynccontextmanager
@@ -374,9 +378,20 @@ def create_app(container: Container | None = None) -> FastAPI:
         allow_origins=origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id", "Idempotency-Key"],
+        allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id", "Idempotency-Key", "X-Planner-Client"],
         expose_headers=["Mcp-Session-Id", "Retry-After"],
     )
+
+    @app.middleware("http")
+    async def remember_client(request: Request, call_next):
+        # Lets the change marker name the device that wrote, so that device
+        # can skip the echo. Not trusted for anything else.
+        client = request.headers.get("x-planner-client", "")
+        token = current_client.set(client if CLIENT_ID.fullmatch(client) else "")
+        try:
+            return await call_next(request)
+        finally:
+            current_client.reset(token)
 
     @app.exception_handler(RevisionConflict)
     async def revision_conflict(_request: Request, exc: RevisionConflict):
