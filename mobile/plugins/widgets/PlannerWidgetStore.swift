@@ -16,7 +16,21 @@ struct PlannerWidgetItem: Codable, Identifiable, Equatable {
   var pending: Bool
   var key: String { "\(kind):\(id)" }
 
-  func scheduled(calendar: Calendar = Calendar(identifier: .gregorian)) -> Date? {
+  /// One shared calendar. Building a Gregorian calendar per call made every
+  /// sort comparison allocate; the time zone still follows the device.
+  static let gregorian: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .autoupdatingCurrent
+    return calendar
+  }()
+
+  /// yyyy-MM-dd in the device's zone, without a DateFormatter per call.
+  static func dateKey(_ date: Date) -> String {
+    let parts = gregorian.dateComponents([.year, .month, .day], from: date)
+    return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+  }
+
+  func scheduled(calendar: Calendar = PlannerWidgetItem.gregorian) -> Date? {
     let parts = date.split(separator: "-").compactMap { Int($0) }
     guard parts.count == 3 else { return nil }
     let clock = time.split(separator: ":").compactMap { Int($0) }
@@ -35,7 +49,7 @@ struct PlannerWidgetItem: Codable, Identifiable, Equatable {
   }
 }
 
-struct PlannerWidgetSnapshot: Codable {
+struct PlannerWidgetSnapshot: Codable, Equatable {
   var schema: Int = 1
   var owner: String
   var updatedAt: Double
@@ -46,7 +60,7 @@ struct PlannerWidgetSnapshot: Codable {
   var items: [PlannerWidgetItem]
 }
 
-struct PlannerWidgetCommand: Codable, Identifiable {
+struct PlannerWidgetCommand: Codable, Identifiable, Equatable {
   var id: String
   var owner: String
   var kind: String
@@ -59,7 +73,7 @@ struct PlannerWidgetCommand: Codable, Identifiable {
   var key: String { "\(kind):\(recordId)" }
 }
 
-struct PlannerWidgetState: Codable {
+struct PlannerWidgetState: Codable, Equatable {
   var snapshot: PlannerWidgetSnapshot?
   var commands: [PlannerWidgetCommand] = []
   var selections: [String: String] = [:]
@@ -82,42 +96,53 @@ enum PlannerWidgetStore {
   static var testDirectory: URL?
 #endif
 
-  static func transact<T>(_ body: (inout PlannerWidgetState) throws -> T) throws -> T {
+  private static func directory() throws -> URL {
 #if WIDGET_TESTS
     let container = testDirectory
 #else
     let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
 #endif
-    guard let directory = container else {
-      throw CocoaError(.fileNoSuchFile)
-    }
+    guard let directory = container else { throw CocoaError(.fileNoSuchFile) }
+    return directory
+  }
+
+  private static func locked<T>(_ operation: Int32, _ body: (URL) throws -> T) throws -> T {
+    let directory = try directory()
     let lock = directory.appendingPathComponent("planner-widgets.lock")
     let descriptor = open(lock.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
     guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
     defer { close(descriptor) }
-    guard flock(descriptor, LOCK_EX) == 0 else { throw CocoaError(.fileLocking) }
+    guard flock(descriptor, operation) == 0 else { throw CocoaError(.fileLocking) }
     defer { flock(descriptor, LOCK_UN) }
-    let url = directory.appendingPathComponent("planner-widgets-v1.json")
-    var state = PlannerWidgetState()
-    if FileManager.default.fileExists(atPath: url.path) {
-      state = try JSONDecoder().decode(PlannerWidgetState.self, from: Data(contentsOf: url))
-    }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    let before = try encoder.encode(state)
-    let result = try body(&state)
-    let after = try encoder.encode(state)
-    if before != after {
-      try after.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-      var values = URLResourceValues()
-      values.isExcludedFromBackup = true
-      var resource = url
-      try resource.setResourceValues(values)
-    }
-    return result
+    return try body(directory.appendingPathComponent("planner-widgets-v1.json"))
   }
 
-  static func read() -> PlannerWidgetState { (try? transact { $0 }) ?? PlannerWidgetState() }
+  private static func load(_ url: URL) throws -> PlannerWidgetState {
+    guard FileManager.default.fileExists(atPath: url.path) else { return PlannerWidgetState() }
+    return try JSONDecoder().decode(PlannerWidgetState.self, from: Data(contentsOf: url))
+  }
+
+  static func transact<T>(_ body: (inout PlannerWidgetState) throws -> T) throws -> T {
+    try locked(LOCK_EX) { url in
+      let original = try load(url)
+      var state = original
+      let result = try body(&state)
+      if state != original {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(state).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var resource = url
+        try resource.setResourceValues(values)
+      }
+      return result
+    }
+  }
+
+  /// Readers share the lock: ten widget kinds reloading together no longer
+  /// queue behind each other, and nothing is re-encoded just to look.
+  static func read() -> PlannerWidgetState { (try? locked(LOCK_SH) { try load($0) }) ?? PlannerWidgetState() }
 
   static func publish(_ snapshot: PlannerWidgetSnapshot, build: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown") throws -> Bool {
     try transact { state -> Bool in
@@ -163,7 +188,11 @@ enum PlannerWidgetStore {
   static func select(owner: String, key: String, value: String) throws {
     try transact { state in
       guard state.snapshot?.owner == owner else { return }
-      if state.selections.count > 100 { state.selections.removeAll() }
+      // Keys end in the day they were made for; yesterday's pages are noise.
+      if state.selections.count > 60 {
+        let today = PlannerWidgetItem.dateKey(Date())
+        state.selections = state.selections.filter { $0.key.contains(today) }
+      }
       state.selections[key] = value
     }
   }

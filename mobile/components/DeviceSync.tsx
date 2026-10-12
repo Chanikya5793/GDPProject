@@ -90,27 +90,24 @@ export default function DeviceSync() {
     // Widget publication must not wait for the notification permission dialog.
     void askOnce().catch(() => {});
     sync();
+    // One pass per launch or return: durable widget taps go into the outbox
+    // first, so the cloud read that follows cannot make them disappear.
+    // Publication itself is driven by the data and cloud events below.
     const refresh = () => {
-      // Apply durable widget taps before fetching the cloud copy. Otherwise a
-      // stale cloud response can make a valid local tap appear to disappear.
-      void syncPendingWidgetActions().then(() => syncWidget()).then(() => refreshPlannerData()).finally(sync).catch(() => {});
+      void syncPendingWidgetActions().then(() => refreshPlannerData()).catch(() => {});
     };
     refresh();
     const stopWatchingData = onPlannerDataChanged(sync);
     const stopWatchingCloud = onPlannerSyncChanged(sync);
+    // Widgets are only tappable while this app is in the background, so
+    // coming back is the moment to look; no polling while active.
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active') { sync(); refresh(); }
     });
-    // The extension has its own process. Check its durable inbox while this
-    // app is active without spending WidgetKit reloads when nothing changed.
-    const actionsTimer = setInterval(() => {
-      if (active && AppState.currentState === 'active') syncPendingWidgetActions().catch(() => {});
-    }, 3000);
 
     return () => {
       active = false;
       if (timer.current) clearTimeout(timer.current);
-      clearInterval(actionsTimer);
       stopWatchingData();
       stopWatchingCloud();
       subscription.remove();

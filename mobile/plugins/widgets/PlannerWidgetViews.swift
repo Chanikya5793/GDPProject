@@ -61,13 +61,7 @@ enum PlannerWidgetTimeline {
     return PlannerWidgetState(snapshot: PlannerWidgetSnapshot(owner: "preview", updatedAt: now.timeIntervalSince1970 * 1000, titlesAllowed: true, items: items))
   }
 
-  static func dateKey(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: date)
-  }
+  static func dateKey(_ date: Date) -> String { PlannerWidgetItem.dateKey(date) }
 }
 
 struct PlannerProgressProvider: TimelineProvider {
@@ -110,6 +104,42 @@ enum PlannerWidgetContent {
   }
 }
 
+/// Everything a widget shows, derived once per entry. These were computed
+/// properties read many times per render, each re-filtering and re-sorting
+/// every record, which is what made reloads after a tap feel heavy.
+struct PlannerWidgetModel {
+  let today: String
+  let items: [PlannerWidgetItem]
+  let filtered: [PlannerWidgetItem]
+  let todayItems: [PlannerWidgetItem]
+  let finished: Int
+  let overdue: Int
+  let queue: [PlannerWidgetItem]
+
+  init(entry: PlannerEntry, kind: String) {
+    today = PlannerWidgetTimeline.dateKey(entry.date)
+    items = entry.state.items
+    filtered = PlannerWidgetContent.filtered(items: items, options: entry.options, kind: kind)
+    let today = today
+    todayItems = filtered.filter { $0.date == today }
+    finished = todayItems.filter(\.done).count
+    overdue = filtered.filter { $0.isOverdue(at: entry.date) }.count
+    queue = Self.sorted(PlannerWidgetContent.queue(items: items, options: entry.options, kind: kind, at: entry.date), by: entry.options.sort)
+  }
+
+  static func sorted(_ items: [PlannerWidgetItem], by sort: String) -> [PlannerWidgetItem] {
+    let rank = ["high": 0, "medium": 1, "low": 2]
+    return items.map { ($0, $0.scheduled() ?? .distantFuture) }.sorted { lhs, rhs in
+      if lhs.0.done != rhs.0.done { return !lhs.0.done }
+      if sort == "priority" {
+        let left = rank[lhs.0.priority, default: 3], right = rank[rhs.0.priority, default: 3]
+        if left != right { return left < right }
+      }
+      return lhs.1 == rhs.1 ? lhs.0.key < rhs.0.key : lhs.1 < rhs.1
+    }.map(\.0)
+  }
+}
+
 struct PlannerWidgetView: View {
   @Environment(\.widgetFamily) private var systemFamily
   @Environment(\.colorScheme) private var colorScheme
@@ -118,8 +148,18 @@ struct PlannerWidgetView: View {
   @ScaledMetric(relativeTo: .caption2) private var rowDetailSize: CGFloat = 10
   let entry: PlannerEntry
   let kind: String
+  private let model: PlannerWidgetModel
 #if WIDGET_TESTS
-  var familyOverride: WidgetFamily? = nil
+  var familyOverride: WidgetFamily?
+  init(entry: PlannerEntry, kind: String, familyOverride: WidgetFamily? = nil) {
+    self.entry = entry; self.kind = kind; self.familyOverride = familyOverride
+    model = PlannerWidgetModel(entry: entry, kind: kind)
+  }
+#else
+  init(entry: PlannerEntry, kind: String) {
+    self.entry = entry; self.kind = kind
+    model = PlannerWidgetModel(entry: entry, kind: kind)
+  }
 #endif
   private var family: WidgetFamily {
 #if WIDGET_TESTS
@@ -130,7 +170,7 @@ struct PlannerWidgetView: View {
   }
 
   private var options: PlannerWidgetOptions { entry.options }
-  private var today: String { PlannerWidgetTimeline.dateKey(entry.date) }
+  private var today: String { model.today }
   private var owner: String { entry.state.snapshot?.owner ?? "" }
   private var isLarge: Bool { family == .systemLarge || family == .systemExtraLarge }
   private var isSmall: Bool { family == .systemSmall }
@@ -145,15 +185,11 @@ struct PlannerWidgetView: View {
   }
   private var danger: Color { colorScheme == .dark ? Color(red: 1, green: 0.57, blue: 0.48) : Color(red: 0.72, green: 0.19, blue: 0.12) }
   private var paper: Color { colorScheme == .dark ? Color(red: 0.07, green: 0.105, blue: 0.12) : Color(red: 0.97, green: 0.98, blue: 0.96) }
-  private var filtered: [PlannerWidgetItem] {
-    PlannerWidgetContent.filtered(items: entry.state.items, options: options, kind: kind)
-  }
-  private var todayItems: [PlannerWidgetItem] { filtered.filter { $0.date == today } }
-  private var finished: Int { todayItems.filter(\.done).count }
-  private var overdue: Int { filtered.filter { $0.isOverdue(at: entry.date) }.count }
-  private var queue: [PlannerWidgetItem] {
-    sorted(PlannerWidgetContent.queue(items: entry.state.items, options: options, kind: kind, at: entry.date))
-  }
+  private var filtered: [PlannerWidgetItem] { model.filtered }
+  private var todayItems: [PlannerWidgetItem] { model.todayItems }
+  private var finished: Int { model.finished }
+  private var overdue: Int { model.overdue }
+  private var queue: [PlannerWidgetItem] { model.queue }
   private var stateKey: String { "\(kind):\(options.key):\(today)" }
   private var stale: Bool {
     guard let snapshot = entry.state.snapshot else { return false }
@@ -162,18 +198,7 @@ struct PlannerWidgetView: View {
   }
 
   private func sorted(_ items: [PlannerWidgetItem]) -> [PlannerWidgetItem] {
-    items.sorted { lhs, rhs in
-      if lhs.done != rhs.done { return !lhs.done }
-      if options.sort == "priority" {
-        let rank = ["high": 0, "medium": 1, "low": 2, "": 3]
-        if rank[lhs.priority, default: 3] != rank[rhs.priority, default: 3] {
-          return rank[lhs.priority, default: 3] < rank[rhs.priority, default: 3]
-        }
-      }
-      let left = lhs.scheduled() ?? Date.distantFuture
-      let right = rhs.scheduled() ?? Date.distantFuture
-      return left == right ? lhs.key < rhs.key : left < right
-    }
+    PlannerWidgetModel.sorted(items, by: options.sort)
   }
 
   private func label(_ item: PlannerWidgetItem) -> String {
@@ -274,6 +299,7 @@ struct PlannerWidgetView: View {
     VStack(alignment: .leading, spacing: 0) {
       Text(value, format: .number).font(.system(size: isSmall ? 23 : 27, weight: .bold, design: .rounded))
         .monospacedDigit().foregroundStyle(color)
+        .contentTransition(.numericText()).modifier(PlannerInvalidatable())
       Text(title).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
     }
     .accessibilityElement(children: .combine)
@@ -285,6 +311,7 @@ struct PlannerWidgetView: View {
       if isSmall && !typeSize.isAccessibilitySize {
         HStack(spacing: 4) {
           Text("\(queue.count)").font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(accent)
+            .contentTransition(.numericText()).modifier(PlannerInvalidatable())
           Text("to do").font(.caption).foregroundStyle(.secondary)
           Spacer(minLength: 0)
           if kind == "DueToday" && overdue > 0 { Text("\(overdue) late").font(.system(size: 10, weight: .semibold)).foregroundStyle(danger) }
@@ -383,7 +410,9 @@ struct PlannerWidgetView: View {
     let pages = max(1, Int(ceil(Double(items.count) / Double(capacity))))
     let page = max(0, Int(entry.state.selections[stateKey] ?? "0") ?? 0) % pages
     return VStack(alignment: .leading, spacing: options.compact ? 3 : 5) {
-      ForEach(Array(items.dropFirst(page * capacity).prefix(capacity)), id: \.key) { row($0) }
+      ForEach(Array(items.dropFirst(page * capacity).prefix(capacity)), id: \.key) {
+        row($0).transition(.asymmetric(insertion: .push(from: .bottom), removal: .opacity))
+      }
       if pages > 1 && !isSmall {
         HStack {
           Text("\(page * capacity + 1)–\(min((page + 1) * capacity, items.count)) of \(items.count)")
@@ -434,13 +463,13 @@ struct PlannerWidgetView: View {
 
   @ViewBuilder private func completeButton(_ item: PlannerWidgetItem, size: CGFloat) -> some View {
     if #available(iOS 17.0, *), !item.done, !entry.preview {
-      Button(intent: CompletePlannerWidgetIntent(owner: owner, item: item)) {
-        Image(systemName: "circle").font(.system(size: 22, weight: .light))
-          .frame(width: size, height: size).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain).foregroundStyle(accent)
-      .accessibilityLabel("Complete \(label(item))")
-      .accessibilityHint("Marks this item complete here. Open the planner to sync it to your other devices.")
+      // A Toggle, not a Button: WidgetKit flips a toggle's state the moment it
+      // is tapped and only then runs the intent, so the tick never waits on
+      // the timeline reload.
+      Toggle(isOn: false, intent: CompletePlannerWidgetIntent(owner: owner, item: item)) { EmptyView() }
+        .toggleStyle(PlannerCheckStyle(size: size, accent: accent))
+        .accessibilityLabel("Complete \(label(item))")
+        .accessibilityHint("Marks this item complete and syncs it to your account.")
     } else {
       Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
         .font(.system(size: 22, weight: .light)).foregroundStyle(accent)
@@ -572,6 +601,7 @@ struct PlannerWidgetView: View {
             .stroke(accent, style: StrokeStyle(lineWidth: 8, lineCap: .round)).rotationEffect(.degrees(-90))
           VStack(spacing: 0) {
             Text("\(finished)/\(todayItems.count)").font(.system(size: 21, weight: .bold, design: .rounded)).monospacedDigit()
+              .contentTransition(.numericText()).modifier(PlannerInvalidatable())
             Text("done").font(.system(size: 10)).foregroundStyle(.secondary)
           }
         }.frame(width: isSmall ? 78 : 88, height: isSmall ? 78 : 88)
@@ -613,7 +643,7 @@ struct PlannerWidgetView: View {
         }.font(.system(size: 10)).foregroundStyle(accent)
       } else if let notice = entry.state.notice {
         Link(notice, destination: route("tasks")).font(.system(size: 10)).lineLimit(2).foregroundStyle(danger)
-      } else if entry.state.items.contains(where: { $0.pending }) {
+      } else if model.items.contains(where: { $0.pending }) {
         Link("Saved on device · Open to sync", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(accent)
       } else if (entry.state.snapshot?.conflictCount ?? 0) > 0 {
         Link("Changes need review · Open Settings", destination: route("settings")).font(.system(size: 10)).foregroundStyle(danger)
@@ -621,7 +651,7 @@ struct PlannerWidgetView: View {
         Link("Cloud unavailable · Open to retry", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
       } else if stale {
         Link("Open planner to refresh", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
-      } else if !(entry.state.snapshot?.titlesAllowed ?? true) && !entry.state.items.isEmpty {
+      } else if !(entry.state.snapshot?.titlesAllowed ?? true) && !model.items.isEmpty {
         // The app's switch is off, so every row reads "Task" or "Reminder".
         // Name the switch rather than leave the widget looking broken.
         Link(isSmall ? "Titles hidden · tap to show" : "Titles hidden · turn on in Settings › Widgets & Siri",
@@ -683,6 +713,26 @@ struct PlannerWidgetView: View {
         Text("\(overdue) overdue\(entry.state.commands.isEmpty ? "" : " · Changes saved")").font(.caption2)
       }
     }
+  }
+}
+
+@available(iOS 17.0, *)
+private struct PlannerCheckStyle: ToggleStyle {
+  let size: CGFloat
+  let accent: Color
+  func makeBody(configuration: Configuration) -> some View {
+    Image(systemName: configuration.isOn ? "checkmark.circle.fill" : "circle")
+      .font(.system(size: 22, weight: .light))
+      .contentTransition(.symbolEffect(.replace))
+      .foregroundStyle(accent)
+      .frame(width: size, height: size).contentShape(Rectangle())
+  }
+}
+
+/// Counts and rows read as provisional while a tap's reload is in flight.
+private struct PlannerInvalidatable: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 17.0, *) { content.invalidatableContent() } else { content }
   }
 }
 

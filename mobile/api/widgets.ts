@@ -52,6 +52,10 @@ export async function syncWidget(): Promise<number> {
     const owner = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `planner-widgets:${uid}`);
     if (!current()) return 0;
     const commands: WidgetCommand[] = JSON.parse(await bridge.claim(owner));
+    // Acknowledged only after the snapshot that reflects them is published.
+    // Removing a command first left a window where the widget reloaded with
+    // neither the command nor the completed record, and the tick vanished.
+    const acknowledgements: Array<[string, string]> = [];
     for (const command of commands) {
       if (!current()) return 0;
       const key = command.kind === 'task' ? 'nw_tasks' : 'nw_reminders';
@@ -72,15 +76,13 @@ export async function syncWidget(): Promise<number> {
           if (!current()) return 0;
           const status = (error as { status?: number }).status;
           if (status === 409 || status === 404) {
-            await bridge.acknowledge(owner, command.id, 'An item changed. Open planner to review.');
+            acknowledgements.push([command.id, 'An item changed. Open planner to review.']);
           }
           // Other failures retain the durable command for the next refresh.
           continue;
         }
       }
-      if (!current()) return 0;
-      await bridge.acknowledge(owner, command.id,
-        decision.status === 'stale' ? 'An item changed. Open planner to review.' : '');
+      acknowledgements.push([command.id, decision.status === 'stale' ? 'An item changed. Open planner to review.' : '']);
     }
     const [tasks, reminders, settings, cloud] = await Promise.all([
       getItem<Task[]>('nw_tasks', []), getItem<Reminder[]>('nw_reminders', []),
@@ -101,6 +103,10 @@ export async function syncWidget(): Promise<number> {
       conflictCount: cloud.conflictCount ?? 0,
     });
     await bridge.publish(JSON.stringify(snapshot));
+    for (const [id, notice] of acknowledgements) {
+      if (!current()) return 0;
+      await bridge.acknowledge(owner, id, notice);
+    }
     return snapshot.items.length;
   }) ?? 0;
 }
@@ -115,6 +121,7 @@ export function nativeWidgetsAvailable(): boolean { return Boolean(bridge); }
 export async function syncPendingWidgetActions(): Promise<void> {
   if (bridge && await bridge.pendingCount() > 0) {
     await syncWidget();
+    // Flushes the outbox the completions were just queued in.
     if (Platform.OS === 'ios') await refreshPlannerData(true);
   }
 }

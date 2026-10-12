@@ -173,3 +173,20 @@ describe('platform bridges', () => {
     expect(await api.syncWidget()).toBe(0);
   });
 });
+
+describe('widget completion hand-off', () => {
+  it('publishes the completed record before releasing the widget command', async () => {
+    mocks.uid = 'u1';
+    mocks.commands = [{ ...action }];
+    const order: string[] = [];
+    mocks.publish.mockImplementation(async (json: string) => {
+      order.push(`publish:${JSON.parse(json).items[0].done}`);
+    });
+    mocks.acknowledge.mockImplementation(async () => { order.push('acknowledge'); mocks.commands = []; });
+    const api = await import('@/api/widgets');
+    await api.syncWidget();
+    // Between the two calls the widget sees either the command or the done
+    // record, never neither.
+    expect(order).toEqual(['publish:true', 'acknowledge']);
+  });
+});
