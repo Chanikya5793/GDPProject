@@ -90,6 +90,7 @@ class PlannerRepository(Protocol):
         self, uid: str, entity_type: EntityType, record_id: str, expected_revision: int,
         idempotency_key: str,
     ) -> None: ...
+    def get_sync_version(self, uid: str) -> int: ...
     def get_planner_settings(self, uid: str) -> PlannerSettings: ...
     def set_planner_settings(self, uid: str, settings: PlannerSettings) -> PlannerSettings: ...
     def get_privacy(self, uid: str) -> PrivacySettings: ...
@@ -129,7 +130,14 @@ class MemoryPlannerRepository:
         # question, response, created_at, expires_at
         self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime, datetime]] = {}
         self.conversations: Dict[Tuple[str, str], ConversationDetail] = {}
+        self.sync_versions: Dict[str, int] = {}
         self._lock = RLock()
+
+    def get_sync_version(self, uid: str) -> int:
+        return self.sync_versions.get(uid, 0)
+
+    def _bump_sync(self, uid: str) -> None:
+        self.sync_versions[uid] = self.sync_versions.get(uid, 0) + 1
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
         return [
@@ -182,6 +190,7 @@ class MemoryPlannerRepository:
             )
             self.records[key] = result
             self.idempotency[idem_key] = (request_hash, result)
+            self._bump_sync(uid)
             return deepcopy(result)
 
     def delete_record(
@@ -206,6 +215,7 @@ class MemoryPlannerRepository:
                 raise RevisionConflict("Record changed since it was read")
             del self.records[key]
             self.idempotency[idem_key] = (request_hash, None)
+            self._bump_sync(uid)
 
     def get_planner_settings(self, uid: str) -> PlannerSettings:
         return deepcopy(self.planner_settings.get(uid, PlannerSettings()))
@@ -376,6 +386,19 @@ class FirestorePlannerRepository:
         self.client = client
         self.cipher = cipher
 
+    def _sync_ref(self, uid: str):
+        return self.client.collection("users").document(uid).collection("meta").document("sync")
+
+    def _bump_sync(self, txn, uid: str, now: datetime) -> None:
+        # Content-free change marker. Clients may read this one document
+        # (firestore.rules) and listen to it, then refetch through the API.
+        # A blind transform, so it adds no read to the transaction.
+        txn.set(self._sync_ref(uid), {"version": firestore.Increment(1), "updated_at": now}, merge=True)
+
+    def get_sync_version(self, uid: str) -> int:
+        snapshot = self._sync_ref(uid).get()
+        return int((snapshot.to_dict() or {}).get("version", 0)) if snapshot.exists else 0
+
     def _record_ref(self, uid: str, entity_type: EntityType, record_id: str):
         return self.client.collection("users").document(uid).collection("records").document(
             f"{entity_type.value}:{record_id}"
@@ -464,6 +487,7 @@ class FirestorePlannerRepository:
                 "record_path": ref.path,
                 "created_at": now,
             })
+            self._bump_sync(txn, uid, now)
             return None
 
         apply(transaction)
@@ -500,11 +524,13 @@ class FirestorePlannerRepository:
             if current.to_dict()["revision"] != expected_revision:
                 raise RevisionConflict("Record changed since it was read")
             txn.delete(ref)
+            now = datetime.now(timezone.utc)
             txn.create(idem_ref, {
                 "request_hash": request_hash,
                 "operation": "delete",
-                "created_at": datetime.now(timezone.utc),
+                "created_at": now,
             })
+            self._bump_sync(txn, uid, now)
 
         apply(transaction)
 
@@ -674,6 +700,7 @@ class FirestorePlannerRepository:
                 "created_at": now,
             })
             txn.update(proposal_ref, {"status": "confirmed", "updated_at": now})
+            self._bump_sync(txn, uid, now)
 
         apply(transaction)
         return self.get_proposal(uid, proposal.proposal_id)

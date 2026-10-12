@@ -37,6 +37,7 @@ from .models import (
     PrivacySettings,
     ProposalOperation,
     ProposedChange,
+    RecordCompleteRequest,
     RecordDeleteRequest,
     RecordId,
     RecordUpsertRequest,
@@ -449,6 +450,34 @@ def create_app(container: Container | None = None) -> FastAPI:
                        f"{body.content.entity_type.value}",
             )
         return services.repository.upsert_record(user.uid, entity_type, record_id, body)
+
+    @app.post("/v1/records/{entity_type}/{record_id}/complete", response_model=PlannerRecord)
+    def complete_record(
+        entity_type: EntityType, record_id: RecordId, body: RecordCompleteRequest,
+        user: CurrentUser, services: ContainerDep,
+    ):
+        if entity_type not in (EntityType.task, EntityType.reminder):
+            raise HTTPException(status_code=422, detail="Only tasks and reminders can be completed")
+        current = services.repository.get_record(user.uid, entity_type, record_id)
+        # Already done, from any device: the outcome asked for, and no write.
+        if current.content.completed:
+            return current
+        if body.expected_revision is not None and body.expected_revision != current.revision:
+            raise RevisionConflict("Record changed since it was read")
+        saved = services.repository.upsert_record(user.uid, entity_type, record_id, RecordUpsertRequest(
+            content=current.content.model_copy(update={"completed": True}),
+            expected_revision=current.revision,
+            idempotency_key=body.idempotency_key,
+            approved_for_ai=current.approved_for_ai,
+        ))
+        # Apps re-index after their own writes; this caller cannot. Advisory:
+        # privacy settings may refuse it, and the write already happened.
+        if saved.approved_for_ai:
+            try:
+                services.indexing.index(user.uid, entity_type, record_id, saved.revision)
+            except Exception:  # noqa: BLE001
+                logger.info("complete: re-index skipped", exc_info=True)
+        return saved
 
     @app.delete("/v1/records/{entity_type}/{record_id}", status_code=204)
     def delete_record(

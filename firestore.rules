@@ -8,5 +8,13 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if false;
     }
+
+    // The one exception: a content-free change marker ({version, updated_at})
+    // the backend bumps on every record write. A signed-in device may read its
+    // own so it can listen for changes made elsewhere and refetch through the
+    // API. Rules are OR-ed across matches, so this grants nothing else.
+    match /users/{uid}/meta/sync {
+      allow get: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }
