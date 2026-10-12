@@ -21,12 +21,9 @@ final class PlannerWidgetsBridge: NSObject {
   @objc func publish(_ json: String, resolver resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
     do {
       let snapshot = try JSONDecoder().decode(PlannerWidgetSnapshot.self, from: Data(json.utf8))
-      try PlannerWidgetStore.transact { state in
-        if state.snapshot?.owner != snapshot.owner { state = PlannerWidgetState() }
-        state.snapshot = snapshot
-      }
+      let changed = try PlannerWidgetStore.publish(snapshot)
       removeLegacySnapshots()
-      WidgetCenter.shared.reloadAllTimelines()
+      if changed { WidgetCenter.shared.reloadAllTimelines() }
       resolve(nil)
     } catch { reject("widget_publish", "Couldn't update widgets", error) }
   }

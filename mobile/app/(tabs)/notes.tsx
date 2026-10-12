@@ -1,3 +1,6 @@
+import { router, useLocalSearchParams } from 'expo-router';
+import { wantsNewRecord } from '@/utils/draftFromLink';
+import { refreshPlannerData } from '@/api/plannerClient';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
@@ -8,6 +11,7 @@ import AskAiButton from '@/components/AskAiButton';
 import SheetModal from '@/components/SheetModal';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
+import { usePlannerCacheUpdates } from '@/hooks/usePlannerCacheUpdates';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
@@ -26,8 +30,10 @@ import {
 export default function NotesScreen() {
   const { user } = useAuth();
   const toast = useToast();
+  const capture = useLocalSearchParams<{ new?: string; focus?: string }>();
   const { colors, accent, appearance } = useAppTheme();
   const [notes, setNotes] = useState<Note[]>([]);
+  usePlannerCacheUpdates('note', user?.id, setNotes);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +51,7 @@ export default function NotesScreen() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); try { await refreshPlannerData(true); await loadData(); } finally { setRefreshing(false); } };
 
   const handleNewNote = async () => {
     const created = await createNote({ userId: user!.id, title: 'Untitled Note', body: '', tagIds: [] });
@@ -53,6 +59,21 @@ export default function NotesScreen() {
     setSelectedNote(created);
     setEditorVisible(true);
   };
+
+  useEffect(() => {
+    if (!user || !wantsNewRecord(capture.new)) return;
+    router.setParams({ new: undefined });
+    void handleNewNote().catch(() => toast.show('Could not create a note. Please try again.', 'error'));
+  }, [capture.new, user?.id]);
+
+  useEffect(() => {
+    if (!capture.focus || loading) return;
+    const note = notes.find(item => String(item.id) === capture.focus);
+    if (!note) return;
+    setSelectedNote(note);
+    setEditorVisible(true);
+    router.setParams({ focus: undefined });
+  }, [capture.focus, loading, notes]);
 
   const handleSaveNote = async (id: PlannerRecordId, updates: Partial<Note>) => {
     // Rejected saves -- a note also edited on the web, a refused field --

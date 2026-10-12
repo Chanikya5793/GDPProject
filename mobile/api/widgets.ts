@@ -5,7 +5,7 @@ import type { Reminder, Settings, Task } from '@/types';
 import { buildWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { resolveWidgetCommand, type WidgetCommand } from '@/utils/widgetCommands';
 import { getItem, getStorageUid, onStorageScopeChange } from './storage';
-import { updatePlannerItem } from './plannerClient';
+import { refreshPlannerData, updatePlannerItem } from './plannerClient';
 import { addLog } from './logs';
 
 interface WidgetBridge {
@@ -65,7 +65,7 @@ export async function syncWidget(): Promise<number> {
           // Replays set completed=true, never toggle a completed item back.
           const after = await updatePlannerItem(command.kind, before.id, { completed: true }, {
             userId: uid, revision: command.revision ?? null, date: command.date, time: command.time,
-          });
+          }, Platform.OS === 'ios');
           if (!current()) return 0;
           await addLog('completed', command.kind, after.title, { entityId: before.id, before, after });
         } catch (error) {
@@ -82,9 +82,10 @@ export async function syncWidget(): Promise<number> {
       await bridge.acknowledge(owner, command.id,
         decision.status === 'stale' ? 'An item changed. Open planner to review.' : '');
     }
-    const [tasks, reminders, settings] = await Promise.all([
+    const [tasks, reminders, settings, cloud] = await Promise.all([
       getItem<Task[]>('nw_tasks', []), getItem<Reminder[]>('nw_reminders', []),
       getItem<Partial<Settings>>('nw_settings', {}),
+      getItem<{ lastSyncedAt?: number; error?: boolean; conflictCount?: number }>('nw_cloud_sync', {}),
     ]);
     if (!current()) return 0;
     // Titles are on unless the student switched them off themselves. A stored
@@ -96,6 +97,8 @@ export async function syncWidget(): Promise<number> {
     const snapshot = buildWidgetSnapshot({
       tasks: tasks.filter(item => item.userId === uid), reminders: reminders.filter(item => item.userId === uid),
       now: Date.now(), showTitles, owner,
+      cloudUpdatedAt: cloud.lastSyncedAt ?? null, cloudError: cloud.error === true,
+      conflictCount: cloud.conflictCount ?? 0,
     });
     await bridge.publish(JSON.stringify(snapshot));
     return snapshot.items.length;
@@ -110,5 +113,8 @@ export async function clearWidget(): Promise<void> {
 export function nativeWidgetsAvailable(): boolean { return Boolean(bridge); }
 
 export async function syncPendingWidgetActions(): Promise<void> {
-  if (bridge && await bridge.pendingCount() > 0) await syncWidget();
+  if (bridge && await bridge.pendingCount() > 0) {
+    await syncWidget();
+    if (Platform.OS === 'ios') await refreshPlannerData(true);
+  }
 }

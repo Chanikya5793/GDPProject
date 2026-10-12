@@ -3,7 +3,7 @@ import Darwin
 
 // Shared by the app and extension. One locked, atomically replaced document
 // makes a tap durable without sharing the encrypted planner or its key.
-struct PlannerWidgetItem: Codable, Identifiable {
+struct PlannerWidgetItem: Codable, Identifiable, Equatable {
   var id: String
   var kind: String
   var title: String
@@ -39,6 +39,9 @@ struct PlannerWidgetSnapshot: Codable {
   var schema: Int = 1
   var owner: String
   var updatedAt: Double
+  var cloudUpdatedAt: Double? = nil
+  var cloudError: Bool? = nil
+  var conflictCount: Int? = nil
   var titlesAllowed: Bool
   var items: [PlannerWidgetItem]
 }
@@ -61,6 +64,7 @@ struct PlannerWidgetState: Codable {
   var commands: [PlannerWidgetCommand] = []
   var selections: [String: String] = [:]
   var notice: String? = nil
+  var publishedBuild: String? = nil
 
   var items: [PlannerWidgetItem] {
     let pending = Set(commands.filter { $0.owner == snapshot?.owner }.map(\.key))
@@ -114,6 +118,23 @@ enum PlannerWidgetStore {
   }
 
   static func read() -> PlannerWidgetState { (try? transact { $0 }) ?? PlannerWidgetState() }
+
+  static func publish(_ snapshot: PlannerWidgetSnapshot, build: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown") throws -> Bool {
+    try transact { state -> Bool in
+      let previous = state.snapshot
+      // Wall-clock publication is not evidence of a cloud refresh. Identical
+      // records should not spend another WidgetKit timeline reload.
+      let changed = state.publishedBuild != build || previous?.owner != snapshot.owner || previous?.titlesAllowed != snapshot.titlesAllowed ||
+        previous?.items != snapshot.items || previous?.cloudError != snapshot.cloudError ||
+        previous?.conflictCount != snapshot.conflictCount ||
+        (previous?.cloudUpdatedAt == nil) != (snapshot.cloudUpdatedAt == nil) ||
+        (snapshot.cloudUpdatedAt ?? 0) - (previous?.cloudUpdatedAt ?? 0) >= 3_600_000
+      if previous?.owner != snapshot.owner { state = PlannerWidgetState() }
+      state.snapshot = snapshot
+      state.publishedBuild = build
+      return changed
+    }
+  }
 
   static func complete(owner: String, key: String, revision: Int?, date: String, time: String) throws {
     try transact { state in

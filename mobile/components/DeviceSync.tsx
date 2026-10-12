@@ -3,7 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
-import { onPlannerDataChanged } from '@/api/plannerClient';
+import { onPlannerDataChanged, onPlannerSyncChanged, refreshPlannerData } from '@/api/plannerClient';
 import { getItem, setItem } from '@/api/storage';
 import {
   cancelAllNotifications,
@@ -87,10 +87,19 @@ export default function DeviceSync() {
       }, 400);
     };
 
-    askOnce().catch(() => {}).finally(sync);
+    // Widget publication must not wait for the notification permission dialog.
+    void askOnce().catch(() => {});
+    sync();
+    const refresh = () => {
+      // Apply durable widget taps before fetching the cloud copy. Otherwise a
+      // stale cloud response can make a valid local tap appear to disappear.
+      void syncPendingWidgetActions().then(() => syncWidget()).then(() => refreshPlannerData()).finally(sync).catch(() => {});
+    };
+    refresh();
     const stopWatchingData = onPlannerDataChanged(sync);
+    const stopWatchingCloud = onPlannerSyncChanged(sync);
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') sync();
+      if (state === 'active') { sync(); refresh(); }
     });
     // The extension has its own process. Check its durable inbox while this
     // app is active without spending WidgetKit reloads when nothing changed.
@@ -103,9 +112,10 @@ export default function DeviceSync() {
       if (timer.current) clearTimeout(timer.current);
       clearInterval(actionsTimer);
       stopWatchingData();
+      stopWatchingCloud();
       subscription.remove();
     };
-  }, [user, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
+  }, [user?.id, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
 
   // A tapped alert should land on the thing it was about, not the home screen.
   // Subscribed once someone is signed in: a cold-start tap is replayed on

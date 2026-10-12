@@ -22,9 +22,119 @@ interface OutboxOperation {
   recordId: PlannerRecordId;
   body: Record<string, unknown>;
 }
+export interface PlannerSyncConflict {
+  id: string;
+  kind: Kind;
+  recordId: PlannerRecordId;
+  method: 'PUT' | 'DELETE';
+  content?: Record<string, unknown>;
+  approvedForAi: boolean;
+  savedAt: string;
+  status: number;
+}
+
+export function getPlannerSyncConflicts(): Promise<PlannerSyncConflict[]> {
+  return getItem('nw_sync_conflicts', []);
+}
+
+export function dismissPlannerSyncConflict(id: string): Promise<void> {
+  return serializeRecords('outbox', async () => {
+    const uid = getStorageUid();
+    const conflicts = await getPlannerSyncConflicts();
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+    await setItem('nw_sync_conflicts', conflicts.filter(item => item.id !== id));
+  });
+}
+
+/** An explicit recovery creates a copy instead of overwriting another device. */
+export async function recoverPlannerSyncConflict(id: string): Promise<void> {
+  const uid = getStorageUid();
+  const conflict = (await getPlannerSyncConflicts()).find(item => item.id === id);
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  if (!conflict?.content) throw new Error('There is no saved record to restore.');
+  const now = new Date().toISOString();
+  const recovered = fromServer({ record_id: idempotencyKey('recovered'), revision: 1,
+    approved_for_ai: conflict.approvedForAi, created_at: now, updated_at: now,
+    content: { ...conflict.content, entity_type: conflict.kind,
+      title: `${String(conflict.content.title ?? 'Recovered item')} (recovered)` } });
+  await createPlannerItem(conflict.kind, recovered);
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  await dismissPlannerSyncConflict(id);
+}
 
 const cacheKey = (kind: Kind) => `nw_${kind === 'note' ? 'notes' : `${kind}s`}`;
 const recordOperations = new Map<string, Promise<unknown>>();
+const refreshes = new Map<string, Promise<PlannerItem[]>>();
+const flushes = new Map<string, Promise<number>>();
+const syncs = new Map<string, Promise<void>>();
+const lastAttempt = new Map<string, number>();
+
+export interface PlannerSyncState {
+  syncing: boolean;
+  lastSyncedAt: number | null;
+  error: string | null;
+}
+const syncStates = new Map<string, PlannerSyncState>();
+const syncListeners = new Set<() => void>();
+export function onPlannerSyncChanged(listener: () => void): () => void {
+  syncListeners.add(listener);
+  return () => { syncListeners.delete(listener); };
+}
+export function getPlannerSyncState(): PlannerSyncState {
+  return syncStates.get(getStorageUid() ?? '') ?? { syncing: false, lastSyncedAt: null, error: null };
+}
+function notifySync(): void {
+  for (const listener of syncListeners) { try { listener(); } catch { /* advisory */ } }
+}
+
+/** Cache reads never queue behind network requests or an offline outbox. */
+export async function readCachedPlannerItems<T extends PlannerItem>(kind: Kind): Promise<T[]> {
+  const uid = getStorageUid();
+  const items = await loadCache(kind);
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  return items.filter(item => item.userId === uid) as T[];
+}
+
+/** One refresh on launch/resume or explicit pull. No cloud polling or keep-alive. */
+export function refreshPlannerData(force = false): Promise<void> {
+  const uid = getStorageUid();
+  if (!uid || auth?.currentUser?.uid !== uid) return Promise.resolve();
+  const active = syncs.get(uid);
+  if (active) return active;
+  if (!force && Date.now() - (lastAttempt.get(uid) ?? 0) < 30_000) return Promise.resolve();
+  lastAttempt.set(uid, Date.now());
+  const run = (async () => {
+    const persisted = await getItem<{ lastSyncedAt?: number }>('nw_cloud_sync', {});
+    if (getStorageUid() !== uid) return;
+    const previous = syncStates.get(uid)?.lastSyncedAt ?? persisted.lastSyncedAt ?? null;
+    syncStates.set(uid, { syncing: true, lastSyncedAt: previous, error: null });
+    notifySync();
+    try {
+      // All three consume one coalesced outbox flush. Wait for every kind before
+      // declaring the cloud copy current, even when one request fails early.
+      const results = await Promise.allSettled((['task', 'reminder', 'note'] as const).map(refreshPlannerItems));
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+      if (getStorageUid() !== uid) return;
+      const lastSyncedAt = Date.now();
+      const conflicts = await getPlannerSyncConflicts();
+      if (getStorageUid() !== uid) return;
+      await setItem('nw_cloud_sync', { lastSyncedAt, conflictCount: conflicts.length });
+      if (getStorageUid() !== uid) return;
+      syncStates.set(uid, { syncing: false, lastSyncedAt,
+        error: conflicts.length ? 'Saved changes need review in Settings.' : null });
+    } catch {
+      if (getStorageUid() !== uid) return;
+      await setItem('nw_cloud_sync', { lastSyncedAt: previous, error: true });
+      if (getStorageUid() !== uid) return;
+      syncStates.set(uid, { syncing: false, lastSyncedAt: previous,
+        error: 'Cloud refresh unavailable. Showing saved data; pull to retry.' });
+    } finally { if (getStorageUid() === uid) notifySync(); }
+  })();
+  syncs.set(uid, run);
+  void run.finally(() => { if (syncs.get(uid) === run) syncs.delete(uid); }).catch(() => {});
+  return run;
+}
 
 // Widget completions and a foreground refresh can arrive together. Serialize
 // cache reads and writes per account so an older fetch cannot undo a completion.
@@ -168,6 +278,13 @@ export function onPlannerDataChanged(listener: () => void): () => void {
 }
 
 async function saveCache(kind: Kind, items: PlannerItem[]): Promise<void> {
+  const uid = getStorageUid();
+  const previous = await loadCache(kind);
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  // Firestore ordering is not guaranteed. Unchanged cloud data should not
+  // encrypt/write the cache and rebuild notifications and widgets again.
+  const stable = (records: PlannerItem[]) => JSON.stringify([...records].sort((a, b) => String(a.id).localeCompare(String(b.id))));
+  if (stable(previous) === stable(items)) return;
   await setItem(cacheKey(kind), items);
   // Listeners are advisory; one throwing must not fail the write that caused it.
   for (const listener of dataListeners) {
@@ -197,7 +314,7 @@ const isUnconfigured = (error: unknown) => codeOf(error) === 'not_configured';
 // connection is back.
 function isPermanentFailure(error: unknown): boolean {
   const status = statusOf(error);
-  return Boolean(status && status < 500) && !isUnconfigured(error);
+  return Boolean(status && status < 500 && ![401, 403, 408, 429].includes(status)) && !isUnconfigured(error);
 }
 
 async function keepForLater(operation: OutboxOperation, error: unknown, expectedUid = getStorageUid()): Promise<void> {
@@ -214,7 +331,13 @@ async function queue(operation: OutboxOperation, expectedUid = getStorageUid()):
 }
 
 export async function flushOutbox(): Promise<number> {
-  return serializeRecords('outbox', flushOutboxNow);
+  const uid = getStorageUid() ?? '';
+  const active = flushes.get(uid);
+  if (active) return active;
+  const run = serializeRecords('outbox', flushOutboxNow);
+  flushes.set(uid, run);
+  void run.finally(() => { if (flushes.get(uid) === run) flushes.delete(uid); }).catch(() => {});
+  return run;
 }
 
 /**
@@ -237,6 +360,7 @@ async function flushOutboxNow(): Promise<number> {
   if (!outbox.length) return 0;
   const remaining: OutboxOperation[] = [];
   const revisions = new Map<string, number>();
+  const conflicts = await getPlannerSyncConflicts();
   let unreachable = false;
   for (const operation of outbox) {
     if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
@@ -249,40 +373,70 @@ async function flushOutboxNow(): Promise<number> {
       if (operation.method === 'DELETE') revisions.delete(recordKey);
       else if (result?.revision) revisions.set(recordKey, result.revision);
     } catch (error) {
-      if (isUnconfigured(error) || isPermanentFailure(error)) continue;
+      if (isUnconfigured(error)) continue;
+      if (isPermanentFailure(error)) {
+        // A concurrent device edit wins its revision check, but preserve the
+        // rejected device change for review instead of silently destroying it.
+        if (!(operation.method === 'DELETE' && statusOf(error) === 404)) {
+          const id = String(operation.body.idempotency_key ?? idempotencyKey('conflict'));
+          if (!conflicts.some(item => item.id === id)) conflicts.push({ id, kind: operation.kind,
+            recordId: operation.recordId, method: operation.method,
+            content: operation.body.content as Record<string, unknown> | undefined,
+            approvedForAi: operation.body.approved_for_ai === true,
+            savedAt: new Date().toISOString(), status: statusOf(error) ?? 400 });
+        }
+        continue;
+      }
       unreachable = true;
       remaining.push(operation);
     }
   }
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  if (conflicts.length) await setItem('nw_sync_conflicts', conflicts);
   if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
   await setItem('nw_sync_outbox', remaining);
   return remaining.length;
 }
 
 export async function listPlannerItems<T extends PlannerItem>(kind: Kind): Promise<T[]> {
-  return serializeRecords(kind, () => listPlannerItemsNow<T>(kind));
+  const uid = getStorageUid();
+  try { return await refreshPlannerItems(kind) as T[]; }
+  catch {
+    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+    return readCachedPlannerItems<T>(kind);
+  }
 }
 
-async function listPlannerItemsNow<T extends PlannerItem>(kind: Kind): Promise<T[]> {
+function refreshPlannerItems(kind: Kind): Promise<PlannerItem[]> {
+  const key = `${getStorageUid()}:${kind}`;
+  const active = refreshes.get(key);
+  if (active) return active;
+  const run = serializeRecords(kind, () => listPlannerItemsNow(kind));
+  refreshes.set(key, run);
+  void run.finally(() => { if (refreshes.get(key) === run) refreshes.delete(key); }).catch(() => {});
+  return run;
+}
+
+async function listPlannerItemsNow(kind: Kind): Promise<PlannerItem[]> {
   const uid = getStorageUid();
-  try {
-    await flushOutbox();
-    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
-    const records = await apiRequest<ServerRecord[]>(`/v1/records/${kind}`);
-    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
-    const cached = kind === 'note' ? await loadCache(kind) as T[] : [];
-    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
-    const items = records.map(record => {
-      const saved = fromServer(record) as T;
-      const local = cached.find(item => String(item.id) === String(saved.id));
-      return withLocalOnlyFields(kind, saved, local);
-    });
-    await saveCache(kind, items);
-    return items;
-  } catch {
-    if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
-    return await loadCache(kind) as T[];
-  }
+  const remaining = await flushOutbox();
+  if (remaining) throw new Error('Pending changes could not reach the cloud.');
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  const records = await apiRequest<ServerRecord[]>(`/v1/records/${kind}`);
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  const cached = await loadCache(kind);
+  const queued = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
+  if (getStorageUid() !== uid) throw new ApiError('Account changed.', 401);
+  const pending = new Set(queued.filter(op => op.kind === kind).map(op => String(op.recordId)));
+  const items = records.map(record => {
+    const saved = fromServer(record);
+    const local = cached.find(item => String(item.id) === String(saved.id));
+    return withLocalOnlyFields(kind, saved, local);
+  }).filter(item => !pending.has(String(item.id)));
+  // A still-queued deletion stays absent; a queued edit/create stays local.
+  const merged = [...items, ...cached.filter(item => pending.has(String(item.id)))];
+  await saveCache(kind, merged);
+  return merged;
 }
 
 export async function createPlannerItem<T extends PlannerItem>(kind: Kind, item: T): Promise<T> {
@@ -321,19 +475,21 @@ async function createPlannerItemNow<T extends PlannerItem>(kind: Kind, item: T):
   if (!saved._pending) {
     // The record is already saved; privacy settings may legitimately refuse
     // the index, and that must not turn a successful write into a failure.
-    try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
+    void synchronizeIndex(kind, saved).catch(() => {});
   }
   return saved;
 }
 
 export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
   expected?: { userId: string; revision: number | null; date: string; time: string },
+  deferCloud = false,
 ): Promise<T> {
-  return serializeRecords(kind, () => updatePlannerItemNow(kind, id, updates, expected));
+  return serializeRecords(kind, () => updatePlannerItemNow(kind, id, updates, expected, deferCloud));
 }
 
 async function updatePlannerItemNow<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
   expected?: { userId: string; revision: number | null; date: string; time: string },
+  deferCloud = false,
 ): Promise<T> {
   const operationUid = getStorageUid();
   const assertScope = () => {
@@ -361,13 +517,22 @@ async function updatePlannerItemNow<T extends PlannerItem>(kind: Kind, id: Plann
       approved_for_ai: merged._approvedForAi ?? true,
     },
   };
+  if (deferCloud && auth?.currentUser?.uid === operationUid) {
+    // The extension already displayed the tick. Commit its encrypted outbox
+    // and cache before waiting on the network; replay is idempotent.
+    await queue(operation, operationUid);
+    assertScope();
+    const pending = { ...merged, _pending: true };
+    await saveCache(kind, items.map(item => item.id === id ? pending : item));
+    return pending;
+  }
   try {
     const server = await send(operation);
     assertScope();
     const saved = withLocalOnlyFields(kind, fromServer(server!) as T, merged);
     await saveCache(kind, items.map(item => item.id === id ? saved : item));
     assertScope();
-    try { await synchronizeIndex(kind, saved); } catch { /* approval persists */ }
+    void synchronizeIndex(kind, saved).catch(() => {});
     return saved;
   } catch (error) {
     assertScope();

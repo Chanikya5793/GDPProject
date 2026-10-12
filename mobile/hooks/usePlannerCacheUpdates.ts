@@ -6,7 +6,7 @@ import { getItem, getStorageUid } from '@/api/storage';
  * another network refresh (which would emit another data-change event).
  */
 export function usePlannerCacheUpdates<T extends { userId: string }>(
-  kind: 'task' | 'reminder', userId: string | undefined, receive: (records: T[]) => void,
+  kind: 'task' | 'reminder' | 'note', userId: string | undefined, receive: (records: T[]) => void,
 ): void {
   useEffect(() => {
     if (!userId) return;
@@ -14,7 +14,7 @@ export function usePlannerCacheUpdates<T extends { userId: string }>(
     let readVersion = 0;
     const stop = onPlannerDataChanged(() => {
       const version = ++readVersion;
-      getItem<T[]>(kind === 'task' ? 'nw_tasks' : 'nw_reminders', []).then(records => {
+      getItem<T[]>(kind === 'note' ? 'nw_notes' : `nw_${kind}s`, []).then(records => {
         if (active && version === readVersion && getStorageUid() === userId) {
           receive(records.filter(record => record.userId === userId));
         }

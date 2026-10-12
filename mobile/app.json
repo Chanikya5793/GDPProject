@@ -219,7 +219,7 @@
             {
               "name": "UpNext",
               "displayName": "Up Next",
-              "description": "Your next deadline, a live countdown, and a checkbox that saves even when the app is closed.",
+              "description": "Your next deadline, a live countdown, and completion that opens the planner to sync.",
               "ios": {
                 "supportedFamilies": [
                   "systemSmall",
@@ -386,7 +386,7 @@
             },
             {
               "name": "Progress",
-              "displayName": "Today\u2019s Progress",
+              "displayName": "Today’s Progress",
               "description": "Completion for items due today, overdue work and quick capture on your Home Screen or Lock Screen.",
               "ios": {
                 "supportedFamilies": [
@@ -396,6 +396,471 @@
                   "accessoryRectangular",
                   "accessoryInline"
                 ]
+              }
+            },
+            {
+              "name": "Overdue",
+              "displayName": "Overdue",
+              "description": "Missed deadlines with completion and links to review each item.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge",
+                  "accessoryRectangular",
+                  "accessoryInline"
+                ],
+                "configuration": {
+                  "title": "Overdue",
+                  "description": "Choose appearance and ordering. Completion opens the planner to sync.",
+                  "parameters": {
+                    "density": {
+                      "title": "Density",
+                      "type": "enum",
+                      "default": "comfortable",
+                      "values": [
+                        {
+                          "name": "Comfortable",
+                          "value": "comfortable"
+                        },
+                        {
+                          "name": "Compact",
+                          "value": "compact"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "title": "Accent",
+                      "type": "enum",
+                      "default": "amber",
+                      "values": [
+                        {
+                          "name": "Northwest Green",
+                          "value": "green"
+                        },
+                        {
+                          "name": "Blue",
+                          "value": "blue"
+                        },
+                        {
+                          "name": "Plum",
+                          "value": "plum"
+                        },
+                        {
+                          "name": "Amber",
+                          "value": "amber"
+                        }
+                      ]
+                    },
+                    "showTitles": {
+                      "title": "Show titles (when allowed in app)",
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "sort": {
+                      "title": "Order by",
+                      "type": "enum",
+                      "default": "deadline",
+                      "values": [
+                        {
+                          "name": "Deadline",
+                          "value": "deadline"
+                        },
+                        {
+                          "name": "Priority first",
+                          "value": "priority"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "HighPriority",
+              "displayName": "High Priority",
+              "description": "All unfinished high priority tasks, including tasks without a date.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge",
+                  "accessoryRectangular",
+                  "accessoryInline"
+                ],
+                "configuration": {
+                  "title": "High Priority",
+                  "description": "Choose appearance and ordering. Completion opens the planner to sync.",
+                  "parameters": {
+                    "density": {
+                      "title": "Density",
+                      "type": "enum",
+                      "default": "comfortable",
+                      "values": [
+                        {
+                          "name": "Comfortable",
+                          "value": "comfortable"
+                        },
+                        {
+                          "name": "Compact",
+                          "value": "compact"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "title": "Accent",
+                      "type": "enum",
+                      "default": "plum",
+                      "values": [
+                        {
+                          "name": "Northwest Green",
+                          "value": "green"
+                        },
+                        {
+                          "name": "Blue",
+                          "value": "blue"
+                        },
+                        {
+                          "name": "Plum",
+                          "value": "plum"
+                        },
+                        {
+                          "name": "Amber",
+                          "value": "amber"
+                        }
+                      ]
+                    },
+                    "showTitles": {
+                      "title": "Show titles (when allowed in app)",
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "sort": {
+                      "title": "Order by",
+                      "type": "enum",
+                      "default": "deadline",
+                      "values": [
+                        {
+                          "name": "Deadline",
+                          "value": "deadline"
+                        },
+                        {
+                          "name": "Priority first",
+                          "value": "priority"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Tomorrow",
+              "displayName": "Tomorrow",
+              "description": "Plan tomorrow with its tasks and reminders, without today’s overdue work.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge",
+                  "accessoryRectangular",
+                  "accessoryInline"
+                ],
+                "configuration": {
+                  "title": "Tomorrow",
+                  "description": "Choose appearance and ordering. Completion opens the planner to sync.",
+                  "parameters": {
+                    "density": {
+                      "title": "Density",
+                      "type": "enum",
+                      "default": "comfortable",
+                      "values": [
+                        {
+                          "name": "Comfortable",
+                          "value": "comfortable"
+                        },
+                        {
+                          "name": "Compact",
+                          "value": "compact"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "title": "Accent",
+                      "type": "enum",
+                      "default": "blue",
+                      "values": [
+                        {
+                          "name": "Northwest Green",
+                          "value": "green"
+                        },
+                        {
+                          "name": "Blue",
+                          "value": "blue"
+                        },
+                        {
+                          "name": "Plum",
+                          "value": "plum"
+                        },
+                        {
+                          "name": "Amber",
+                          "value": "amber"
+                        }
+                      ]
+                    },
+                    "showTitles": {
+                      "title": "Show titles (when allowed in app)",
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "sort": {
+                      "title": "Order by",
+                      "type": "enum",
+                      "default": "deadline",
+                      "values": [
+                        {
+                          "name": "Deadline",
+                          "value": "deadline"
+                        },
+                        {
+                          "name": "Priority first",
+                          "value": "priority"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Unscheduled",
+              "displayName": "Unscheduled",
+              "description": "Work waiting for a date. Tap a title to open the record and schedule it.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge",
+                  "accessoryRectangular",
+                  "accessoryInline"
+                ],
+                "configuration": {
+                  "title": "Unscheduled",
+                  "description": "Choose appearance and ordering. Completion opens the planner to sync.",
+                  "parameters": {
+                    "density": {
+                      "title": "Density",
+                      "type": "enum",
+                      "default": "comfortable",
+                      "values": [
+                        {
+                          "name": "Comfortable",
+                          "value": "comfortable"
+                        },
+                        {
+                          "name": "Compact",
+                          "value": "compact"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "title": "Accent",
+                      "type": "enum",
+                      "default": "green",
+                      "values": [
+                        {
+                          "name": "Northwest Green",
+                          "value": "green"
+                        },
+                        {
+                          "name": "Blue",
+                          "value": "blue"
+                        },
+                        {
+                          "name": "Plum",
+                          "value": "plum"
+                        },
+                        {
+                          "name": "Amber",
+                          "value": "amber"
+                        }
+                      ]
+                    },
+                    "showTitles": {
+                      "title": "Show titles (when allowed in app)",
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "sort": {
+                      "title": "Order by",
+                      "type": "enum",
+                      "default": "deadline",
+                      "values": [
+                        {
+                          "name": "Deadline",
+                          "value": "deadline"
+                        },
+                        {
+                          "name": "Priority first",
+                          "value": "priority"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Reminders",
+              "displayName": "Reminders",
+              "description": "A dedicated reminder list with times and completion.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge",
+                  "accessoryRectangular",
+                  "accessoryInline"
+                ],
+                "configuration": {
+                  "title": "Reminders",
+                  "description": "Choose appearance and ordering. Completion opens the planner to sync.",
+                  "parameters": {
+                    "density": {
+                      "title": "Density",
+                      "type": "enum",
+                      "default": "comfortable",
+                      "values": [
+                        {
+                          "name": "Comfortable",
+                          "value": "comfortable"
+                        },
+                        {
+                          "name": "Compact",
+                          "value": "compact"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "title": "Accent",
+                      "type": "enum",
+                      "default": "green",
+                      "values": [
+                        {
+                          "name": "Northwest Green",
+                          "value": "green"
+                        },
+                        {
+                          "name": "Blue",
+                          "value": "blue"
+                        },
+                        {
+                          "name": "Plum",
+                          "value": "plum"
+                        },
+                        {
+                          "name": "Amber",
+                          "value": "amber"
+                        }
+                      ]
+                    },
+                    "showTitles": {
+                      "title": "Show titles (when allowed in app)",
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "sort": {
+                      "title": "Order by",
+                      "type": "enum",
+                      "default": "deadline",
+                      "values": [
+                        {
+                          "name": "Deadline",
+                          "value": "deadline"
+                        },
+                        {
+                          "name": "Priority first",
+                          "value": "priority"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "QuickCapture",
+              "displayName": "Quick Capture",
+              "description": "Open a new task, reminder or note from your Home Screen.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium"
+                ],
+                "configuration": {
+                  "title": "Quick Capture",
+                  "description": "Choose appearance and ordering. Completion opens the planner to sync.",
+                  "parameters": {
+                    "density": {
+                      "title": "Density",
+                      "type": "enum",
+                      "default": "comfortable",
+                      "values": [
+                        {
+                          "name": "Comfortable",
+                          "value": "comfortable"
+                        },
+                        {
+                          "name": "Compact",
+                          "value": "compact"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "title": "Accent",
+                      "type": "enum",
+                      "default": "green",
+                      "values": [
+                        {
+                          "name": "Northwest Green",
+                          "value": "green"
+                        },
+                        {
+                          "name": "Blue",
+                          "value": "blue"
+                        },
+                        {
+                          "name": "Plum",
+                          "value": "plum"
+                        },
+                        {
+                          "name": "Amber",
+                          "value": "amber"
+                        }
+                      ]
+                    },
+                    "showTitles": {
+                      "title": "Show titles (when allowed in app)",
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "sort": {
+                      "title": "Order by",
+                      "type": "enum",
+                      "default": "deadline",
+                      "values": [
+                        {
+                          "name": "Deadline",
+                          "value": "deadline"
+                        },
+                        {
+                          "name": "Priority first",
+                          "value": "priority"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           ]

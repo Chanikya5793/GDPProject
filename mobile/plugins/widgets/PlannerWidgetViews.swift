@@ -2,60 +2,6 @@ import SwiftUI
 import WidgetKit
 import AppIntents
 
-@available(iOS 17.0, *)
-struct CompletePlannerWidgetIntent: AppIntent {
-  static var title: LocalizedStringResource = "Complete planner item"
-  static var isDiscoverable = false
-  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
-  @Parameter(title: "Account") var owner: String
-  @Parameter(title: "Item") var key: String
-  @Parameter(title: "Revision") var revision: Int
-  @Parameter(title: "Date") var date: String
-  @Parameter(title: "Time") var time: String
-  init() {}
-  init(owner: String, item: PlannerWidgetItem) {
-    self.owner = owner; self.key = item.key; self.revision = item.revision ?? -1
-    self.date = item.date; self.time = item.time
-  }
-  func perform() async throws -> some IntentResult {
-    try PlannerWidgetStore.complete(owner: owner, key: key, revision: revision < 0 ? nil : revision, date: date, time: time)
-    WidgetCenter.shared.reloadAllTimelines()
-    return .result()
-  }
-}
-
-@available(iOS 17.0, *)
-struct UndoPlannerWidgetIntent: AppIntent {
-  static var title: LocalizedStringResource = "Undo widget completion"
-  static var isDiscoverable = false
-  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
-  @Parameter(title: "Account") var owner: String
-  @Parameter(title: "Change") var commandId: String
-  init() {}
-  init(owner: String, commandId: String) { self.owner = owner; self.commandId = commandId }
-  func perform() async throws -> some IntentResult {
-    try PlannerWidgetStore.undo(owner: owner, commandId: commandId)
-    WidgetCenter.shared.reloadAllTimelines()
-    return .result()
-  }
-}
-
-@available(iOS 17.0, *)
-struct SelectPlannerWidgetIntent: AppIntent {
-  static var title: LocalizedStringResource = "Browse planner widget"
-  static var isDiscoverable = false
-  @Parameter(title: "Account") var owner: String
-  @Parameter(title: "Widget") var key: String
-  @Parameter(title: "Selection") var value: String
-  init() {}
-  init(owner: String, key: String, value: String) { self.owner = owner; self.key = key; self.value = value }
-  func perform() async throws -> some IntentResult {
-    try PlannerWidgetStore.select(owner: owner, key: key, value: value)
-    WidgetCenter.shared.reloadAllTimelines()
-    return .result()
-  }
-}
-
 struct PlannerWidgetOptions {
   var include = "all"
   var horizon = "today"
@@ -136,6 +82,34 @@ struct PlannerProgressProvider: TimelineProvider {
   }
 }
 
+enum PlannerWidgetContent {
+  static func filtered(items: [PlannerWidgetItem], options: PlannerWidgetOptions, kind: String) -> [PlannerWidgetItem] {
+    items.filter {
+      (kind != "Reminders" || $0.kind == "reminder") &&
+      (kind != "HighPriority" || ($0.kind == "task" && $0.priority == "high")) &&
+      (options.include == "all" || $0.kind == (options.include == "tasks" ? "task" : "reminder")) &&
+      (!options.onlyHigh || $0.priority == "high")
+    }
+  }
+  static func queue(items: [PlannerWidgetItem], options: PlannerWidgetOptions, kind: String, at now: Date) -> [PlannerWidgetItem] {
+    let end = Calendar.current.date(byAdding: .day, value: options.days, to: Calendar.current.startOfDay(for: now))!
+    return filtered(items: items, options: options, kind: kind).filter { item in
+      guard !item.done else { return false }
+      if kind == "Overdue" { return item.isOverdue(at: now) }
+      if kind == "Unscheduled" { return item.date.isEmpty }
+      if kind == "HighPriority" { return true }
+      if kind == "Tomorrow" {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        return item.date == PlannerWidgetTimeline.dateKey(tomorrow)
+      }
+      if item.date.isEmpty { return options.includeUndated }
+      guard let at = item.scheduled() else { return false }
+      if kind == "UpNext" || kind == "Reminders" { return options.includeOverdue || !item.isOverdue(at: now) }
+      return at < end && (options.includeOverdue || !item.isOverdue(at: now))
+    }
+  }
+}
+
 struct PlannerWidgetView: View {
   @Environment(\.widgetFamily) private var systemFamily
   @Environment(\.colorScheme) private var colorScheme
@@ -172,28 +146,19 @@ struct PlannerWidgetView: View {
   private var danger: Color { colorScheme == .dark ? Color(red: 1, green: 0.57, blue: 0.48) : Color(red: 0.72, green: 0.19, blue: 0.12) }
   private var paper: Color { colorScheme == .dark ? Color(red: 0.07, green: 0.105, blue: 0.12) : Color(red: 0.97, green: 0.98, blue: 0.96) }
   private var filtered: [PlannerWidgetItem] {
-    entry.state.items.filter {
-      (options.include == "all" || $0.kind == (options.include == "tasks" ? "task" : "reminder")) &&
-      (!options.onlyHigh || $0.priority == "high")
-    }
+    PlannerWidgetContent.filtered(items: entry.state.items, options: options, kind: kind)
   }
   private var todayItems: [PlannerWidgetItem] { filtered.filter { $0.date == today } }
   private var finished: Int { todayItems.filter(\.done).count }
   private var overdue: Int { filtered.filter { $0.isOverdue(at: entry.date) }.count }
   private var queue: [PlannerWidgetItem] {
-    let end = Calendar.current.date(byAdding: .day, value: options.days, to: Calendar.current.startOfDay(for: entry.date))!
-    return sorted(filtered.filter { item in
-      guard !item.done else { return false }
-      if item.date.isEmpty { return options.includeUndated }
-      guard let at = item.scheduled() else { return false }
-      if kind == "UpNext" { return options.includeOverdue || !item.isOverdue(at: entry.date) }
-      return at < end && (options.includeOverdue || !item.isOverdue(at: entry.date))
-    })
+    sorted(PlannerWidgetContent.queue(items: entry.state.items, options: options, kind: kind, at: entry.date))
   }
   private var stateKey: String { "\(kind):\(options.key):\(today)" }
   private var stale: Bool {
     guard let snapshot = entry.state.snapshot else { return false }
-    return entry.date.timeIntervalSince1970 - snapshot.updatedAt / 1000 > 86400
+    guard let cloud = snapshot.cloudUpdatedAt else { return true }
+    return entry.date.timeIntervalSince1970 - cloud / 1000 > 3600
   }
 
   private func sorted(_ items: [PlannerWidgetItem]) -> [PlannerWidgetItem] {
@@ -275,6 +240,7 @@ struct PlannerWidgetView: View {
         Link("Open planner", destination: route("tasks")).font(.caption.bold()).foregroundStyle(accent)
       } else if kind == "ThisWeek" { week }
       else if kind == "Progress" { progress }
+      else if kind == "QuickCapture" { quickCapture }
       else if kind == "UpNext" { upNext }
       else { agenda }
     }
@@ -315,21 +281,25 @@ struct PlannerWidgetView: View {
 
   private var agenda: some View {
     Group {
-      header(options.heading, symbol: "checklist")
-      if isSmall {
+      header(agendaHeading, symbol: agendaSymbol)
+      if isSmall && !typeSize.isAccessibilitySize {
         HStack(spacing: 4) {
           Text("\(queue.count)").font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(accent)
-          Text(options.horizon == "today" ? "to do" : "in view").font(.caption).foregroundStyle(.secondary)
+          Text("to do").font(.caption).foregroundStyle(.secondary)
           Spacer(minLength: 0)
-          if overdue > 0 { Text("\(overdue) late").font(.system(size: 10, weight: .semibold)).foregroundStyle(danger) }
+          if kind == "DueToday" && overdue > 0 { Text("\(overdue) late").font(.system(size: 10, weight: .semibold)).foregroundStyle(danger) }
         }
-      } else if isLarge { summary; Divider() }
-      if queue.isEmpty { empty("Nothing due in this view", detail: "Add a task or choose a longer look ahead.") }
+      } else if isLarge {
+        if kind == "DueToday" { summary }
+        else { Text("\(queue.count) remaining").font(.title2.bold()).foregroundStyle(accent) }
+        Divider()
+      }
+      if queue.isEmpty { empty("Nothing in this view", detail: emptyDetail) }
       else {
         let capacity = typeSize.isAccessibilitySize ? (isLarge ? 2 : 1) : isLarge ? (options.compact ? 6 : 5) : isSmall ? 1 : 2
         pagedRows(queue, capacity: capacity)
       }
-      if isLarge && !typeSize.isAccessibilitySize && queue.count <= 3 && family != .systemExtraLarge {
+      if kind == "DueToday" && isLarge && !typeSize.isAccessibilitySize && queue.count <= 3 && family != .systemExtraLarge {
         let later = sorted(filtered.filter { item in
           !item.done && item.date > today && !queue.contains(where: { $0.key == item.key })
         })
@@ -340,8 +310,73 @@ struct PlannerWidgetView: View {
         }
       }
       Spacer(minLength: 0)
-      footer
+      if !isSmall || !typeSize.isAccessibilitySize || !entry.state.commands.isEmpty ||
+          entry.state.snapshot?.cloudError == true || (entry.state.snapshot?.conflictCount ?? 0) > 0 { footer }
     }
+  }
+
+  private var agendaHeading: String {
+    switch kind {
+    case "Overdue": return "Overdue"
+    case "HighPriority": return "High priority"
+    case "Tomorrow": return "Tomorrow"
+    case "Unscheduled": return "Unscheduled"
+    case "Reminders": return "Reminders"
+    default: return options.heading
+    }
+  }
+  private var agendaSymbol: String {
+    switch kind {
+    case "Overdue": return "exclamationmark.circle"
+    case "HighPriority": return "flag.fill"
+    case "Tomorrow": return "sunrise"
+    case "Unscheduled": return "tray"
+    case "Reminders": return "bell"
+    default: return "checklist"
+    }
+  }
+  private var emptyDetail: String {
+    switch kind {
+    case "Overdue": return "No missed deadlines. Keep it going."
+    case "HighPriority": return "No high priority tasks waiting."
+    case "Tomorrow": return "Tomorrow is clear. Plan ahead."
+    case "Unscheduled": return "Your work has dates."
+    case "Reminders": return "No reminders waiting."
+    default: return "Add a task or choose a longer look ahead."
+    }
+  }
+
+  private var quickCapture: some View {
+    Group {
+      header("Quick capture", symbol: "plus.circle.fill")
+      if !isSmall && !typeSize.isAccessibilitySize {
+        Text("Get it out of your head.").font(.system(.headline, design: .rounded)).lineLimit(1)
+      }
+      if isSmall {
+        VStack(spacing: 6) {
+          captureLink("Task", symbol: "checkmark.circle", screen: "tasks")
+          captureLink("Reminder", symbol: "bell", screen: "reminders")
+        }
+      } else {
+        HStack(spacing: 8) {
+          captureLink("Task", symbol: "checkmark.circle", screen: "tasks")
+          captureLink("Reminder", symbol: "bell", screen: "reminders")
+          captureLink("Note", symbol: "note.text", screen: "notes")
+        }
+      }
+      Spacer(minLength: 0)
+      if entry.state.snapshot?.cloudError == true || !entry.state.commands.isEmpty ||
+          (entry.state.snapshot?.conflictCount ?? 0) > 0 { footer }
+      else if !isSmall { Text("Opens the planner").font(.caption2).foregroundStyle(.secondary) }
+    }
+  }
+  private func captureLink(_ title: String, symbol: String, screen: String) -> some View {
+    Link(destination: route(screen, ["new": ""])) {
+      Label(title, systemImage: symbol).font(.system(size: 12, weight: .semibold))
+        .lineLimit(1).minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, minHeight: isSmall ? 36 : 44)
+        .background(accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+    }.foregroundStyle(accent).accessibilityLabel("Add \(title.lowercased())")
   }
 
   private func pagedRows(_ items: [PlannerWidgetItem], capacity: Int) -> some View {
@@ -364,8 +399,20 @@ struct PlannerWidgetView: View {
     }
   }
 
-  private func row(_ item: PlannerWidgetItem) -> some View {
-    HStack(spacing: 7) {
+  @ViewBuilder private func row(_ item: PlannerWidgetItem) -> some View {
+    if isSmall && typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: 2) {
+        Link(destination: itemURL(item)) {
+          Text(label(item)).font(.system(size: rowTitleSize, weight: .semibold))
+            .lineLimit(2).minimumScaleFactor(0.85).privacySensitive(titles)
+        }.foregroundStyle(.primary).accessibilityHint(dueLabel(item))
+        HStack(spacing: 4) {
+          completeButton(item, size: 44)
+          Text(item.time.isEmpty ? "All day" : item.scheduled()?.formatted(date: .omitted, time: .shortened) ?? "No date")
+            .font(.caption).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(.secondary)
+        }
+      }
+    } else { HStack(spacing: 7) {
       completeButton(item, size: isSmall ? 28 : 32)
       Link(destination: itemURL(item)) {
         VStack(alignment: .leading, spacing: 2) {
@@ -382,7 +429,7 @@ struct PlannerWidgetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
       }.buttonStyle(.plain).foregroundStyle(.primary)
-    }
+    } }
   }
 
   @ViewBuilder private func completeButton(_ item: PlannerWidgetItem, size: CGFloat) -> some View {
@@ -393,7 +440,7 @@ struct PlannerWidgetView: View {
       }
       .buttonStyle(.plain).foregroundStyle(accent)
       .accessibilityLabel("Complete \(label(item))")
-      .accessibilityHint("Saves on this device. Syncs when you open the planner.")
+      .accessibilityHint("Marks this item complete here. Open the planner to sync it to your other devices.")
     } else {
       Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
         .font(.system(size: 22, weight: .light)).foregroundStyle(accent)
@@ -568,6 +615,10 @@ struct PlannerWidgetView: View {
         Link(notice, destination: route("tasks")).font(.system(size: 10)).lineLimit(2).foregroundStyle(danger)
       } else if entry.state.items.contains(where: { $0.pending }) {
         Link("Saved on device · Open to sync", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(accent)
+      } else if (entry.state.snapshot?.conflictCount ?? 0) > 0 {
+        Link("Changes need review · Open Settings", destination: route("settings")).font(.system(size: 10)).foregroundStyle(danger)
+      } else if entry.state.snapshot?.cloudError == true {
+        Link("Cloud unavailable · Open to retry", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
       } else if stale {
         Link("Open planner to refresh", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
       } else if !(entry.state.snapshot?.titlesAllowed ?? true) && !entry.state.items.isEmpty {
@@ -582,7 +633,7 @@ struct PlannerWidgetView: View {
           if !isSmall {
             Link(destination: route("reminders", ["new": ""])) { Label("Reminder", systemImage: "bell.badge") }
             Spacer(minLength: 0)
-            if let updated = entry.state.snapshot?.updatedAt {
+            if let updated = entry.state.snapshot?.cloudUpdatedAt {
               Text(Date(timeIntervalSince1970: updated / 1000), style: .time).foregroundStyle(.secondary)
                 .accessibilityLabel("Last synced at \(Date(timeIntervalSince1970: updated / 1000).formatted(date: .omitted, time: .shortened))")
             }
@@ -598,6 +649,7 @@ struct PlannerWidgetView: View {
       else if kind == "UpNext", let lead = queue.first {
         Text("\(lead.isOverdue(at: entry.date) ? "Overdue: " : "")\(label(lead)) · \(dueLabel(lead))").privacySensitive(titles)
       } else if kind == "Progress" { Text("\(finished)/\(todayItems.count) done · \(overdue) overdue") }
+      else if kind != "DueToday" { Text("\(queue.count) · \(agendaHeading)") }
       else { Text("\(todayItems.filter { !$0.done }.count) left today · \(overdue) overdue") }
     }
   }
@@ -621,6 +673,10 @@ struct PlannerWidgetView: View {
         Text(label(lead)).font(.headline).lineLimit(1).privacySensitive(titles)
         Text(dueLabel(lead)).font(.caption)
         Text(lead.isOverdue(at: entry.date) ? "Overdue" : "\(queue.count) remaining").font(.caption2)
+      } else if kind != "DueToday" && kind != "Progress" {
+        Text(agendaHeading).font(.headline)
+        Text(queue.first.map(label) ?? "Nothing waiting").font(.caption).lineLimit(1).privacySensitive(titles)
+        Text("\(queue.count) items").font(.caption2)
       } else {
         Text(kind == "Progress" ? "\(finished) of \(todayItems.count) done" : "\(todayItems.filter { !$0.done }.count) left today").font(.headline)
         ProgressView(value: Double(finished), total: Double(max(1, todayItems.count)))

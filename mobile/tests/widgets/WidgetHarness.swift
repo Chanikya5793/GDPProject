@@ -12,21 +12,21 @@ import AppKit
 @main
 struct WidgetHarness: App {
   var body: some Scene {
-    WindowGroup { Text("Widget validation").task { WidgetValidation.run() } }
+    WindowGroup { Text("Widget validation").task { await WidgetValidation.run() } }
   }
 }
 #else
 @main
 struct WidgetHarness {
-  @MainActor static func main() {
+  @MainActor static func main() async {
     _ = NSApplication.shared
-    WidgetValidation.run()
+    await WidgetValidation.run()
   }
 }
 #endif
 
 struct WidgetValidation {
-  @MainActor static func run() {
+  @MainActor static func run() async {
     do {
 #if os(iOS)
       let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -112,6 +112,66 @@ struct WidgetValidation {
       try PlannerWidgetStore.transact { $0 = PlannerWidgetState() }
       check(PlannerWidgetStore.read().snapshot == nil && PlannerWidgetStore.read().commands.isEmpty, "Sign-out must clear records and actions")
 
+      var refreshed = sample.snapshot!
+      refreshed.cloudUpdatedAt = now.timeIntervalSince1970 * 1000
+      check(try! PlannerWidgetStore.publish(refreshed), "The first snapshot must request a reload")
+      refreshed.updatedAt += 10_000
+      check(!(try! PlannerWidgetStore.publish(refreshed)), "Unchanged local publication must not request a reload")
+      refreshed.cloudUpdatedAt! += 10_000
+      check(!(try! PlannerWidgetStore.publish(refreshed)), "Unchanged cloud records must not request repeated reloads")
+      refreshed.items[0].title = "Updated on another device"
+      check(try! PlannerWidgetStore.publish(refreshed), "A changed record must request a reload")
+      refreshed.cloudError = true
+      check(try! PlannerWidgetStore.publish(refreshed), "Offline status must request a reload")
+      let legacy = "{\"schema\":1,\"owner\":\"old\",\"updatedAt\":1,\"titlesAllowed\":false,\"items\":[]}"
+      let decoded = try JSONDecoder().decode(PlannerWidgetSnapshot.self, from: Data(legacy.utf8))
+      check(decoded.cloudUpdatedAt == nil, "Older installed snapshots must still decode")
+      var tomorrowItem = first
+      tomorrowItem.id = "tomorrow"; tomorrowItem.title = "Prepare tomorrow’s lab"
+      tomorrowItem.date = PlannerWidgetTimeline.dateKey(calendar.date(byAdding: .day, value: 1, to: now)!)
+      var undatedItem = first
+      undatedItem.id = "undated"; undatedItem.title = "Pick a topic for final paper"; undatedItem.date = ""; undatedItem.time = ""
+      var overdueItem = first
+      overdueItem.id = "overdue"; overdueItem.title = "Upload the reading response"
+      overdueItem.date = PlannerWidgetTimeline.dateKey(calendar.date(byAdding: .day, value: -1, to: now)!)
+      var completeItem = overdueItem
+      completeItem.id = "finished"; completeItem.done = true
+      var reminderItem = tomorrowItem
+      reminderItem.id = "reminder"; reminderItem.kind = "reminder"; reminderItem.priority = ""
+      let modes = [tomorrowItem, undatedItem, overdueItem, completeItem, reminderItem]
+      func ids(_ kind: String) -> Set<String> {
+        Set(PlannerWidgetContent.queue(items: modes, options: PlannerWidgetOptions(), kind: kind, at: now).map(\.id))
+      }
+      check(ids("Overdue") == ["overdue"], "Overdue must omit undated and completed work")
+      check(ids("Tomorrow") == ["tomorrow", "reminder"], "Tomorrow must only show the next local day")
+      check(ids("Unscheduled") == ["undated"], "Unscheduled must only show undated unfinished work")
+      check(ids("HighPriority") == ["tomorrow", "undated", "overdue"], "High priority must include undated high tasks but no reminders")
+      check(ids("Reminders") == ["reminder"], "Reminders must omit tasks")
+      check(!CompletePlannerWidgetIntent.openAppWhenRun, "Completion must run in the widget without launching the app")
+      try PlannerWidgetStore.transact { $0 = sample }
+      _ = try await CompletePlannerWidgetIntent(owner: "preview", item: first).perform()
+      check(PlannerWidgetStore.read().commands.count == 1, "The actual completion intent must persist the action")
+      check(PlannerWidgetTimeline.entries(options: PlannerWidgetOptions()).first!.state.items.first!.done,
+        "The timeline reloaded after the intent must show the completed item")
+      let intentCommand = PlannerWidgetStore.read().commands[0]
+      _ = try await UndoPlannerWidgetIntent(owner: "preview", commandId: intentCommand.id).perform()
+      check(!PlannerWidgetStore.read().items.first!.done, "The actual undo intent must restore the item")
+      _ = try await SelectPlannerWidgetIntent(owner: "preview", key: "page", value: "1").perform()
+      _ = try await SelectPlannerWidgetIntent(owner: "preview", key: "week:day", value: "2026-09-19").perform()
+      check(PlannerWidgetStore.read().selections["page"] == "1", "The actual page intent must persist selection")
+      check(PlannerWidgetStore.read().selections["week:day"] == "2026-09-19", "The actual day intent must persist selection")
+      try PlannerWidgetStore.transact { $0 = sample; $0.snapshot!.items.append(undatedItem) }
+      let undatedIntent = CompletePlannerWidgetIntent(owner: "preview", item: undatedItem)
+      check(undatedIntent.date == nil && undatedIntent.time == nil, "Unscheduled actions must omit optional date/time inputs")
+      _ = try await undatedIntent.perform()
+      check(PlannerWidgetStore.read().commands.first!.date.isEmpty, "An unscheduled action must persist without asking for a date")
+      let allDayIntent = CompletePlannerWidgetIntent(owner: "preview", item: allDay)
+      check(allDayIntent.time == nil, "All-day actions must not require a missing time")
+      _ = try await allDayIntent.perform()
+      check(PlannerWidgetStore.read().commands.count == 2, "An all-day completion must run without a time")
+      check(try! PlannerWidgetStore.publish(sample.snapshot!, build: "42"), "An app update must invalidate old archived widget actions")
+      check(!(try! PlannerWidgetStore.publish(sample.snapshot!, build: "42")), "Unchanged data within the same build must not reload again")
+
       let variants: [(String, WidgetFamily, CGFloat, CGFloat)] = [
         ("DueToday", .systemSmall, 170, 170), ("DueToday", .systemMedium, 364, 170),
         ("DueToday", .systemLarge, 364, 382), ("UpNext", .systemSmall, 170, 170),
@@ -119,9 +179,28 @@ struct WidgetValidation {
         ("ThisWeek", .systemMedium, 364, 170), ("ThisWeek", .systemLarge, 364, 382),
         ("Progress", .systemSmall, 170, 170), ("Progress", .systemMedium, 364, 170),
         ("DueToday", .systemExtraLarge, 720, 382),
+        ("Overdue", .systemSmall, 170, 170),
+        ("Overdue", .systemMedium, 364, 170),
+        ("Overdue", .systemLarge, 364, 382),
+        ("HighPriority", .systemSmall, 170, 170),
+        ("HighPriority", .systemMedium, 364, 170),
+        ("HighPriority", .systemLarge, 364, 382),
+        ("Tomorrow", .systemSmall, 170, 170),
+        ("Tomorrow", .systemMedium, 364, 170),
+        ("Tomorrow", .systemLarge, 364, 382),
+        ("Unscheduled", .systemSmall, 170, 170),
+        ("Unscheduled", .systemMedium, 364, 170),
+        ("Unscheduled", .systemLarge, 364, 382),
+        ("Reminders", .systemSmall, 170, 170),
+        ("Reminders", .systemMedium, 364, 170),
+        ("Reminders", .systemLarge, 364, 382),
+        ("QuickCapture", .systemSmall, 170, 170),
+        ("QuickCapture", .systemMedium, 364, 170),
       ]
-      for mode in ["light", "dark", "pending", "private", "empty", "large-text"] {
+      for mode in ["light", "dark", "pending", "private", "empty", "large-text", "interactive"] {
         var state = sample
+        state.snapshot!.cloudUpdatedAt = now.timeIntervalSince1970 * 1000
+        state.snapshot!.items += [tomorrowItem, undatedItem, overdueItem]
         if mode == "pending" {
           state.commands = [PlannerWidgetCommand(id: "pending", owner: "preview", kind: first.kind,
             recordId: first.id, revision: first.revision, date: first.date, time: first.time,
@@ -130,7 +209,7 @@ struct WidgetValidation {
         if mode == "private" { state.snapshot!.titlesAllowed = false; for index in state.snapshot!.items.indices { state.snapshot!.items[index].title = "" } }
         if mode == "empty" { state.snapshot!.items = [] }
         for (kind, family, width, height) in variants {
-          let entry = PlannerEntry(date: now, state: state, options: PlannerWidgetOptions(), preview: true)
+          let entry = PlannerEntry(date: now, state: state, options: PlannerWidgetOptions(), preview: mode != "interactive")
           let content = PlannerWidgetView(entry: entry, kind: kind, familyOverride: family)
             .environment(\.colorScheme, mode == "dark" ? .dark : .light)
             .environment(\.dynamicTypeSize, mode == "large-text" ? .accessibility2 : .large)
@@ -149,7 +228,7 @@ struct WidgetValidation {
           try png.write(to: directory.appendingPathComponent("\(kind)-\(familyName)-\(mode).png"))
         }
       }
-      try "\(checks) native checks passed; 66 native layout renders completed.\n".write(to: directory.appendingPathComponent("result.txt"), atomically: true, encoding: .utf8)
+      try "\(checks) native checks passed; 196 native layout renders completed.\n".write(to: directory.appendingPathComponent("result.txt"), atomically: true, encoding: .utf8)
     } catch { fatalError("Widget validation failed: \(error)") }
   }
 }

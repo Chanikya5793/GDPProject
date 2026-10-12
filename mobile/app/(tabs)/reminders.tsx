@@ -1,3 +1,4 @@
+import { refreshPlannerData } from '@/api/plannerClient';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
@@ -82,7 +83,7 @@ export default function RemindersScreen() {
     router.setParams({ focus: undefined });
   }, [params.focus, reminders, loading]);
 
-  const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); try { await refreshPlannerData(true); await loadData(); } finally { setRefreshing(false); } };
 
   const handleSave = async (form: Partial<Reminder>) => {
     if (editingRem) {

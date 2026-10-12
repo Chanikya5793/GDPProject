@@ -11,7 +11,7 @@ module.exports = config => {
   const plugin = config.plugins.find(value => Array.isArray(value) && value[0] === 'expo-widgets');
   if (!plugin) throw new Error('withNativePlannerWidgets must follow expo-widgets');
   const widgets = plugin[1].widgets;
-  for (const name of ['PlannerWidgetStore.swift', 'PlannerWidgetsBridge.swift', 'PlannerWidgetsBridge.m']) {
+  for (const name of ['PlannerWidgetStore.swift', 'PlannerWidgetIntents.swift', 'PlannerWidgetsBridge.swift', 'PlannerWidgetsBridge.m']) {
     config = IOSConfig.XcodeProjectFile.withBuildSourceFile(config, {
       filePath: name, contents: source(name), overwrite: true,
     });
@@ -79,7 +79,7 @@ struct ${widget.name}: Widget {
 `;
       }
       if (widget.name === 'DueToday') {
-        output += '\n' + source('PlannerWidgetStore.swift') + '\n' + source('PlannerWidgetViews.swift');
+        output += '\n' + source('PlannerWidgetStore.swift') + '\n' + source('PlannerWidgetIntents.swift') + '\n' + source('PlannerWidgetViews.swift');
       }
       fs.writeFileSync(file, output);
     }
