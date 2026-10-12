@@ -5,7 +5,7 @@ widget_qa_dir="$(mktemp -d /tmp/nw-widget-qa.XXXXXX)"
 widget_app="$widget_qa_dir/WidgetHarness.app"
 mkdir -p "$widget_app"
 xcrun swiftc -D WIDGET_TESTS -parse-as-library -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-  -target arm64-apple-ios17.0-simulator plugins/widgets/PlannerWidgetStore.swift \
+  -target arm64-apple-ios17.0-simulator plugins/widgets/PlannerWidgetStore.swift plugins/widgets/PlannerWidgetCloud.swift \
   plugins/widgets/PlannerWidgetIntents.swift plugins/widgets/PlannerWidgetViews.swift tests/widgets/WidgetHarness.swift -o "$widget_app/WidgetHarness"
 cat > "$widget_app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

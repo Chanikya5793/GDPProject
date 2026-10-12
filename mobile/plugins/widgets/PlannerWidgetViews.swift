@@ -72,7 +72,10 @@ struct PlannerProgressProvider: TimelineProvider {
     completion(PlannerWidgetTimeline.entries(options: PlannerWidgetOptions(), preview: context.isPreview)[0])
   }
   func getTimeline(in context: Context, completion: @escaping (Timeline<PlannerEntry>) -> Void) {
-    completion(Timeline(entries: PlannerWidgetTimeline.entries(options: PlannerWidgetOptions()), policy: .atEnd))
+    Task {
+      await PlannerWidgetCloud.refresh()
+      completion(Timeline(entries: PlannerWidgetTimeline.entries(options: PlannerWidgetOptions()), policy: .atEnd))
+    }
   }
 }
 
@@ -632,7 +635,8 @@ struct PlannerWidgetView: View {
     VStack(alignment: .leading, spacing: 4) {
       if !entry.state.commands.isEmpty {
         HStack(spacing: 5) {
-          Link("\(entry.state.commands.count) saved · Open to sync", destination: route("tasks"))
+          Link(entry.state.commands.contains(where: { $0.sending(at: entry.date) })
+               ? "Syncing…" : "\(entry.state.commands.count) saved · Open to sync", destination: route("tasks"))
             .lineLimit(1).minimumScaleFactor(0.8)
           Spacer(minLength: 0)
           if #available(iOS 17.0, *), let last = entry.state.commands.last(where: { !$0.claimed }) {

@@ -13,7 +13,9 @@ import {
   syncScheduledNotifications,
   onNotificationTapped,
 } from '@/api/notifications';
-import { clearWidget, syncPendingWidgetActions, syncWidget } from '@/api/widgets';
+import { clearWidget, connectWidgetsToCloud, syncPendingWidgetActions, syncWidget } from '@/api/widgets';
+import { auth } from '@/lib/firebase';
+import { onIdTokenChanged } from 'firebase/auth';
 import { clearLiveActivities } from '@/api/liveActivity';
 import { watchPlannerChanges } from '@/api/liveSync';
 
@@ -91,6 +93,9 @@ export default function DeviceSync() {
     // Widget publication must not wait for the notification permission dialog.
     void askOnce().catch(() => {});
     sync();
+    // The extension's credential follows the session: written now and again
+    // whenever Firebase refreshes or replaces it.
+    const stopWatchingToken = auth ? onIdTokenChanged(auth, () => { void connectWidgetsToCloud().catch(() => {}); }) : () => {};
     // One pass per launch or return: durable widget taps go into the outbox
     // first, so the cloud read that follows cannot make them disappear.
     // Publication itself is driven by the data and cloud events below.
@@ -116,6 +121,7 @@ export default function DeviceSync() {
       active = false;
       if (timer.current) clearTimeout(timer.current);
       stopLive();
+      stopWatchingToken();
       stopWatchingData();
       stopWatchingCloud();
       subscription.remove();

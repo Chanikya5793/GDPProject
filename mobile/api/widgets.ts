@@ -7,9 +7,14 @@ import { resolveWidgetCommand, type WidgetCommand } from '@/utils/widgetCommands
 import { getItem, getStorageUid, onStorageScopeChange } from './storage';
 import { refreshPlannerData, updatePlannerItem } from './plannerClient';
 import { addLog } from './logs';
+import { API_URL, apiRequest } from './client';
+import { auth } from '@/lib/firebase';
 
 interface WidgetBridge {
   pendingCount(): Promise<number>;
+  // iOS only: the extension's own route to the account (PlannerWidgetCloud).
+  setCloudCredential?(json: string): Promise<void>;
+  pushToken?(): Promise<string | null>;
   publish(json: string): Promise<void>;
   claim(owner: string): Promise<string>;
   acknowledge(owner: string, commandId: string, notice: string): Promise<void>;
@@ -49,7 +54,7 @@ export async function syncWidget(): Promise<number> {
   return await enqueue(async () => {
     const current = () => generation === epoch && getStorageUid() === uid;
     if (!current()) return 0;
-    const owner = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `planner-widgets:${uid}`);
+    const owner = await ownerOf(uid);
     if (!current()) return 0;
     const commands: WidgetCommand[] = JSON.parse(await bridge.claim(owner));
     // Acknowledged only after the snapshot that reflects them is published.
@@ -124,4 +129,39 @@ export async function syncPendingWidgetActions(): Promise<void> {
     // Flushes the outbox the completions were just queued in.
     if (Platform.OS === 'ios') await refreshPlannerData(true);
   }
+}
+
+const ownerOf = (uid: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `planner-widgets:${uid}`);
+
+/**
+ * Let the widget extension reach the account itself while this app is
+ * closed: it refreshes from the cloud on each timeline reload and sends a
+ * widget tick straight to the account. Call on sign-in and whenever Firebase
+ * rotates the session; the keychain write is skipped when nothing changed.
+ */
+export async function connectWidgetsToCloud(): Promise<void> {
+  const user = auth?.currentUser;
+  const uid = getStorageUid();
+  if (!bridge?.setCloudCredential || !user || user.uid !== uid || !API_URL) return;
+  const app = (auth as unknown as { app: { options: Record<string, string | undefined> } }).app;
+  const owner = await ownerOf(uid);
+  if (getStorageUid() !== uid || !user.refreshToken) return;
+  await bridge.setCloudCredential(JSON.stringify({
+    uid, owner, refreshToken: user.refreshToken,
+    apiKey: app.options.apiKey ?? '', projectId: app.options.projectId ?? '',
+    database: process.env.EXPO_PUBLIC_FIRESTORE_DATABASE || '(default)',
+    apiUrl: API_URL, bundleId: '',
+  }));
+}
+
+/** Before signing out: stop this phone's widgets being pushed this account's
+ * changes. Best effort and brief; sign-out never waits on the network long. */
+export async function disconnectWidgetPush(): Promise<void> {
+  const token = await bridge?.pushToken?.().catch(() => null);
+  if (!token) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    await apiRequest(`/v1/devices/widget-push/${token}`, { method: 'DELETE', signal: controller.signal });
+  } catch { /* advisory */ } finally { clearTimeout(timer); }
 }

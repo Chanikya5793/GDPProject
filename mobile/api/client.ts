@@ -2,7 +2,7 @@ import { auth, firebaseConfigured } from '@/lib/firebase';
 import { EventStreamError, readEventStream } from '@/utils/eventStream';
 import { SseEvent } from '@/utils/sse';
 
-const API_URL = (process.env.EXPO_PUBLIC_PLANNER_API_URL || '').replace(/\/$/, '');
+export const API_URL = (process.env.EXPO_PUBLIC_PLANNER_API_URL || '').replace(/\/$/, '');
 
 /** True when a real backend is reachable; the offline demo build has none. */
 export function apiConfigured(): boolean {

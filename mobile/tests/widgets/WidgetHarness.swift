@@ -25,6 +25,27 @@ struct WidgetHarness {
 }
 #endif
 
+/// Answers the extension's cloud requests in-process.
+final class MockCloud: URLProtocol {
+  nonisolated(unsafe) static var routes: [String: (Int, String)] = [:]
+  nonisolated(unsafe) static var seen: [String] = []
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {
+    let url = request.url!
+    let key = "\(request.httpMethod ?? "GET") \(url.host ?? "")\(url.path)"
+    MockCloud.seen.append(key)
+    guard let (status, body) = MockCloud.routes[key] else {
+      client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)); return
+    }
+    client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                        cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: Data(body.utf8))
+    client?.urlProtocolDidFinishLoading(self)
+  }
+  override func stopLoading() {}
+}
+
 struct WidgetValidation {
   @MainActor static func run() async {
     do {
@@ -171,6 +192,81 @@ struct WidgetValidation {
       check(PlannerWidgetStore.read().commands.count == 2, "An all-day completion must run without a time")
       check(try! PlannerWidgetStore.publish(sample.snapshot!, build: "42"), "An app update must invalidate old archived widget actions")
       check(!(try! PlannerWidgetStore.publish(sample.snapshot!, build: "42")), "Unchanged data within the same build must not reload again")
+
+      // MARK: the extension's own cloud path
+      let mapped = PlannerWidgetRecords.item(PlannerWidgetServerRecord(record_id: "0042", revision: 3,
+        content: .init(entity_type: "task", title: "  Lab report  ", due_date: "2026-09-18", due_time: "09:30",
+          date: nil, time: nil, priority: "high", category: "Lab", completed: false)), titlesAllowed: true)!
+      check(mapped.id == "42" && mapped.title == "Lab report" && mapped.time == "09:30" && mapped.revision == 3,
+        "Server records must map like the app's snapshot, numeric ids included")
+      let hidden = PlannerWidgetRecords.item(PlannerWidgetServerRecord(record_id: "r1", revision: 1,
+        content: .init(entity_type: "reminder", title: "Secret", due_date: nil, due_time: nil,
+          date: "2026-09-18", time: nil, priority: nil, category: "x", completed: false)), titlesAllowed: false)!
+      check(hidden.title.isEmpty && hidden.category.isEmpty, "Without consent no title or category may be stored")
+      check(PlannerWidgetRecords.item(PlannerWidgetServerRecord(record_id: "bad", revision: 1,
+        content: .init(entity_type: "task", title: "x", due_date: "2026-02-30", due_time: nil,
+          date: nil, time: nil, priority: nil, category: nil, completed: nil)), titlesAllowed: true) == nil,
+        "Malformed dates must be dropped, as the app drops them")
+      var localEdit = first; localEdit.pending = true; localEdit.title = "Edited offline"
+      let merged = PlannerWidgetRecords.merge([PlannerWidgetServerRecord(record_id: first.id, revision: 1,
+        content: .init(entity_type: "task", title: "Server copy", due_date: first.date, due_time: first.time,
+          date: nil, time: nil, priority: "high", category: "", completed: false))], into: [localEdit], titlesAllowed: true)
+      check(merged.count == 1 && merged[0].title == "Edited offline", "An unsynced local edit must survive a cloud read")
+
+      let configuration = URLSessionConfiguration.ephemeral
+      configuration.protocolClasses = [MockCloud.self]
+      await PlannerWidgetCloud.coordinator.use(URLSession(configuration: configuration))
+      PlannerWidgetKeychain.testCredential = PlannerWidgetCredential(uid: "alice", owner: "preview", refreshToken: "refresh",
+        apiKey: "key", projectId: "demo", database: "(default)", apiUrl: "https://api.test", bundleId: "app")
+      let marker = "GET firestore.googleapis.com/v1/projects/demo/databases/(default)/documents/users/alice/meta/sync"
+      MockCloud.routes = [
+        "POST securetoken.googleapis.com/v1/token": (200, #"{"id_token":"id","expires_in":"3600","user_id":"alice","refresh_token":"refresh"}"#),
+        marker: (200, #"{"fields":{"version":{"integerValue":"7"}}}"#),
+        "GET api.test/v1/records/task": (200, #"[{"record_id":"t9","revision":2,"content":{"entity_type":"task","title":"Made on the laptop","due_date":"2026-09-17","priority":"medium","category":"Homework","completed":false}}]"#),
+        "GET api.test/v1/records/reminder": (200, "[]"),
+      ]
+      try PlannerWidgetStore.transact { $0 = sample }
+      await PlannerWidgetCloud.refresh()
+      var fetched = PlannerWidgetStore.read()
+      check(fetched.snapshot!.items.map(\.id) == ["t9"] && fetched.cloudMarker == 7,
+        "A moved marker must replace the widget's records with the account's")
+      check(fetched.snapshot!.cloudUpdatedAt != nil, "A cloud read must count as fresh")
+      MockCloud.seen = []
+      await PlannerWidgetCloud.refresh()
+      check(MockCloud.seen.isEmpty, "Ten kinds reloading together must share one check")
+      await PlannerWidgetCloud.refresh(force: true)
+      check(MockCloud.seen == [marker], "An unchanged marker must cost one document read, no list reads")
+
+      let t9 = fetched.snapshot!.items[0]
+      try PlannerWidgetStore.complete(owner: "preview", key: t9.key, revision: t9.revision, date: t9.date, time: t9.time)
+      MockCloud.routes["POST api.test/v1/records/task/t9/complete"] =
+        (200, #"{"record_id":"t9","revision":3,"content":{"entity_type":"task","title":"Made on the laptop","completed":true}}"#)
+      await PlannerWidgetCloud.complete(commandId: PlannerWidgetStore.read().commands[0].id)
+      fetched = PlannerWidgetStore.read()
+      check(fetched.commands.isEmpty && fetched.snapshot!.items[0].done && fetched.snapshot!.items[0].revision == 3,
+        "A sent completion must leave nothing for the app to replay")
+
+      try PlannerWidgetStore.transact { $0.snapshot!.items[0].done = false; $0.snapshot!.items[0].revision = 2 }
+      try PlannerWidgetStore.complete(owner: "preview", key: t9.key, revision: 2, date: t9.date, time: t9.time)
+      MockCloud.routes["POST api.test/v1/records/task/t9/complete"] = nil
+      await PlannerWidgetCloud.complete(commandId: PlannerWidgetStore.read().commands[0].id)
+      fetched = PlannerWidgetStore.read()
+      check(fetched.commands.count == 1 && fetched.commands[0].sendingAt == nil && !fetched.commands[0].claimed,
+        "Offline, the completion must stay queued and released for the app's outbox")
+      check(!PlannerWidgetCommand(id: "c", owner: "o", kind: "task", recordId: "1", revision: 1, date: "", time: "",
+        createdAt: 0, sendingAt: Date().timeIntervalSince1970 * 1000 - 40_000).sending(at: Date()),
+        "A send the extension abandoned must become the app's after 30 s")
+
+      MockCloud.routes["POST api.test/v1/records/task/t9/complete"] = (409, #"{"detail":"changed","code":"stale_revision"}"#)
+      await PlannerWidgetCloud.complete(commandId: PlannerWidgetStore.read().commands[0].id)
+      check(PlannerWidgetStore.read().commands.isEmpty && PlannerWidgetStore.read().notice != nil,
+        "A completion refused as stale must be explained, not retried")
+
+      MockCloud.routes["POST securetoken.googleapis.com/v1/token"] = (400, #"{"error":{"message":"TOKEN_EXPIRED"}}"#)
+      await PlannerWidgetCloud.coordinator.use(URLSession(configuration: configuration))
+      await PlannerWidgetCloud.refresh(force: true)
+      check(PlannerWidgetKeychain.load() == nil, "A revoked session must remove the widget credential")
+      PlannerWidgetKeychain.testCredential = nil
 
       let variants: [(String, WidgetFamily, CGFloat, CGFloat)] = [
         ("DueToday", .systemSmall, 170, 170), ("DueToday", .systemMedium, 364, 170),

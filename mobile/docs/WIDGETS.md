@@ -63,15 +63,47 @@ Claimed commands cannot be undone concurrently with an app mutation.
 `api/widgets.ts` serializes publishing, command reconciliation and sign-out
 clearing. Initial account restoration preserves pending taps. Account changes
 invalidate asynchronous work. Native completion intents require authentication.
-The app checks for pending actions while active and refreshes on foreground,
-planner changes and persisted title-permission changes. The old Expo widget
+The app applies pending widget actions when it comes to the foreground (a
+widget can only be tapped while the app is in the background, so there is no
+poll while active) and republishes on planner changes and title-permission
+changes. It publishes the completed record before acknowledging the widget
+command, so a tick never briefly disappears. The old Expo widget
 snapshots are removed during migration and sign-out.
 
 Native timeline providers calculate fresh views from the shared snapshot after
 the app closes. Timeline dates include deadlines and a reserved midnight
 rollover, with at most 48 entries. The record set itself is not truncated.
-Cloud snapshots older than an hour ask the user to refresh. Publication time is separate from the last successful cloud refresh. iOS controls refresh timing;
-the widgets do not fetch new cloud records while the app is closed.
+Cloud snapshots older than an hour ask the user to refresh. Publication time is
+separate from the last successful cloud refresh. Each entry derives its
+filtered, sorted queue once; the complete control is an intent `Toggle`, so
+WidgetKit ticks it before the intent runs.
+
+## Live sync across devices
+
+Every record write on the backend bumps `users/{uid}/meta/sync` in the same
+transaction: per-kind counters and the writing device's id, no content. It is
+the one document Firestore rules let a client read (its own only).
+
+- **App in front:** `api/liveSync.ts` listens to the marker and refetches only
+  the kinds another device changed (its own writes are skipped by id), which
+  republishes the widgets.
+- **App closed:** the extension holds a credential the app writes to the
+  keychain under the App Group (`PlannerWidgetKeychain`, this device only,
+  cleared on sign-out). On each timeline reload `PlannerWidgetCloud` reads the
+  marker (one document) and fetches tasks and reminders only when it moved. A
+  widget tick is sent straight to `POST /v1/records/{kind}/{id}/complete`;
+  offline, it stays queued for the app's outbox, which leaves a send in flight
+  alone for 30 seconds.
+- **Push (iOS 26+):** every widget kind has a `…Push` twin with
+  `.pushHandler`; the bundle lists the twin on iOS 26 and the plain widget
+  before. The extension registers its token with `POST /v1/devices/widget-push`;
+  after each committed write the backend sends `content-changed` to the
+  account's tokens (coalesced to one per 10 s), and iOS reloads the widgets.
+  Push needs the APNs entitlement on the extension (added by the config
+  plugin), Push Notifications enabled on the widget App ID, and an APNs auth
+  key in Secret Manager (`PLANNER_APNS_KEY_RESOURCE`, `PLANNER_APNS_KEY_ID`,
+  `PLANNER_APNS_TEAM_ID`). Without the key nothing is sent and widgets keep
+  their own reload schedule.
 
 ## Additional iOS widgets (October 10, 2026)
 
@@ -92,9 +124,8 @@ needed. Synthetic renders are in [the visual gallery](widgets-preview.html).
 Screens read the existing encrypted device cache immediately. `DeviceSync`
 refreshes all three record kinds in parallel on launch/resume; automatic attempts
 within 30 seconds share/skip the previous attempt. Pull-to-refresh forces a
-refresh and shares any in-flight work. There is no timer polling the cloud.
-The three-second widget inbox check reads a local native file only; finding a
-new command triggers the ordinary cloud sync.
+refresh and shares any in-flight work. There is no timer polling the cloud; changes from
+other devices arrive through the change marker (see Live sync above).
 
 Outbox replay is coalesced. A transient/auth/rate-limit failure retains queued
 changes. Rejected changes are kept encrypted under `nw_sync_conflicts`; Settings
