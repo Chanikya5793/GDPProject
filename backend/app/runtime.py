@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from google.cloud import firestore
 
@@ -13,6 +13,7 @@ from .local_embeddings import LocalEmbeddingClient
 from .mcp_api import McpSessionManager, McpToolService
 from .planner import PlannerEngine
 from .proposals import ProposalService
+from .push import WidgetPusher
 from .rag import CopilotService, IndexingService, RetrievalService
 from .ratelimit import FirestoreRateLimiter, RateLimiter, RateLimitPolicy
 from .repository import FirestorePlannerRepository, PlannerRepository
@@ -54,6 +55,7 @@ class Container:
     mcp_sessions: McpSessionManager
     mcp_tools: McpToolService
     rate_limiter: RateLimiter
+    widget_push: WidgetPusher = field(default_factory=WidgetPusher)
 
 
 def build_production_container(settings: Settings) -> Container:
@@ -95,4 +97,8 @@ def build_production_container(settings: Settings) -> Container:
         audit=audit, mcp_sessions=McpSessionManager(secret),
         mcp_tools=McpToolService(repository, retrieval, planner, audit),
         rate_limiter=rate_limiter,
+        widget_push=WidgetPusher(
+            key_pem=secret_resolver.access(settings.apns_key_resource) if settings.apns_key_resource else b"",
+            key_id=settings.apns_key_id, team_id=settings.apns_team_id, topic=settings.apns_widget_topic,
+        ),
     )

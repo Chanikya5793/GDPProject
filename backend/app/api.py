@@ -7,10 +7,11 @@ import os
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -50,7 +51,12 @@ from .proposals import InvalidProposal
 from .rag import AgentStep
 from .ratelimit import RateLimitExceeded
 from .repository import (
-    IdempotencyConflict, NotFound, ProposalStateError, RevisionConflict, current_client,
+    IdempotencyConflict,
+    NotFound,
+    ProposalStateError,
+    RevisionConflict,
+    changed_accounts,
+    current_client,
 )
 from .runtime import Container, build_production_container
 from .signup_policy import get_signup_policy
@@ -333,6 +339,14 @@ ContainerDep = Annotated[Container, Depends(get_container)]
 
 
 logger = logging.getLogger(__name__)
+
+
+class WidgetPushRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(pattern=r"^[0-9A-Fa-f]{64,200}$")
+    environment: Literal["production", "development"] = "production"
+
+
 CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")
 
 
@@ -388,10 +402,20 @@ def create_app(container: Container | None = None) -> FastAPI:
         # can skip the echo. Not trusted for anything else.
         client = request.headers.get("x-planner-client", "")
         token = current_client.set(client if CLIENT_ID.fullmatch(client) else "")
+        changed: List[str] = []
+        changes = changed_accounts.set(changed)
         try:
-            return await call_next(request)
+            response = await call_next(request)
         finally:
             current_client.reset(token)
+            changed_accounts.reset(changes)
+        # After the write committed, and inline rather than as a background
+        # task: Cloud Run throttles CPU once a response is sent.
+        services = getattr(request.app.state, "container", None)
+        if changed and response.status_code < 400 and services and services.widget_push.enabled:
+            for uid in changed:
+                await run_in_threadpool(services.widget_push.notify, uid, services.repository)
+        return response
 
     @app.exception_handler(RevisionConflict)
     async def revision_conflict(_request: Request, exc: RevisionConflict):
@@ -490,9 +514,19 @@ def create_app(container: Container | None = None) -> FastAPI:
         if saved.approved_for_ai:
             try:
                 services.indexing.index(user.uid, entity_type, record_id, saved.revision)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.info("complete: re-index skipped", exc_info=True)
         return saved
+
+    @app.post("/v1/devices/widget-push", status_code=204)
+    def register_widget_push(body: WidgetPushRegistration, user: CurrentUser, services: ContainerDep) -> Response:
+        services.repository.save_widget_push_token(user.uid, body.token.lower(), body.environment)
+        return Response(status_code=204)
+
+    @app.delete("/v1/devices/widget-push/{token}", status_code=204)
+    def remove_widget_push(token: str, user: CurrentUser, services: ContainerDep) -> Response:
+        services.repository.delete_widget_push_token(user.uid, token.lower())
+        return Response(status_code=204)
 
     @app.delete("/v1/records/{entity_type}/{record_id}", status_code=204)
     def delete_record(

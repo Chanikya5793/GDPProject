@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     muse_timeout_seconds: int = Field(default=120, ge=5, le=300)
     allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     mcp_session_secret_resource: str = ""
+    # WidgetKit push (app/push.py). All optional: without an APNs auth key
+    # widgets refresh on their own schedule and nothing is sent.
+    apns_key_resource: str = ""
+    apns_key_id: str = ""
+    apns_team_id: str = ""
+    apns_widget_topic: str = "com.nwmissouri.studentplanner.push-type.widgets"
     chat_retention_days: int = Field(default=30, ge=0, le=365)
     retrieval_limit: int = Field(default=5, ge=1, le=20)
     # See DEFAULT_MAX_DISTANCE in rag.py. Generous for long notes, with an
