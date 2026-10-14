@@ -15,6 +15,7 @@ import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } fro
 import { groupTasksByDate } from '../utils/taskGroups'
 import '../css/Tasks.css'
 import LoadFailed from '../components/LoadFailed'
+import SubmitButton, { SubmitError, useSubmit } from '../components/SubmitButton'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])
   const [titleError, setTitleError] = useState(false)
+  const { submit, busy, error } = useSubmit(onSave)
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -143,7 +145,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
       return
     }
     setTitleError(false)
-    onSave({ ...form, reminders: addReminders ? reminders : [] })
+    submit({ ...form, title: form.title.trim(), reminders: addReminders ? reminders : [] })
   }
 
   return (
@@ -231,9 +233,10 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
               </div>
             )}
           </div>
+          <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">{task ? 'Save Changes' : 'Add Task'}</button>
+            <SubmitButton busy={busy}>{task ? 'Save Changes' : 'Add Task'}</SubmitButton>
           </div>
         </form>
       </div>
@@ -435,6 +438,7 @@ export default function Tasks() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [view, setView] = useState('grid')
   const [statusFilter, setStatusFilter] = useState('active')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -485,18 +489,28 @@ export default function Tasks() {
 
   const handleSave = async (form) => {
     const { reminders: remindersList = [], ...taskData } = form
+    setActionError('')
+    // Save failures throw to the modal, which shows them next to the button.
     if (modalTask) {
       const updated = await updateTask(modalTask.id, taskData)
       setTasks(prev => prev.map(t => t.id === modalTask.id ? updated : t))
-    } else {
-      const created = await createTask({ ...taskData, userId: user.id })
-      setTasks(prev => [...prev, created])
-      for (const rem of remindersList) {
-        await createReminder({ userId: user.id, title: taskData.title, date: rem.date, time: rem.time, notes: '' })
-      }
+      setShowModal(false)
+      setModalTask(null)
+      return
     }
+    const created = await createTask({ ...taskData, userId: user.id })
+    setTasks(prev => [...prev, created])
+    // The task exists now, so the dialog closes before the reminders: a
+    // reminder failing must not leave it open for a retry that adds the task twice.
     setShowModal(false)
     setModalTask(null)
+    for (const rem of remindersList) {
+      try {
+        await createReminder({ userId: user.id, title: taskData.title, date: rem.date, time: rem.time, notes: '' })
+      } catch (error) {
+        setActionError(`The task was added, but a reminder could not be: ${error.message}`)
+      }
+    }
   }
 
   const handleDelete = async () => {
@@ -597,6 +611,7 @@ export default function Tasks() {
       </div>
 
       <div className="page-body">
+        {actionError && <p className="modal-submit-error" role="alert" style={{ marginTop: 0, marginBottom: '14px' }}>{actionError}</p>}
         {/* ── Auto-balance result (dismissible, undoable) ── */}
         {autoBalanced?.moves?.length > 0 && (
           <div className="auto-balance-notice">

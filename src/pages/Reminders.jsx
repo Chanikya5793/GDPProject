@@ -7,6 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import AskAiButton from '../components/AskAiButton'
 import '../css/Reminders.css'
 import LoadFailed from '../components/LoadFailed'
+import SubmitButton, { SubmitError, useSubmit } from '../components/SubmitButton'
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -43,6 +44,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
   })
 
   const [titleError, setTitleError] = useState(false)
+  const { submit, busy, error } = useSubmit(onSave)
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -55,7 +57,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
   }
 
   setTitleError(false)
-  onSave(form)
+  submit({ ...form, title: form.title.trim() })
 }
 
   return (
@@ -100,9 +102,10 @@ function ReminderModal({ reminder, onSave, onClose }) {
               <span>Approve this reminder for AI retrieval</span>
             </label>
           </div>
+          <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">{reminder ? 'Save Changes' : 'Add Reminder'}</button>
+            <SubmitButton busy={busy}>{reminder ? 'Save Changes' : 'Add Reminder'}</SubmitButton>
           </div>
         </form>
       </div>
