@@ -383,6 +383,20 @@ export async function flushOutbox(): Promise<number> {
  * behind it, on every load, for good. Only a failure to reach the server
  * keeps the queue, and then the whole rest of it, in order.
  */
+async function completeAsUpdate(operation: OutboxOperation, body: Record<string, unknown>): Promise<OutboxOperation | null> {
+  const record = (await loadCache(operation.kind)).find(item => String(item.id) === String(operation.recordId));
+  if (!record) return null;
+  return {
+    method: 'PUT', kind: operation.kind, recordId: operation.recordId,
+    body: {
+      content: toServer(operation.kind, { ...record, completed: true } as PlannerItem),
+      expected_revision: body.expected_revision ?? null,
+      idempotency_key: `${String(body.idempotency_key)}-put`,
+      approved_for_ai: record._approvedForAi ?? true,
+    },
+  };
+}
+
 async function flushOutboxNow(): Promise<number> {
   const uid = getStorageUid();
   const outbox = await getItem<OutboxOperation[]>('nw_sync_outbox', []);
@@ -398,7 +412,16 @@ async function flushOutboxNow(): Promise<number> {
     const known = revisions.get(recordKey);
     const body = known === undefined ? operation.body : { ...operation.body, expected_revision: known };
     try {
-      const result = await send({ ...operation, body });
+      let result: ServerRecord | undefined;
+      try { result = await send({ ...operation, body }); }
+      catch (error) {
+        // A backend older than /complete: 404 without the record's own
+        // not_found code. Send the ordinary full update instead.
+        if (operation.action !== 'complete' || statusOf(error) !== 404 || codeOf(error) === 'not_found') throw error;
+        const legacy = await completeAsUpdate(operation, body);
+        if (!legacy) throw error;
+        result = await send(legacy);
+      }
       if (operation.method === 'DELETE') revisions.delete(recordKey);
       else if (result?.revision) revisions.set(recordKey, result.revision);
     } catch (error) {

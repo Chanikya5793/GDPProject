@@ -28,6 +28,30 @@ beforeEach(() => {
 });
 
 describe('widget mutation and outbox ordering', () => {
+  it('falls back to a full update on a backend without the complete endpoint', async () => {
+    const api = await import('@/api/plannerClient');
+    await api.updatePlannerItem('task', 7, { completed: true },
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, true, 'widget-command-1');
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path.endsWith('/complete')) throw Object.assign(new Error('Not Found'), { status: 404 });
+      return server(true);
+    });
+    expect(await api.flushOutbox()).toBe(0);
+    const [path, init] = mocks.request.mock.calls.at(-1)!;
+    expect(path).toBe('/v1/records/task/7');
+    expect(JSON.parse(init.body)).toMatchObject({ expected_revision: 2, idempotency_key: 'widget-command-1-put',
+      content: { entity_type: 'task', completed: true, notes: '' } });
+    expect(mocks.data.nw_sync_conflicts).toBeUndefined();
+  });
+  it('treats a record that is gone as done, without falling back', async () => {
+    const api = await import('@/api/plannerClient');
+    await api.updatePlannerItem('task', 7, { completed: true },
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, true, 'widget-command-1');
+    mocks.request.mockRejectedValue(Object.assign(new Error('Record not found'), { status: 404, code: 'not_found' }));
+    expect(await api.flushOutbox()).toBe(0);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(mocks.data.nw_sync_conflicts).toBeUndefined();
+  });
   it('replays a widget tick through the complete endpoint under the widget command id', async () => {
     const api = await import('@/api/plannerClient');
     const pending = await api.updatePlannerItem('task', 7, { completed: true },
