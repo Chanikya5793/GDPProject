@@ -99,8 +99,9 @@ the one document Firestore rules let a client read (its own only).
   before. The extension registers its token with `POST /v1/devices/widget-push`;
   after each committed write the backend sends `content-changed` to the
   account's tokens (coalesced to one per 10 s), and iOS reloads the widgets.
-  Push needs the APNs entitlement on the extension (added by the config
-  plugin), Push Notifications enabled on the widget App ID, and an APNs auth
+  Push needs the APNs entitlement on the extension (the config plugin adds it
+  with `["./plugins/withNativePlannerWidgets", { "widgetPush": true }]`; off
+  until then), Push Notifications enabled on the widget App ID, and an APNs auth
   key in Secret Manager (`PLANNER_APNS_KEY_RESOURCE`, `PLANNER_APNS_KEY_ID`,
   `PLANNER_APNS_TEAM_ID`). Without the key nothing is sent and widgets keep
   their own reload schedule.

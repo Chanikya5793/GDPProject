@@ -34,7 +34,7 @@ function rewriteBundle(file, names) {
   fs.writeFileSync(file, bundle);
 }
 
-module.exports = config => {
+module.exports = (config, { widgetPush = false } = {}) => {
   const plugin = config.plugins.find(value => Array.isArray(value) && value[0] === 'expo-widgets');
   if (!plugin) throw new Error('withNativePlannerWidgets must follow expo-widgets');
   const widgets = plugin[1].widgets;
@@ -115,11 +115,15 @@ ${pushVariant(widget.name)}`;
     rewriteBundle(path.join(directory, 'index.swift'), widgets.map(widget => widget.name));
     // WidgetKit push needs the APNs entitlement on the extension only; the
     // app itself still schedules everything locally (withoutPushEntitlement).
-    // Xcode's export swaps in "production" for App Store signing.
-    const entitlements = path.join(directory, 'ExpoWidgetsTarget.entitlements');
-    const values = plist.parse(fs.readFileSync(entitlements, 'utf8'));
-    values['aps-environment'] = values['aps-environment'] || 'development';
-    fs.writeFileSync(entitlements, plist.build(values));
+    // Opt-in (`widgetPush: true` in app.json): the widgets App ID must have
+    // Push Notifications enabled first, or the build cannot be signed. Xcode's
+    // export swaps in "production" for App Store signing.
+    if (widgetPush) {
+      const entitlements = path.join(directory, 'ExpoWidgetsTarget.entitlements');
+      const values = plist.parse(fs.readFileSync(entitlements, 'utf8'));
+      values['aps-environment'] = values['aps-environment'] || 'development';
+      fs.writeFileSync(entitlements, plist.build(values));
+    }
     return result;
   });
 };
