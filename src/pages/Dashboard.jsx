@@ -10,6 +10,7 @@ import { getNotes, updateNote, getTags } from "../api/notes"
 import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon, ChevronsUpDown, ChevronsDownUp } from "lucide-react"
 import { getEffectivePriority } from "../utils/priority"
 import LoadFailed from "../components/LoadFailed"
+import SubmitButton, { SubmitError, useSubmit } from "../components/SubmitButton"
 import "../css/Dashboard.css"
 
 /* ─── Helpers ─── */
@@ -103,6 +104,8 @@ function QuickTaskModal({ onSave, onClose }) {
   const [priority, setPriority] = useState('medium')
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: today(), time: '' }])
+  const [titleError, setTitleError] = useState(false)
+  const { submit, busy, error } = useSubmit(onSave)
 
   const toggleReminders = (checked) => {
     setAddReminders(checked)
@@ -131,8 +134,11 @@ function QuickTaskModal({ onSave, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!title.trim()) return
-    onSave({ title, dueDate, priority, category: 'Homework', dueTime: '', notes: '', reminders: addReminders ? reminders : [] })
+    if (!title.trim()) {
+      setTitleError(true)
+      return
+    }
+    submit({ title: title.trim(), dueDate, priority, category: 'Homework', dueTime: '', notes: '', reminders: addReminders ? reminders : [] })
   }
 
   return (
@@ -146,7 +152,10 @@ function QuickTaskModal({ onSave, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div className="form-group">
               <label className="form-label">Title</label>
-              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs to be done?" autoFocus />
+              <input className={`form-input${titleError ? ' input-error' : ''}`} value={title}
+                onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) setTitleError(false) }}
+                placeholder="What needs to be done?" autoFocus />
+              {titleError && <div className="form-error">* Add a title for the task</div>}
             </div>
             <div className="form-grid-2">
               <div className="form-group">
@@ -186,9 +195,10 @@ function QuickTaskModal({ onSave, onClose }) {
               )}
             </div>
           </div>
+          <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">Add Task</button>
+            <SubmitButton busy={busy}>Add Task</SubmitButton>
           </div>
         </form>
       </div>
@@ -202,11 +212,16 @@ function QuickReminderModal({ onSave, onClose }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(today())
   const [time, setTime] = useState('')
+  const [titleError, setTitleError] = useState(false)
+  const { submit, busy, error } = useSubmit(onSave)
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!title.trim()) return
-    onSave({ title, date, time, notes: '' })
+    if (!title.trim()) {
+      setTitleError(true)
+      return
+    }
+    submit({ title: title.trim(), date, time, notes: '' })
   }
 
   return (
@@ -220,7 +235,10 @@ function QuickReminderModal({ onSave, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div className="form-group">
               <label className="form-label">Title</label>
-              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="What do you need to remember?" autoFocus />
+              <input className={`form-input${titleError ? ' input-error' : ''}`} value={title}
+                onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) setTitleError(false) }}
+                placeholder="What do you need to remember?" autoFocus />
+              {titleError && <div className="form-error">* Add a title for the reminder</div>}
             </div>
             <div className="form-grid-2">
               <div className="form-group">
@@ -233,9 +251,10 @@ function QuickReminderModal({ onSave, onClose }) {
               </div>
             </div>
           </div>
+          <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">Add Reminder</button>
+            <SubmitButton busy={busy}>Add Reminder</SubmitButton>
           </div>
         </form>
       </div>
@@ -819,13 +838,8 @@ export default function Dashboard() {
   const handleQuickTask = async (form) => {
     const { reminders: remindersList = [], ...taskData } = form
     setActionError('')
-    let created
-    try {
-      created = await createTask({ ...taskData, userId: user.id })
-    } catch (error) {
-      setActionError(error.message || 'Could not add the task.')
-      return
-    }
+    // A failure here throws to the modal, which shows it next to the button.
+    const created = await createTask({ ...taskData, userId: user.id })
     setTasks(prev => [...prev, created])
     // The task exists now, so the dialog closes here: a reminder failing
     // below used to leave it open, and a retry made a second task.
@@ -848,13 +862,9 @@ export default function Dashboard() {
 
   const handleQuickReminder = async (form) => {
     setActionError('')
-    try {
-      const created = await createReminder({ ...form, userId: user.id })
-      setReminders(prev => [...prev, created])
-      setQuickMode(null)
-    } catch (error) {
-      setActionError(error.message || 'Could not add the reminder.')
-    }
+    const created = await createReminder({ ...form, userId: user.id })
+    setReminders(prev => [...prev, created])
+    setQuickMode(null)
   }
 
   /* ── Drag-and-drop handlers ── */
