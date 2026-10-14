@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import Lock, Timer
 from typing import Callable, Dict, Optional
 
 import httpx
@@ -50,7 +50,10 @@ class WidgetPusher:
     clock: Callable[[], float] = time.time
     _token: Optional[tuple] = None
     _last: Dict[str, float] = field(default_factory=dict)
+    _trailing: Dict[str, Timer] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
+    # Tests run the trailing send inline instead of on a timer.
+    schedule: Optional[Callable[[float, Callable[[], None]], None]] = None
 
     @property
     def enabled(self) -> bool:
@@ -77,9 +80,33 @@ class WidgetPusher:
             return 0
         with self._lock:
             now = self.clock()
-            if now - self._last.get(uid, 0.0) < MIN_INTERVAL_SECONDS:
+            wait = MIN_INTERVAL_SECONDS - (now - self._last.get(uid, 0.0))
+            if wait > 0:
+                # Coalesce, but never drop the last write of a burst: one
+                # trailing push when the window closes covers all of them.
+                if uid not in self._trailing:
+                    self._trail(uid, wait, repository)
                 return 0
             self._last[uid] = now
+        return self._send(uid, repository)
+
+    def _trail(self, uid: str, wait: float, repository) -> None:
+        def fire() -> None:
+            with self._lock:
+                self._trailing.pop(uid, None)
+                self._last[uid] = self.clock()
+            self._send(uid, repository)
+
+        if self.schedule:
+            self._trailing[uid] = None  # type: ignore[assignment]
+            self.schedule(wait, fire)
+            return
+        timer = Timer(wait, fire)
+        timer.daemon = True
+        self._trailing[uid] = timer
+        timer.start()
+
+    def _send(self, uid: str, repository) -> int:
         tokens = repository.list_widget_push_tokens(uid)
         if not tokens:
             return 0

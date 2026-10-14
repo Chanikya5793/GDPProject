@@ -17,10 +17,14 @@ interface ServerRecord {
 }
 
 interface OutboxOperation {
-  method: 'PUT' | 'DELETE';
+  method: 'PUT' | 'DELETE' | 'POST';
   kind: Kind;
   recordId: PlannerRecordId;
   body: Record<string, unknown>;
+  // POST /v1/records/{kind}/{id}/complete: a widget tick. Idempotent on the
+  // widget command's id, and "already done" is success, so the extension
+  // having sent it first is never a conflict.
+  action?: 'complete';
 }
 export interface PlannerSyncConflict {
   id: string;
@@ -97,6 +101,7 @@ export async function readCachedPlannerItems<T extends PlannerItem>(kind: Kind):
 
 const ALL_KINDS: readonly Kind[] = ['task', 'reminder', 'note'];
 const followUps = new Map<string, { kinds: Set<Kind>; run: Promise<void> }>();
+const syncKinds = new Map<string, Set<Kind>>();
 
 /** Refresh on launch/resume, an explicit pull, or a change another device
  * made (api/liveSync). No cloud polling or keep-alive. `kinds` narrows a
@@ -107,13 +112,15 @@ export function refreshPlannerData(force = false, changed?: readonly Kind[]): Pr
   const kinds = changed ?? ALL_KINDS;
   const active = syncs.get(uid);
   if (active) {
-    // Launch, resume and pull requests share the running refresh. A live
-    // change may postdate the running fetch, so it gets one follow-up that
-    // everything reported meanwhile shares.
-    if (!changed) return active;
+    // Launch, resume and pull requests share the running refresh, for the
+    // kinds it covers. A live change may postdate the running fetch, so it
+    // gets one follow-up that everything reported meanwhile shares.
+    const covered = syncKinds.get(uid) ?? new Set<Kind>();
+    const wanted = changed ? kinds : kinds.filter(kind => !covered.has(kind));
+    if (!wanted.length) return active;
     const pending = followUps.get(uid);
-    if (pending) { kinds.forEach(kind => pending.kinds.add(kind)); return pending.run; }
-    const next = { kinds: new Set(kinds), run: Promise.resolve() };
+    if (pending) { wanted.forEach(kind => pending.kinds.add(kind)); return pending.run; }
+    const next = { kinds: new Set(wanted), run: Promise.resolve() };
     next.run = active.catch(() => {}).then(() => {
       followUps.delete(uid);
       return refreshPlannerData(true, [...next.kinds]);
@@ -152,7 +159,8 @@ export function refreshPlannerData(force = false, changed?: readonly Kind[]): Pr
     } finally { if (getStorageUid() === uid) notifySync(); }
   })();
   syncs.set(uid, run);
-  void run.finally(() => { if (syncs.get(uid) === run) syncs.delete(uid); }).catch(() => {});
+  syncKinds.set(uid, new Set(kinds));
+  void run.finally(() => { if (syncs.get(uid) === run) { syncs.delete(uid); syncKinds.delete(uid); } }).catch(() => {});
   return run;
 }
 
@@ -313,8 +321,9 @@ async function saveCache(kind: Kind, items: PlannerItem[]): Promise<void> {
 }
 
 async function send(operation: OutboxOperation): Promise<ServerRecord | undefined> {
+  const suffix = operation.action === 'complete' ? '/complete' : '';
   return apiRequest<ServerRecord | undefined>(
-    `/v1/records/${operation.kind}/${operation.recordId}`,
+    `/v1/records/${operation.kind}/${operation.recordId}${suffix}`,
     { method: operation.method, body: JSON.stringify(operation.body) },
   );
 }
@@ -397,10 +406,11 @@ async function flushOutboxNow(): Promise<number> {
       if (isPermanentFailure(error)) {
         // A concurrent device edit wins its revision check, but preserve the
         // rejected device change for review instead of silently destroying it.
-        if (!(operation.method === 'DELETE' && statusOf(error) === 404)) {
+        // Gone already is the outcome a delete asked for, and leaves nothing to tick.
+        if (!((operation.method === 'DELETE' || operation.action === 'complete') && statusOf(error) === 404)) {
           const id = String(operation.body.idempotency_key ?? idempotencyKey('conflict'));
           if (!conflicts.some(item => item.id === id)) conflicts.push({ id, kind: operation.kind,
-            recordId: operation.recordId, method: operation.method,
+            recordId: operation.recordId, method: operation.method === 'DELETE' ? 'DELETE' : 'PUT',
             content: operation.body.content as Record<string, unknown> | undefined,
             approvedForAi: operation.body.approved_for_ai === true,
             savedAt: new Date().toISOString(), status: statusOf(error) ?? 400 });
@@ -502,14 +512,14 @@ async function createPlannerItemNow<T extends PlannerItem>(kind: Kind, item: T):
 
 export async function updatePlannerItem<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
   expected?: { userId: string; revision: number | null; date: string; time: string },
-  deferCloud = false,
+  deferCloud = false, widgetCommandId?: string,
 ): Promise<T> {
-  return serializeRecords(kind, () => updatePlannerItemNow(kind, id, updates, expected, deferCloud));
+  return serializeRecords(kind, () => updatePlannerItemNow(kind, id, updates, expected, deferCloud, widgetCommandId));
 }
 
 async function updatePlannerItemNow<T extends PlannerItem>(kind: Kind, id: PlannerRecordId, updates: Partial<T>,
   expected?: { userId: string; revision: number | null; date: string; time: string },
-  deferCloud = false,
+  deferCloud = false, widgetCommandId?: string,
 ): Promise<T> {
   const operationUid = getStorageUid();
   const assertScope = () => {
@@ -529,7 +539,10 @@ async function updatePlannerItemNow<T extends PlannerItem>(kind: Kind, id: Plann
         date !== expected.date || time !== expected.time) throw new ApiError('Item changed.', 409);
   }
   const merged = { ...current, ...updates } as T;
-  const operation: OutboxOperation = {
+  const operation: OutboxOperation = widgetCommandId && kind !== 'note' ? {
+    method: 'POST', kind, recordId: id, action: 'complete',
+    body: { expected_revision: current._revision ?? null, idempotency_key: widgetCommandId },
+  } : {
     method: 'PUT', kind, recordId: id,
     body: {
       content: toServer(kind, merged), expected_revision: current._revision,

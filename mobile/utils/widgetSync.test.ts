@@ -91,7 +91,7 @@ describe('native widget sync lifecycle', () => {
     await api.syncWidget();
     expect(mocks.clear).not.toHaveBeenCalled();
     expect(mocks.update).toHaveBeenCalledWith('task', 7, { completed: true },
-      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, true);
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, true, 'action');
     expect(JSON.parse(mocks.publish.mock.calls[0][0]).items[0].done).toBe(true);
     expect(mocks.commands).toHaveLength(0);
   });
@@ -157,7 +157,7 @@ describe('platform bridges', () => {
     const api = await import('@/api/widgets');
     await api.syncPendingWidgetActions();
     expect(mocks.update).toHaveBeenCalledWith('task', 7, { completed: true },
-      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, false);
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, false, 'action');
     expect(mocks.commands).toHaveLength(0);
   });
   it('does nothing on an Android build without the module', async () => {

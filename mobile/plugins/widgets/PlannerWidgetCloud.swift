@@ -14,7 +14,9 @@ enum PlannerWidgetCloud {
   static let coordinator = PlannerWidgetCloudCoordinator()
   /// Ten widget kinds reload together; one check serves them all. Short,
   /// because a push-triggered reload must not be skipped as "just checked".
-  static let minimumInterval: TimeInterval = 10
+  /// Shorter than the backend's 10 s push spacing, so a push always lands
+  /// after the window.
+  static let minimumInterval: TimeInterval = 3
   static let clientId = "widget-\(UUID().uuidString.prefix(8).lowercased())"
 
   static func refresh(force: Bool = false) async {
@@ -51,7 +53,12 @@ actor PlannerWidgetCloudCoordinator {
 #endif
 
   func refresh(force: Bool) async {
-    if let inflight { await inflight.value; return }
+    if let inflight {
+      await inflight.value
+      // A forced check (a push, a stale completion) must not settle for a
+      // throttled one that happened to be running.
+      if !force { return }
+    }
     let task = Task { await self.run(force: force) }
     inflight = task
     await task.value
@@ -90,11 +97,14 @@ actor PlannerWidgetCloudCoordinator {
       let changed = try PlannerWidgetStore.transact { state -> Bool in
         guard var current = state.snapshot, current.owner == credential.owner else { return false }
         let before = current.items
-        current.items = PlannerWidgetRecords.merge(fetched, into: before, titlesAllowed: current.titlesAllowed)
+        let merged = PlannerWidgetRecords.merge(fetched, into: before, titlesAllowed: current.titlesAllowed)
+        current.items = merged.items
         current.cloudUpdatedAt = now.timeIntervalSince1970 * 1000
         current.cloudError = false
         state.snapshot = current
-        state.cloudMarker = marker
+        // If a completion landed while these lists were in flight, the lists
+        // predate the marker; look again next time rather than trust it.
+        state.cloudMarker = merged.overtaken ? nil : marker
         state.cloudCheckedAt = now.timeIntervalSince1970 * 1000
         return current.items != before
       }
@@ -177,7 +187,10 @@ actor PlannerWidgetCloudCoordinator {
     guard exchanged.user_id == credential.uid else { throw PlannerWidgetHTTPError(status: 400, revoked: true) }
     let lifetime = TimeInterval(exchanged.expires_in) ?? 3600
     idToken = (exchanged.id_token, Date().addingTimeInterval(lifetime), credential.uid)
-    if exchanged.refresh_token != credential.refreshToken, !exchanged.refresh_token.isEmpty {
+    // Only over the credential this exchange started from: the app may have
+    // written another account's meanwhile.
+    if exchanged.refresh_token != credential.refreshToken, !exchanged.refresh_token.isEmpty,
+       PlannerWidgetKeychain.load() == credential {
       var rotated = credential
       rotated.refreshToken = exchanged.refresh_token
       try? PlannerWidgetKeychain.save(rotated)
@@ -293,11 +306,21 @@ enum PlannerWidgetRecords {
     return item
   }
 
-  /// Server records replace the snapshot's, except changes this phone made
-  /// that have not reached the account yet: those stay as the phone has them.
-  static func merge(_ records: [PlannerWidgetServerRecord], into current: [PlannerWidgetItem], titlesAllowed: Bool) -> [PlannerWidgetItem] {
-    let local = current.filter(\.pending)
-    let held = Set(local.map(\.key))
-    return records.compactMap { item($0, titlesAllowed: titlesAllowed) }.filter { !held.contains($0.key) } + local
+  /// Server records replace the snapshot's, except where this phone is
+  /// ahead: changes not yet on the account (pending), and records already
+  /// at a newer revision than this fetch (a completion that landed while the
+  /// lists were in flight).
+  static func merge(_ records: [PlannerWidgetServerRecord], into current: [PlannerWidgetItem],
+                    titlesAllowed: Bool) -> (items: [PlannerWidgetItem], overtaken: Bool) {
+    let local = Dictionary(current.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+    var overtaken = false
+    let fresh = records.compactMap { item($0, titlesAllowed: titlesAllowed) }.map { item -> PlannerWidgetItem in
+      guard let mine = local[item.key] else { return item }
+      if mine.pending { return mine }
+      if (mine.revision ?? 0) > (item.revision ?? 0) { overtaken = true; return mine }
+      return item
+    }
+    let seen = Set(fresh.map(\.key))
+    return (fresh + current.filter { $0.pending && !seen.contains($0.key) }, overtaken)
   }
 }

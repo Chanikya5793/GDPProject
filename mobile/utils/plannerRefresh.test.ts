@@ -51,6 +51,12 @@ describe('cached iOS launch and bounded cloud refresh', () => {
     expect(paths).toEqual(['/v1/records/task', '/v1/records/reminder', '/v1/records/note',
       '/v1/records/task', '/v1/records/note']);
   });
+  it('does not let a narrow live refresh stand in for a full one', async () => {
+    const api = await import('@/api/plannerClient');
+    await Promise.all([api.refreshPlannerData(true, ['note']), api.refreshPlannerData(true)]);
+    const paths = mocks.request.mock.calls.map(call => call[0]);
+    expect(paths).toEqual(['/v1/records/note', '/v1/records/task', '/v1/records/reminder']);
+  });
   it('deduplicates overlapping reads of one record kind', async () => {
     const api = await import('@/api/plannerClient');
     await Promise.all([api.listPlannerItems('task'), api.listPlannerItems('task')]);

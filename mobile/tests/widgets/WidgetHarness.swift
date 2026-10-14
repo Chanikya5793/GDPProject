@@ -210,8 +210,13 @@ struct WidgetValidation {
       var localEdit = first; localEdit.pending = true; localEdit.title = "Edited offline"
       let merged = PlannerWidgetRecords.merge([PlannerWidgetServerRecord(record_id: first.id, revision: 1,
         content: .init(entity_type: "task", title: "Server copy", due_date: first.date, due_time: first.time,
-          date: nil, time: nil, priority: "high", category: "", completed: false))], into: [localEdit], titlesAllowed: true)
+          date: nil, time: nil, priority: "high", category: "", completed: false))], into: [localEdit], titlesAllowed: true).items
       check(merged.count == 1 && merged[0].title == "Edited offline", "An unsynced local edit must survive a cloud read")
+      var newer = first; newer.done = true; newer.revision = 5
+      let raced = PlannerWidgetRecords.merge([PlannerWidgetServerRecord(record_id: first.id, revision: 4,
+        content: .init(entity_type: "task", title: "x", due_date: first.date, due_time: first.time,
+          date: nil, time: nil, priority: "high", category: "", completed: false))], into: [newer], titlesAllowed: true)
+      check(raced.items[0].done && raced.overtaken, "A fetch that predates a widget completion must not undo the tick")
 
       let configuration = URLSessionConfiguration.ephemeral
       configuration.protocolClasses = [MockCloud.self]

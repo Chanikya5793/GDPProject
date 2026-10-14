@@ -74,7 +74,7 @@ export async function syncWidget(): Promise<number> {
           // Replays set completed=true, never toggle a completed item back.
           const after = await updatePlannerItem(command.kind, before.id, { completed: true }, {
             userId: uid, revision: command.revision ?? null, date: command.date, time: command.time,
-          }, Platform.OS === 'ios');
+          }, Platform.OS === 'ios', command.id);
           if (!current()) return 0;
           await addLog('completed', command.kind, after.title, { entityId: before.id, before, after });
         } catch (error) {

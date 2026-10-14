@@ -28,6 +28,20 @@ beforeEach(() => {
 });
 
 describe('widget mutation and outbox ordering', () => {
+  it('replays a widget tick through the complete endpoint under the widget command id', async () => {
+    const api = await import('@/api/plannerClient');
+    const pending = await api.updatePlannerItem('task', 7, { completed: true },
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, true, 'widget-command-1');
+    expect(pending).toMatchObject({ completed: true, _pending: true });
+    expect(mocks.request).not.toHaveBeenCalled();
+    // The extension already sent it: the server answers with the done record.
+    mocks.request.mockResolvedValue(server(true));
+    expect(await api.flushOutbox()).toBe(0);
+    expect(mocks.request).toHaveBeenCalledWith('/v1/records/task/7/complete', {
+      method: 'POST', body: JSON.stringify({ expected_revision: 2, idempotency_key: 'widget-command-1' }),
+    });
+    expect(mocks.data.nw_sync_conflicts).toBeUndefined();
+  });
   it('drops a conflicting operation and still sends the ones behind it', async () => {
     const outbox = [1, 2, 3].map(recordId => ({ method: 'PUT', kind: 'task', recordId, body: {} }));
     mocks.data.nw_sync_outbox = outbox;

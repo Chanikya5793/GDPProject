@@ -174,6 +174,9 @@ enum PlannerWidgetStore {
         state = PlannerWidgetState()
         state.pushToken = push
       }
+      // The app's copy may be older than what the extension last read; make
+      // the extension's next check fetch rather than trust its marker.
+      if previous?.items != snapshot.items { state.cloudMarker = nil; state.cloudCheckedAt = nil }
       state.snapshot = snapshot
       state.publishedBuild = build
       return changed

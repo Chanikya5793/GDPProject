@@ -58,16 +58,23 @@ def test_a_refused_write_sends_nothing(client, auth, services):
     assert len(sent) == 1
 
 
-def test_bursts_are_coalesced(services):
+def test_bursts_are_coalesced_without_dropping_the_last_write(services):
     now = [1000.0]
     sent = []
+    trailing = []
     push = pusher(lambda request: sent.append(request) or httpx.Response(200), clock=lambda: now[0])
+    push.schedule = lambda wait, fire: trailing.append((wait, fire))
     services.repository.save_widget_push_token("alice", TOKEN, "production")
     push.notify("alice", services.repository)
+    now[0] += 4
     push.notify("alice", services.repository)
-    now[0] += 11
     push.notify("alice", services.repository)
-    assert len(sent) == 2
+    assert len(sent) == 1 and len(trailing) == 1 and trailing[0][0] == 6
+    now[0] += 6
+    trailing[0][1]()
+    assert len(sent) == 2  # one trailing push for the rest of the burst
+    push.notify("alice", services.repository)
+    assert len(sent) == 2 and len(trailing) == 2
 
 
 def test_wrong_environment_is_retried_once_and_remembered(services):
