@@ -28,6 +28,7 @@ import { Category, PlannerRecordId, Task } from '@/types';
 import { parseTimeInput } from '@/utils/timeInput';
 import { recurrenceLabel } from '@/utils/recurrence';
 import { compareByDue, groupTasksByDate } from '@/utils/taskGroups';
+import { escalationBadgeLabel } from '@/utils/escalationBadge';
 import SheetSaveButton, { SheetFormError } from '@/components/SheetSaveButton';
 import { useSubmit } from '@/hooks/useSubmit';
 
@@ -433,7 +434,7 @@ export default function TasksScreen() {
                           <View style={[s.escalateBadge, { backgroundColor: '#DC2626' }]}>
                             <Ionicons name="arrow-up" size={9} color="#FFF" />
                             <Text style={s.escalateBadgeText}>
-                              {ep.daysUntilDue <= 0 ? 'OVERDUE' : ep.daysUntilDue === 1 ? 'TMR' : `${ep.daysUntilDue}D`}
+                              {escalationBadgeLabel(ep.daysUntilDue)}
                             </Text>
                           </View>
                         )}
