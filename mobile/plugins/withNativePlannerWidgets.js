@@ -38,6 +38,16 @@ module.exports = (config, { widgetPush = false } = {}) => {
   const plugin = config.plugins.find(value => Array.isArray(value) && value[0] === 'expo-widgets');
   if (!plugin) throw new Error('withNativePlannerWidgets must follow expo-widgets');
   const widgets = plugin[1].widgets;
+  if (widgetPush) {
+    // EAS syncs App ID capabilities and picks signing entitlements from this
+    // declaration, not from the .entitlements file written below. Without the
+    // key here it switches Push Notifications back off on the widgets App ID
+    // and signs the extension without it.
+    const extension = config.extra?.eas?.build?.experimental?.ios?.appExtensions
+      ?.find(item => item.targetName === 'ExpoWidgetsTarget');
+    if (!extension) throw new Error('expo-widgets no longer declares ExpoWidgetsTarget for EAS');
+    extension.entitlements = { ...extension.entitlements, 'aps-environment': 'production' };
+  }
   for (const name of ['PlannerWidgetStore.swift', 'PlannerWidgetCloud.swift', 'PlannerWidgetIntents.swift', 'PlannerWidgetsBridge.swift', 'PlannerWidgetsBridge.m']) {
     config = IOSConfig.XcodeProjectFile.withBuildSourceFile(config, {
       filePath: name, contents: source(name), overwrite: true,
