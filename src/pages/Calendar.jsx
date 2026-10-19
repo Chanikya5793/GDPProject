@@ -930,7 +930,7 @@ export default function Calendar() {
               ? <CircleCheckBig size={13} className="cal-hover-tip-icon task" />
               : <Bell size={13} className="cal-hover-tip-icon reminder" />}
             <span className="cal-hover-tip-type">{hoverTip.type === 'task' ? 'Task' : 'Reminder'}</span>
-            {hoverTip.priority && <span className={`badge badge-${hoverTip.priority}`} style={{ fontSize: '9px', padding: '1px 5px' }}>{hoverTip.priority}</span>}
+            {hoverTip.priority && <span className={`badge badge-${hoverTip.priority}`} style={{ fontSize: '0.5625rem', padding: '1px 5px' }}>{hoverTip.priority}</span>}
           </div>
           <div className="cal-hover-tip-title">{hoverTip.title}</div>
           {(hoverTip.time || hoverTip.category) && (

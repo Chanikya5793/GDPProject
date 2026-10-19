@@ -134,9 +134,9 @@ function ReminderCard({ reminder, onEdit, onDelete }) {
       <div className="rem-card-body">
         <div className="rem-card-title">{reminder.title}</div>
         <div className="rem-card-meta">
-          {isOverdue && <span style={{ color: 'var(--red)', fontWeight: 600, fontSize: '12px' }}>⚠ Overdue</span>}
-          {isToday && !isOverdue && <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: '12px' }}>📅 Today</span>}
-          {!isOverdue && !isToday && <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Upcoming</span>}
+          {isOverdue && <span style={{ color: 'var(--red)', fontWeight: 600, fontSize: '0.75rem' }}>⚠ Overdue</span>}
+          {isToday && !isOverdue && <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: '0.75rem' }}>📅 Today</span>}
+          {!isOverdue && !isToday && <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Upcoming</span>}
           <RepeatBadge recurrence={reminder.recurrence} />
         </div>
         {reminder.notes && <div className="rem-notes">{reminder.notes}</div>}

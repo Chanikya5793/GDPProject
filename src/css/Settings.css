@@ -32,7 +32,7 @@
 }
 
 .settings-section-header h2 {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text);
   margin: 0;
@@ -55,7 +55,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 800;
   flex-shrink: 0;
   letter-spacing: .02em;
@@ -76,7 +76,7 @@
 }
 
 .settings-saved {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--green);
   animation: settingsFadeIn .3s ease;
@@ -111,13 +111,13 @@
 }
 
 .settings-row-label {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text);
 }
 
 .settings-row-desc {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -147,7 +147,7 @@
   border-radius: 8px;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
@@ -244,7 +244,7 @@
 }
 
 .settings-info-box p {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text);
   line-height: 1.5;
   margin: 0;
@@ -259,7 +259,7 @@
 }
 
 .settings-danger-zone h3 {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--red);
   display: flex;
@@ -291,7 +291,7 @@
 .settings-trash-badge {
   background: var(--red);
   color: #fff;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   min-width: 20px;
   height: 20px;
@@ -319,7 +319,7 @@
 }
 
 .trash-filter-count {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   background: rgba(0,0,0,.08);
   padding: 1px 5px;
@@ -341,7 +341,7 @@
 }
 
 .trash-empty p {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
 }
 
@@ -385,7 +385,7 @@
 }
 
 .trash-item-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text);
   text-decoration: line-through;
@@ -399,12 +399,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
 .trash-type-badge {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   padding: 1px 7px;
   border-radius: 5px;
@@ -476,7 +476,7 @@
   gap: 6px;
   padding: 8px 12px;
   background: var(--off);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
@@ -488,7 +488,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text);
 }
 
@@ -502,7 +502,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   border-bottom: 1px solid var(--off);
 }
 
@@ -536,7 +536,7 @@
 .log-entry-time {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
@@ -583,7 +583,7 @@
   outline: none;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 7px 0;
   width: 100%;
   color: var(--text);
@@ -596,7 +596,7 @@
 
 .log-select {
   -webkit-appearance: none; appearance: none;
-  font: inherit; font-size: 13px; font-weight: 600;
+  font: inherit; font-size: 0.8125rem; font-weight: 600;
   color: var(--text);
   border: 1.5px solid var(--border);
   border-radius: 8px;
@@ -614,12 +614,12 @@
 }
 .log-groupby button {
   border: none; background: var(--white); cursor: pointer;
-  font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+  font: inherit; font-size: 0.75rem; font-weight: 600; color: var(--muted);
   padding: 7px 12px;
 }
 .log-groupby button.active { background: var(--green); color: #fff; }
 
-.log-clear-filters { font-size: 12px; }
+.log-clear-filters { font-size: 0.75rem; }
 
 /* ── Selection bar ── */
 .log-selectbar {
@@ -629,12 +629,12 @@
   border: 1px solid var(--green-mid);
   border-radius: 8px;
 }
-.log-selectall { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+.log-selectall { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 600; color: var(--text); cursor: pointer; }
 .log-selectall input { accent-color: var(--green); width: 15px; height: 15px; }
-.log-selectcount { font-size: 12px; color: var(--muted); }
+.log-selectcount { font-size: 0.75rem; color: var(--muted); }
 .log-delete-selected {
   margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
-  font-size: 13px; padding: 6px 12px;
+  font-size: 0.8125rem; padding: 6px 12px;
 }
 .log-delete-selected:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -680,7 +680,7 @@
 
 .log-reverted-badge {
   display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10px; font-weight: 700; color: #9333EA;
+  font-size: 0.625rem; font-weight: 700; color: #9333EA;
   background: rgba(147, 51, 234, .1); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
 }
 
@@ -692,7 +692,7 @@
   background: var(--off);
   border-radius: 8px;
 }
-.log-diff-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+.log-diff-row { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; flex-wrap: wrap; }
 .log-diff-field { font-weight: 700; color: var(--muted); min-width: 78px; }
 .log-diff-from { color: var(--red); text-decoration: line-through; opacity: .8; }
 .log-diff-arrow { color: var(--muted); }
@@ -705,7 +705,7 @@
   background: var(--text); color: var(--white);
   padding: 11px 16px; border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, .22);
-  font-size: 13px; font-weight: 600; z-index: 1000;
+  font-size: 0.8125rem; font-weight: 600; z-index: 1000;
 }
 .log-toast.error { background: var(--red); }
 
@@ -722,7 +722,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .settings-chats-refresh {
@@ -733,7 +733,7 @@
   border: 0;
   background: transparent;
   color: var(--green);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
@@ -765,10 +765,10 @@
   flex: 1;
 }
 
-.settings-chat-question { font-size: 12px; font-weight: 700; }
+.settings-chat-question { font-size: 0.75rem; font-weight: 700; }
 
 .settings-chat-answer {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -776,7 +776,7 @@
   overflow: hidden;
 }
 
-.settings-chat-meta { font-size: 10px; color: var(--muted); }
+.settings-chat-meta { font-size: 0.625rem; color: var(--muted); }
 
 .settings-chat-delete {
   border: 0;

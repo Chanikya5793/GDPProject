@@ -47,7 +47,7 @@ export default function ConfirmDialog({
           <div style={{ color: 'var(--red)', flexShrink: 0, marginTop: '2px' }}>
             <AlertTriangle size={20} />
           </div>
-          <p style={{ fontSize: '14px', color: 'var(--text)', lineHeight: 1.5, margin: 0 }}>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text)', lineHeight: 1.5, margin: 0 }}>
             {message}
           </p>
         </div>

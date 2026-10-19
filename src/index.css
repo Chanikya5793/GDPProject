@@ -30,7 +30,7 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--off);
   color: var(--text);
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 a { 
@@ -124,7 +124,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .sidebar-logo-text {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--white);
   line-height: 1.3;
@@ -132,7 +132,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .sidebar-logo-text span {
   display: block;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--cyber);
   font-weight: 600;
 }
@@ -143,13 +143,13 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .sidebar-user-name {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--white);
 }
 
 .sidebar-user-email {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: rgba(255,255,255,.4);
   margin-top: 2px;
 }
@@ -160,7 +160,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .sidebar-section-label {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .1em;
@@ -173,7 +173,7 @@ button { font-family: inherit; cursor: pointer; }
   align-items: center;
   gap: 10px;
   padding: 9px 20px;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: rgba(255,255,255,.55);
   transition: all .2s cubic-bezier(.4,0,.2,1);
@@ -235,7 +235,7 @@ button { font-family: inherit; cursor: pointer; }
   background: transparent;
   border: 1px solid rgba(255,255,255,.1);
   color: rgba(255,255,255,.4);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   font-family: inherit;
   transition: all .2s ease;
@@ -269,7 +269,7 @@ button { font-family: inherit; cursor: pointer; }
   background: transparent;
   border: 1px solid rgba(255,255,255,.15);
   color: rgba(255,255,255,.5);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   transition: all .2s ease;
   cursor: pointer;
@@ -330,7 +330,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .migration-banner span {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -363,13 +363,13 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .page-header-left h1 {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   color: var(--text);
 }
 
 .page-header-left p {
-  font-size: 13.5px;
+  font-size: 0.8438rem;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -387,7 +387,7 @@ button { font-family: inherit; cursor: pointer; }
   gap: 6px;
   padding: 9px 18px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   background: var(--green);
   color: var(--white);
@@ -431,7 +431,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .modal-submit-error {
   color: var(--red);
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin-top: 14px;
   padding: 8px 12px;
   border-radius: 8px;
@@ -440,7 +440,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .form-error {
   color: var(--red);
-  font-size: 12px;
+  font-size: 0.75rem;
   margin-top: 5px;
 }
 
@@ -454,7 +454,7 @@ button { font-family: inherit; cursor: pointer; }
   gap: 6px;
   padding: 9px 18px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   background: var(--white);
   color: var(--green);
@@ -474,7 +474,7 @@ button { font-family: inherit; cursor: pointer; }
   gap: 6px;
   padding: 7px 14px;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   background: transparent;
   color: var(--muted);
@@ -495,7 +495,7 @@ button { font-family: inherit; cursor: pointer; }
   gap: 6px;
   padding: 7px 14px;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   background: #FEF2F2;
   color: var(--red);
@@ -537,14 +537,14 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .card-title {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 4px;
 }
 
 .card-sub {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   line-height: 1.5;
 }
@@ -552,7 +552,7 @@ button { font-family: inherit; cursor: pointer; }
 /* PRIORITY BADGES */
 .badge {
   display: inline-block;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 5px;
@@ -595,7 +595,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .form-label {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--text);
 }
@@ -605,7 +605,7 @@ button { font-family: inherit; cursor: pointer; }
   padding: 9px 12px;
   border: 1.5px solid var(--border);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
   background: var(--white);
@@ -642,7 +642,7 @@ button { font-family: inherit; cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
@@ -686,7 +686,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .reminder-entry .form-input {
   flex: 1;
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 7px 10px;
 }
 
@@ -695,7 +695,7 @@ button { font-family: inherit; cursor: pointer; }
   border: 1.5px dashed var(--border);
   border-radius: 6px;
   padding: 7px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
@@ -741,7 +741,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .modal-title {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 800;
   color: var(--text);
 }
@@ -754,7 +754,7 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--off);
   color: var(--muted);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -772,19 +772,19 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .empty-state-icon {
-  font-size: 40px;
+  font-size: 2.5rem;
   margin-bottom: 12px;
 }
 
 .empty-state h3 {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 6px;
 }
 
 .empty-state p {
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 
@@ -798,7 +798,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .info-box p {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--text);
   line-height: 1.6;
   margin: 0; }
@@ -812,7 +812,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .warn-box p {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--text);
   line-height: 1.6;
   margin: 0;
@@ -877,7 +877,7 @@ button { font-family: inherit; cursor: pointer; }
   color: #422006;
   text-align: center;
   padding: 6px 16px;
-  font-size: 12.5px;
+  font-size: 0.7812rem;
   font-weight: 700;
   letter-spacing: .02em;
   position: sticky;
@@ -889,7 +889,7 @@ button { font-family: inherit; cursor: pointer; }
   background: rgba(255,255,255,.35);
   padding: 1px 7px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .08em;
@@ -1265,12 +1265,15 @@ button { font-family: inherit; cursor: pointer; }
    SETTINGS: FONT SIZE
    ═══════════════════════════════════════ */
 
-[data-font-size="large"] body {
-  font-size: 18px;
+/* Every font size is in rem, so scaling the root scales all text (18px / 20px
+   at the browser's default 16px). Percentages keep a user's own browser
+   text-size preference in the mix. */
+:root[data-font-size="large"] {
+  font-size: 112.5%;
 }
 
-[data-font-size="larger"] body {
-  font-size: 20px;
+:root[data-font-size="larger"] {
+  font-size: 125%;
 }
 
 /* ═══════════════════════════════════════
@@ -1365,7 +1368,7 @@ button { font-family: inherit; cursor: pointer; }
   padding: 10px 16px;
   background: var(--white);
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .verify-banner-actions { display: flex; gap: 8px; margin-left: auto; }
-.verify-banner-status { flex-basis: 100%; color: var(--muted, #6b7280); font-size: 12.5px; }
+.verify-banner-status { flex-basis: 100%; color: var(--muted, #6b7280); font-size: 0.7812rem; }
