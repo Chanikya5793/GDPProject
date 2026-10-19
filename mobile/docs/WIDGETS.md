@@ -106,6 +106,15 @@ the one document Firestore rules let a client read (its own only).
   `PLANNER_APNS_TEAM_ID`). Without the key nothing is sent and widgets keep
   their own reload schedule.
 
+  **On since October 19, 2026:** `widgetPush` is true in `app.json`, Push is
+  enabled on `com.nwmissouri.studentplanner.widgets`, and Cloud Run reads the
+  team-scoped APNs key "NW Planner Widget Push" (Key ID `L4NKXZURLN`, Sandbox &
+  Production) from Secret Manager `apns-widget-key/versions/1`. The three
+  `PLANNER_APNS_*` variables were set on the service directly; the GitHub
+  deploy (`gcloud run deploy --source`) keeps a service's existing env, so they
+  survive merges. A new key means a new secret version and an updated
+  `PLANNER_APNS_KEY_RESOURCE`/`PLANNER_APNS_KEY_ID`.
+
 ## Additional iOS widgets (October 10, 2026)
 
 - Overdue: unfinished records with missed deadlines.
