@@ -243,14 +243,14 @@ export default function DashboardScreen() {
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={[styles.quickBtn, { backgroundColor: accent.primary }]}
-          onPress={() => router.push('/(tabs)/tasks')}
+          onPress={() => router.push({ pathname: '/(tabs)/tasks', params: { new: '' } })}
         >
           <Ionicons name="add" size={16} color="#FFF" />
           <Text style={styles.quickBtnText}>Quick Task</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.quickBtn, { backgroundColor: colors.surfaceVariant }]}
-          onPress={() => router.push('/(tabs)/reminders')}
+          onPress={() => router.push({ pathname: '/(tabs)/reminders', params: { new: '' } })}
         >
           <Ionicons name="notifications-outline" size={16} color={colors.text} />
           <Text style={[styles.quickBtnText, { color: colors.text }]}>Quick Reminder</Text>

@@ -26,6 +26,9 @@ import { getCategories } from '@/api/categories';
 import { Category, PlannerRecordId, Task } from '@/types';
 import { parseTimeInput } from '@/utils/timeInput';
 import { recurrenceLabel } from '@/utils/recurrence';
+import { compareByDue, groupTasksByDate } from '@/utils/taskGroups';
+import SheetSaveButton, { SheetFormError } from '@/components/SheetSaveButton';
+import { useSubmit } from '@/hooks/useSubmit';
 
 // ─── priority escalation (inlined so Metro always picks up changes) ──────────
 
@@ -84,9 +87,21 @@ function localDateStr(d = new Date()) {
 
 function formatDate(dateStr: string) {
   if (!dateStr) return '';
-  if (dateStr === localDateStr()) return 'Today';
+  const todayStr = localDateStr();
+  if (dateStr === todayStr) return 'Today';
+  // A date in another year needs it, or last October's overdue work reads as this week's.
+  const year = dateStr.slice(0, 4) === todayStr.slice(0, 4) ? undefined : 'numeric';
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year });
+}
+
+/** Section heading for a day: Today / Tomorrow, otherwise the date. */
+function sectionLabel(dateStr: string) {
+  if (!dateStr) return 'No due date';
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (dateStr === localDateStr(tomorrow)) return 'Tomorrow';
+  return formatDate(dateStr);
 }
 
 function formatTime(t: string) {
@@ -237,7 +252,8 @@ export default function TasksScreen() {
   let filtered = [...tasks];
   if (filter === 'active') filtered = filtered.filter(t => !t.completed);
   else if (filter === 'completed') filtered = filtered.filter(t => t.completed);
-  filtered.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+  filtered.sort(compareByDue);
+  const dateGroups = groupTasksByDate(filtered, todayStr);
 
   const activeCount = tasks.filter(t => !t.completed).length;
   const completedCount = tasks.filter(t => t.completed).length;
@@ -357,7 +373,21 @@ export default function TasksScreen() {
             <Text style={s.emptyText}>Adjust filters or add a new task.</Text>
           </View>
         ) : (
-          filtered.map(task => {
+          dateGroups.map(group => (
+          <View key={group.date || 'no-due-date'} style={s.dateGroup}>
+            <View
+              style={s.dateGroupHeader}
+              accessibilityRole="header"
+              accessibilityLabel={`${sectionLabel(group.date)}${group.overdue ? ', overdue' : ''}`}
+            >
+              {group.overdue ? <Ionicons name="warning" size={14} color={colors.error} /> : null}
+              <Text style={[s.dateGroupLabel, {
+                color: group.overdue ? colors.error : group.isToday ? accent.primary : colors.textSecondary,
+              }]}>
+                {sectionLabel(group.date)}
+              </Text>
+            </View>
+          {group.tasks.map(task => {
             const ep = getEffectivePriority(task);
             const isOverdue = !task.completed && task.dueDate && task.dueDate < todayStr;
             const pc = task.completed
@@ -462,7 +492,9 @@ export default function TasksScreen() {
                 ) : null}
               </TouchableOpacity>
             );
-          })
+          })}
+          </View>
+          ))
         )}
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -669,10 +701,12 @@ function TaskModal({
   appearance: ReturnType<typeof useAppTheme>['appearance'];
   defaultPriority: string;
   defaultCategory: string;
-  onSave: (form: Partial<Task>) => void;
+  onSave: (form: Partial<Task>) => Promise<void>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState('');
+  const [titleError, setTitleError] = useState(false);
+  const { submit, busy, showBusy, error, setError } = useSubmit();
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [approvedForAi, setApprovedForAi] = useState(true);
@@ -691,6 +725,8 @@ function TaskModal({
       setPriority((task?.priority || draft.priority || defaultPriority) as Task['priority']);
       setCategory(task?.category || draft.category || defaultCategory);
       setNotes(task?.notes || draft.notes);
+      setTitleError(false);
+      setError('');
     }
   }, [visible, task]);
 
@@ -698,12 +734,16 @@ function TaskModal({
   const parsedTime = parseTimeInput(dueTime);
 
   const handleSubmit = () => {
-    if (!title.trim() || parsedTime.error) return;
-    onSave({
+    if (parsedTime.error) return;
+    if (!title.trim()) {
+      setTitleError(true);
+      return;
+    }
+    submit(() => onSave({
       title: title.trim(), dueDate, dueTime: parsedTime.value ?? '',
       priority, category, notes, _approvedForAi: approvedForAi,
       keepScheduled,
-    });
+    }));
   };
 
   const ms = modalStyles(colors, accent, appearance);
@@ -716,24 +756,29 @@ function TaskModal({
             <Text style={[ms.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
           </TouchableOpacity>
           <Text style={ms.headerTitle}>{task ? 'Edit Task' : 'New Task'}</Text>
-          <TouchableOpacity onPress={handleSubmit} disabled={Boolean(parsedTime.error)}>
-            <Text style={[
-              ms.saveText,
-              { color: parsedTime.error ? colors.textMuted : accent.primary },
-            ]}>{task ? 'Save' : 'Add'}</Text>
-          </TouchableOpacity>
+          <SheetSaveButton
+            label={task ? 'Save' : 'Add'}
+            onPress={handleSubmit}
+            busy={busy}
+            showBusy={showBusy}
+            disabled={Boolean(parsedTime.error)}
+          />
         </View>
+        <SheetFormError message={error} />
 
         <ScrollView style={ms.form} keyboardShouldPersistTaps="handled">
           <Text style={ms.label}>Title</Text>
           <TextInput
-            style={ms.input}
+            style={[ms.input, titleError ? { borderColor: colors.error } : null]}
             value={title}
-            onChangeText={setTitle}
+            onChangeText={text => { setTitle(text); if (text.trim()) setTitleError(false); }}
             placeholder="What needs to be done?"
             placeholderTextColor={colors.textMuted}
             autoFocus
           />
+          {titleError ? (
+            <Text style={[ms.fieldError, { color: colors.error }]}>Add a title for the task</Text>
+          ) : null}
 
           <Text style={ms.label}>Due Date</Text>
           <TextInput
@@ -851,6 +896,9 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>['colors'], accent: Re
     overloadSub: { fontSize: 12, marginTop: 1 },
     // List
     list: { paddingHorizontal: 20 },
+    dateGroup: { marginBottom: 6 },
+    dateGroupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 8 },
+    dateGroupLabel: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
     card: { borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1 },
     cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
     check: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginTop: 2, flexShrink: 0 },
