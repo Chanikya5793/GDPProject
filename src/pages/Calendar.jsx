@@ -7,6 +7,7 @@ import { getCategories } from '../api/categories'
 import { Check, ChevronDown, Calendar as CalIcon, Columns3, LayoutList, CalendarDays, Grid3X3, Pencil, X as XIcon, Save, CircleCheckBig, Bell, Plus } from 'lucide-react'
 import '../css/Calendar.css'
 import LoadFailed from '../components/LoadFailed'
+import SubmitButton, { SubmitError, useSubmit } from '../components/SubmitButton'
 
 /* ── helpers ── */
 
@@ -129,12 +130,17 @@ function QuickAddModal({ type, date, categories, defaultPriority, defaultCategor
       ? { title: '', dueDate: date, dueTime: '', priority: defaultPriority || 'medium', category: defaultCategory || 'Homework', notes: '' }
       : { title: '', date, time: '', notes: '' }
   )
+  const [titleError, setTitleError] = useState(false)
+  const { submit, busy, error } = useSubmit(onSave)
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!form.title.trim()) return
-    onSave(form)
+    if (!form.title.trim()) {
+      setTitleError(true)
+      return
+    }
+    submit({ ...form, title: form.title.trim() })
   }
 
   return (
@@ -148,8 +154,10 @@ function QuickAddModal({ type, date, categories, defaultPriority, defaultCategor
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="form-group">
               <label className="form-label">Title</label>
-              <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)}
+              <input className={`form-input${titleError ? ' input-error' : ''}`} value={form.title}
+                onChange={e => { set('title', e.target.value); if (e.target.value.trim()) setTitleError(false) }}
                 placeholder={isTask ? 'What needs to be done?' : 'What do you need to remember?'} autoFocus />
+              {titleError && <div className="form-error">* This is a required field</div>}
             </div>
             <div className="form-grid-2">
               <div className="form-group">
@@ -188,9 +196,10 @@ function QuickAddModal({ type, date, categories, defaultPriority, defaultCategor
               <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />
             </div>
           </div>
+          <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">{isTask ? 'Add Task' : 'Add Reminder'}</button>
+            <SubmitButton busy={busy}>{isTask ? 'Add Task' : 'Add Reminder'}</SubmitButton>
           </div>
         </form>
       </div>

@@ -400,6 +400,54 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--green-dk);
 }
 
+/* Submit buttons lock at once but only look busy after a short delay (SubmitButton.jsx) */
+.btn-submit:disabled {
+  cursor: progress;
+}
+
+.btn-submit.is-busy,
+.btn-submit.is-busy:hover {
+  background: var(--muted);
+  opacity: .75;
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin .7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner { animation-duration: 2s; }
+}
+
+.modal-submit-error {
+  color: var(--red);
+  font-size: 13px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.input-error {
+  border-color: var(--red);
+}
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;

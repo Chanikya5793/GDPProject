@@ -5,7 +5,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple, Union
 
 from .ai import (
     AnswerGenerator,
@@ -172,6 +172,36 @@ class IndexingService:
             "entity_type": entity_type.value, "revision": revision,
             "attachment_text": settings.index_attachments,
         })
+
+    def backfill(self, uid: str, entity_types: Iterable[EntityType]) -> int:
+        """Index every approved record of these types, as the privacy settings now stand.
+
+        Records are indexed when they are saved, so a type switched on later
+        would otherwise stay unsearchable until each record was edited again.
+        """
+        settings = self.repository.get_privacy(uid)
+        if not settings.ai_enabled:
+            return 0
+        items = []
+        for entity_type in entity_types:
+            if entity_type not in settings.indexed_entity_types:
+                continue
+            for record in self.repository.list_records(uid, entity_type):
+                if not record.approved_for_ai:
+                    continue
+                text = record_text(record, include_attachments=settings.index_attachments)
+                items.append((record, self.embeddings.embed_document(text, record.content.title)))
+        try:
+            self.vector_store.index_many(uid, items)
+        except Exception as exc:
+            self.audit.record(uid, "failure", "failed", {
+                "stage": "backfill", "error_type": type(exc).__name__,
+            })
+            raise
+        self.audit.record(uid, "indexing", metadata={
+            "backfill": len(items), "attachment_text": settings.index_attachments,
+        })
+        return len(items)
 
     def delete_user_index(self, uid: str) -> int:
         deleted = self.vector_store.delete_user(uid)

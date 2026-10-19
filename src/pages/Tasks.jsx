@@ -12,8 +12,10 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import AskAiButton from '../components/AskAiButton'
 import { getDaysUntilDue, getEffectivePriority } from '../utils/priority'
 import { DEFAULT_DAILY_TASK_LIMIT, detectOverloadedDays, suggestReschedule } from '../utils/schedule'
+import { groupTasksByDate } from '../utils/taskGroups'
 import '../css/Tasks.css'
 import LoadFailed from '../components/LoadFailed'
+import SubmitButton, { SubmitError, useSubmit } from '../components/SubmitButton'
 
 // ─── date helpers ────────────────────────────────────────────────────────────
 
@@ -30,7 +32,9 @@ function formatDate(dateStr) {
   const tomorrowStr = localDateStr(tom)
   if (dateStr === todayStr) return 'Today'
   if (dateStr === tomorrowStr) return 'Tomorrow'
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  // A date in another year needs it, or last October's overdue work reads as this week's.
+  const year = dateStr.slice(0, 4) === todayStr.slice(0, 4) ? undefined : 'numeric'
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year })
 }
 
 function friendlyDate(dateStr) {
@@ -114,6 +118,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
   const [addReminders, setAddReminders] = useState(false)
   const [reminders, setReminders] = useState([{ date: task?.dueDate || today(), time: task?.dueTime || '' }])
   const [titleError, setTitleError] = useState(false)
+  const { submit, busy, error } = useSubmit(onSave)
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -140,7 +145,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
       return
     }
     setTitleError(false)
-    onSave({ ...form, reminders: addReminders ? reminders : [] })
+    submit({ ...form, title: form.title.trim(), reminders: addReminders ? reminders : [] })
   }
 
   return (
@@ -228,9 +233,10 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
               </div>
             )}
           </div>
+          <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">{task ? 'Save Changes' : 'Add Task'}</button>
+            <SubmitButton busy={busy}>{task ? 'Save Changes' : 'Add Task'}</SubmitButton>
           </div>
         </form>
       </div>
@@ -432,6 +438,7 @@ export default function Tasks() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [view, setView] = useState('grid')
   const [statusFilter, setStatusFilter] = useState('active')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -482,18 +489,28 @@ export default function Tasks() {
 
   const handleSave = async (form) => {
     const { reminders: remindersList = [], ...taskData } = form
+    setActionError('')
+    // Save failures throw to the modal, which shows them next to the button.
     if (modalTask) {
       const updated = await updateTask(modalTask.id, taskData)
       setTasks(prev => prev.map(t => t.id === modalTask.id ? updated : t))
-    } else {
-      const created = await createTask({ ...taskData, userId: user.id })
-      setTasks(prev => [...prev, created])
-      for (const rem of remindersList) {
-        await createReminder({ userId: user.id, title: taskData.title, date: rem.date, time: rem.time, notes: '' })
-      }
+      setShowModal(false)
+      setModalTask(null)
+      return
     }
+    const created = await createTask({ ...taskData, userId: user.id })
+    setTasks(prev => [...prev, created])
+    // The task exists now, so the dialog closes before the reminders: a
+    // reminder failing must not leave it open for a retry that adds the task twice.
     setShowModal(false)
     setModalTask(null)
+    for (const rem of remindersList) {
+      try {
+        await createReminder({ userId: user.id, title: taskData.title, date: rem.date, time: rem.time, notes: '' })
+      } catch (error) {
+        setActionError(`The task was added, but a reminder could not be: ${error.message}`)
+      }
+    }
   }
 
   const handleDelete = async () => {
@@ -534,10 +551,24 @@ export default function Tasks() {
   if (priorityFilter !== 'all') filtered = filtered.filter(t => t.priority === priorityFilter)
   if (categoryFilter !== 'all') filtered = filtered.filter(t => t.category === categoryFilter)
   filtered.sort((a, b) => {
-    if (sortBy === 'dueDate') return (a.dueDate || '').localeCompare(b.dueDate || '')
+    if (sortBy === 'dueDate') {
+      // Within a day, timed tasks first in clock order, then the untimed ones.
+      return (a.dueDate || '').localeCompare(b.dueDate || '')
+        || (a.dueTime || '24:00').localeCompare(b.dueTime || '24:00')
+    }
     if (sortBy === 'priority') return (PRIO_ORDER[a.priority] ?? 3) - (PRIO_ORDER[b.priority] ?? 3)
     return a.title.localeCompare(b.title)
   })
+  // Sections per day only when sorting by date; split by day, a priority or
+  // title sort would only order each day rather than the whole list.
+  const dateGroups = sortBy === 'dueDate' ? groupTasksByDate(filtered, todayStr) : null
+  const renderCards = list => (
+    <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
+      {list.map(task => (
+        <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
+      ))}
+    </div>
+  )
 
   const activeCount = tasks.filter(t => !t.completed).length
   const completedCount = tasks.filter(t => t.completed).length
@@ -580,6 +611,7 @@ export default function Tasks() {
       </div>
 
       <div className="page-body">
+        {actionError && <p className="modal-submit-error" role="alert" style={{ marginTop: 0, marginBottom: '14px' }}>{actionError}</p>}
         {/* ── Auto-balance result (dismissible, undoable) ── */}
         {autoBalanced?.moves?.length > 0 && (
           <div className="auto-balance-notice">
@@ -657,13 +689,20 @@ export default function Tasks() {
             <h3>No tasks found</h3>
             <p>Try adjusting your filters or add a new task.</p>
           </div>
-        ) : (
-          <div className={view === 'grid' ? 'task-grid' : 'task-list'}>
-            {filtered.map(task => (
-              <TaskCard key={task.id} task={task} onToggle={handleToggle} onEdit={handleEdit} onDelete={setConfirmDeleteId} dueDateAlerts={settings.dueDateAlerts} />
+        ) : dateGroups ? (
+          <div className="task-date-groups">
+            {dateGroups.map(group => (
+              <section key={group.date || 'no-due-date'} className="task-date-group">
+                <h2 className={`task-date-group-label${group.isToday ? ' today' : ''}${group.overdue ? ' past' : ''}`}>
+                  {group.overdue && <AlertTriangle size={14} aria-hidden="true" />}
+                  {group.date ? formatDate(group.date) : 'No due date'}
+                  {group.overdue && <span className="task-visually-hidden">, overdue</span>}
+                </h2>
+                {renderCards(group.tasks)}
+              </section>
             ))}
           </div>
-        )}
+        ) : renderCards(filtered)}
       </div>
 
       {showModal && (
