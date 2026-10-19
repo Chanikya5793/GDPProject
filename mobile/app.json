@@ -866,7 +866,12 @@
           ]
         }
       ],
-      "./plugins/withNativePlannerWidgets"
+      [
+        "./plugins/withNativePlannerWidgets",
+        {
+          "widgetPush": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
