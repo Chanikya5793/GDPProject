@@ -17,6 +17,8 @@ import { getReminders, createReminder, updateReminder, deleteReminder, toggleRem
 import { PlannerRecordId, Reminder } from '@/types';
 import { parseTimeInput } from '@/utils/timeInput';
 import { recurrenceLabel } from '@/utils/recurrence';
+import SheetSaveButton, { SheetFormError } from '@/components/SheetSaveButton';
+import { useSubmit } from '@/hooks/useSubmit';
 
 function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -261,7 +263,7 @@ function ReminderModal({
   colors: ReturnType<typeof useAppTheme>['colors'];
   accent: ReturnType<typeof useAppTheme>['accent'];
   appearance: ReturnType<typeof useAppTheme>['appearance'];
-  onSave: (form: Partial<Reminder>) => void;
+  onSave: (form: Partial<Reminder>) => Promise<void>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState('');
@@ -269,9 +271,13 @@ function ReminderModal({
   const [time, setTime] = useState('');
   const [approvedForAi, setApprovedForAi] = useState(true);
   const [notes, setNotes] = useState('');
+  const [titleError, setTitleError] = useState(false);
+  const { submit, busy, showBusy, error, setError } = useSubmit();
 
   useEffect(() => {
     if (visible) {
+      setTitleError(false);
+      setError('');
       setTitle(reminder?.title || draft.title);
       setDate(reminder?.date || draft.date || localDateStr());
       setTime(reminder?.time || draft.time);
@@ -290,6 +296,7 @@ function ReminderModal({
     form: { padding: 20 },
     label: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, marginBottom: 6, marginTop: 16 },
     input: { backgroundColor: colors.surfaceVariant, borderRadius: 10, padding: 14, fontSize: 16, color: colors.text, borderWidth: 1, borderColor: colors.border },
+    fieldError: { fontSize: 12, marginTop: 6 },
   });
 
   return (
@@ -300,22 +307,35 @@ function ReminderModal({
             <Text style={{ fontSize: 16, color: colors.textSecondary }}>Cancel</Text>
           </TouchableOpacity>
           <Text style={ms.headerTitle}>{reminder ? 'Edit Reminder' : 'New Reminder'}</Text>
-          <TouchableOpacity
+          <SheetSaveButton
+            label={reminder ? 'Save' : 'Add'}
+            busy={busy}
+            showBusy={showBusy}
             disabled={Boolean(parsedTime.error)}
             onPress={() => {
-              if (!title.trim() || parsedTime.error) return;
-              onSave({ title, date, time: parsedTime.value ?? '', notes, _approvedForAi: approvedForAi });
+              if (parsedTime.error) return;
+              if (!title.trim()) {
+                setTitleError(true);
+                return;
+              }
+              submit(() => onSave({ title: title.trim(), date, time: parsedTime.value ?? '', notes, _approvedForAi: approvedForAi }));
             }}
-          >
-            <Text style={{
-              fontSize: 16, fontWeight: '600',
-              color: parsedTime.error ? colors.textMuted : accent.primary,
-            }}>{reminder ? 'Save' : 'Add'}</Text>
-          </TouchableOpacity>
+          />
         </View>
+        <SheetFormError message={error} />
         <ScrollView style={ms.form} keyboardShouldPersistTaps="handled">
           <Text style={ms.label}>Title</Text>
-          <TextInput style={ms.input} value={title} onChangeText={setTitle} placeholder="What to remember?" placeholderTextColor={colors.textMuted} autoFocus />
+          <TextInput
+            style={[ms.input, titleError ? { borderColor: colors.error } : null]}
+            value={title}
+            onChangeText={text => { setTitle(text); if (text.trim()) setTitleError(false); }}
+            placeholder="What to remember?"
+            placeholderTextColor={colors.textMuted}
+            autoFocus
+          />
+          {titleError ? (
+            <Text style={[ms.fieldError, { color: colors.error }]}>Add a title for the reminder</Text>
+          ) : null}
           <Text style={ms.label}>Date</Text>
           <TextInput style={ms.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted} />
           <Text style={ms.label}>Time</Text>
