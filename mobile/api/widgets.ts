@@ -5,11 +5,16 @@ import type { Reminder, Settings, Task } from '@/types';
 import { buildWidgetSnapshot } from '@/utils/widgetSnapshot';
 import { resolveWidgetCommand, type WidgetCommand } from '@/utils/widgetCommands';
 import { getItem, getStorageUid, onStorageScopeChange } from './storage';
-import { updatePlannerItem } from './plannerClient';
+import { refreshPlannerData, updatePlannerItem } from './plannerClient';
 import { addLog } from './logs';
+import { API_URL, apiRequest } from './client';
+import { auth } from '@/lib/firebase';
 
 interface WidgetBridge {
   pendingCount(): Promise<number>;
+  // iOS only: the extension's own route to the account (PlannerWidgetCloud).
+  setCloudCredential?(json: string): Promise<void>;
+  pushToken?(): Promise<string | null>;
   publish(json: string): Promise<void>;
   claim(owner: string): Promise<string>;
   acknowledge(owner: string, commandId: string, notice: string): Promise<void>;
@@ -49,9 +54,13 @@ export async function syncWidget(): Promise<number> {
   return await enqueue(async () => {
     const current = () => generation === epoch && getStorageUid() === uid;
     if (!current()) return 0;
-    const owner = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `planner-widgets:${uid}`);
+    const owner = await ownerOf(uid);
     if (!current()) return 0;
     const commands: WidgetCommand[] = JSON.parse(await bridge.claim(owner));
+    // Acknowledged only after the snapshot that reflects them is published.
+    // Removing a command first left a window where the widget reloaded with
+    // neither the command nor the completed record, and the tick vanished.
+    const acknowledgements: Array<[string, string]> = [];
     for (const command of commands) {
       if (!current()) return 0;
       const key = command.kind === 'task' ? 'nw_tasks' : 'nw_reminders';
@@ -65,26 +74,25 @@ export async function syncWidget(): Promise<number> {
           // Replays set completed=true, never toggle a completed item back.
           const after = await updatePlannerItem(command.kind, before.id, { completed: true }, {
             userId: uid, revision: command.revision ?? null, date: command.date, time: command.time,
-          });
+          }, Platform.OS === 'ios', command.id);
           if (!current()) return 0;
           await addLog('completed', command.kind, after.title, { entityId: before.id, before, after });
         } catch (error) {
           if (!current()) return 0;
           const status = (error as { status?: number }).status;
           if (status === 409 || status === 404) {
-            await bridge.acknowledge(owner, command.id, 'An item changed. Open planner to review.');
+            acknowledgements.push([command.id, 'An item changed. Open planner to review.']);
           }
           // Other failures retain the durable command for the next refresh.
           continue;
         }
       }
-      if (!current()) return 0;
-      await bridge.acknowledge(owner, command.id,
-        decision.status === 'stale' ? 'An item changed. Open planner to review.' : '');
+      acknowledgements.push([command.id, decision.status === 'stale' ? 'An item changed. Open planner to review.' : '']);
     }
-    const [tasks, reminders, settings] = await Promise.all([
+    const [tasks, reminders, settings, cloud] = await Promise.all([
       getItem<Task[]>('nw_tasks', []), getItem<Reminder[]>('nw_reminders', []),
       getItem<Partial<Settings>>('nw_settings', {}),
+      getItem<{ lastSyncedAt?: number; error?: boolean; conflictCount?: number }>('nw_cloud_sync', {}),
     ]);
     if (!current()) return 0;
     // Titles are on unless the student switched them off themselves. A stored
@@ -96,8 +104,14 @@ export async function syncWidget(): Promise<number> {
     const snapshot = buildWidgetSnapshot({
       tasks: tasks.filter(item => item.userId === uid), reminders: reminders.filter(item => item.userId === uid),
       now: Date.now(), showTitles, owner,
+      cloudUpdatedAt: cloud.lastSyncedAt ?? null, cloudError: cloud.error === true,
+      conflictCount: cloud.conflictCount ?? 0,
     });
     await bridge.publish(JSON.stringify(snapshot));
+    for (const [id, notice] of acknowledgements) {
+      if (!current()) return 0;
+      await bridge.acknowledge(owner, id, notice);
+    }
     return snapshot.items.length;
   }) ?? 0;
 }
@@ -110,5 +124,44 @@ export async function clearWidget(): Promise<void> {
 export function nativeWidgetsAvailable(): boolean { return Boolean(bridge); }
 
 export async function syncPendingWidgetActions(): Promise<void> {
-  if (bridge && await bridge.pendingCount() > 0) await syncWidget();
+  if (bridge && await bridge.pendingCount() > 0) {
+    await syncWidget();
+    // Flushes the outbox the completions were just queued in.
+    if (Platform.OS === 'ios') await refreshPlannerData(true);
+  }
+}
+
+const ownerOf = (uid: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `planner-widgets:${uid}`);
+
+/**
+ * Let the widget extension reach the account itself while this app is
+ * closed: it refreshes from the cloud on each timeline reload and sends a
+ * widget tick straight to the account. Call on sign-in and whenever Firebase
+ * rotates the session; the keychain write is skipped when nothing changed.
+ */
+export async function connectWidgetsToCloud(): Promise<void> {
+  const user = auth?.currentUser;
+  const uid = getStorageUid();
+  if (!bridge?.setCloudCredential || !user || user.uid !== uid || !API_URL) return;
+  const app = (auth as unknown as { app: { options: Record<string, string | undefined> } }).app;
+  const owner = await ownerOf(uid);
+  if (getStorageUid() !== uid || !user.refreshToken) return;
+  await bridge.setCloudCredential(JSON.stringify({
+    uid, owner, refreshToken: user.refreshToken,
+    apiKey: app.options.apiKey ?? '', projectId: app.options.projectId ?? '',
+    database: process.env.EXPO_PUBLIC_FIRESTORE_DATABASE || '(default)',
+    apiUrl: API_URL, bundleId: '',
+  }));
+}
+
+/** Before signing out: stop this phone's widgets being pushed this account's
+ * changes. Best effort and brief; sign-out never waits on the network long. */
+export async function disconnectWidgetPush(): Promise<void> {
+  const token = await bridge?.pushToken?.().catch(() => null);
+  if (!token) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    await apiRequest(`/v1/devices/widget-push/${token}`, { method: 'DELETE', signal: controller.signal });
+  } catch { /* advisory */ } finally { clearTimeout(timer); }
 }

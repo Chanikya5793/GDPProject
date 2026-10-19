@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   records: {} as Record<string, unknown>,
   commands: [] as Record<string, unknown>[],
   publish: vi.fn(), clear: vi.fn(), claim: vi.fn(), acknowledge: vi.fn(), update: vi.fn(), log: vi.fn(),
-  read: vi.fn(),
+  read: vi.fn(), refresh: vi.fn(),
   os: 'ios' as 'ios' | 'android' | 'web',
   androidModule: true,
 }));
@@ -28,7 +28,7 @@ vi.mock('expo-crypto', () => ({ CryptoDigestAlgorithm: { SHA256: 'sha256' },
   digestStringAsync: async (_: string, value: string) => `hash:${value}` }));
 vi.mock('@/api/storage', () => ({ getStorageUid: () => mocks.uid, getItem: mocks.read,
   onStorageScopeChange: (listener: () => void) => { mocks.scopeChanged = listener; return () => {}; } }));
-vi.mock('@/api/plannerClient', () => ({ updatePlannerItem: mocks.update }));
+vi.mock('@/api/plannerClient', () => ({ updatePlannerItem: mocks.update, refreshPlannerData: mocks.refresh }));
 vi.mock('@/api/logs', () => ({ addLog: mocks.log }));
 
 const task = { id: 7, userId: 'u1', title: 'Assignment', dueDate: '2026-09-17', dueTime: '',
@@ -91,7 +91,7 @@ describe('native widget sync lifecycle', () => {
     await api.syncWidget();
     expect(mocks.clear).not.toHaveBeenCalled();
     expect(mocks.update).toHaveBeenCalledWith('task', 7, { completed: true },
-      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' });
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, true, 'action');
     expect(JSON.parse(mocks.publish.mock.calls[0][0]).items[0].done).toBe(true);
     expect(mocks.commands).toHaveLength(0);
   });
@@ -157,7 +157,7 @@ describe('platform bridges', () => {
     const api = await import('@/api/widgets');
     await api.syncPendingWidgetActions();
     expect(mocks.update).toHaveBeenCalledWith('task', 7, { completed: true },
-      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' });
+      { userId: 'u1', revision: 2, date: '2026-09-17', time: '' }, false, 'action');
     expect(mocks.commands).toHaveLength(0);
   });
   it('does nothing on an Android build without the module', async () => {
@@ -171,5 +171,22 @@ describe('platform bridges', () => {
     mocks.os = 'web'; mocks.uid = 'u1';
     const api = await import('@/api/widgets');
     expect(await api.syncWidget()).toBe(0);
+  });
+});
+
+describe('widget completion hand-off', () => {
+  it('publishes the completed record before releasing the widget command', async () => {
+    mocks.uid = 'u1';
+    mocks.commands = [{ ...action }];
+    const order: string[] = [];
+    mocks.publish.mockImplementation(async (json: string) => {
+      order.push(`publish:${JSON.parse(json).items[0].done}`);
+    });
+    mocks.acknowledge.mockImplementation(async () => { order.push('acknowledge'); mocks.commands = []; });
+    const api = await import('@/api/widgets');
+    await api.syncWidget();
+    // Between the two calls the widget sees either the command or the done
+    // record, never neither.
+    expect(order).toEqual(['publish:true', 'acknowledge']);
   });
 });

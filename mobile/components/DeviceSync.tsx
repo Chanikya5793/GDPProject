@@ -3,7 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
-import { onPlannerDataChanged } from '@/api/plannerClient';
+import { onPlannerDataChanged, onPlannerSyncChanged, refreshPlannerData } from '@/api/plannerClient';
 import { getItem, setItem } from '@/api/storage';
 import {
   cancelAllNotifications,
@@ -13,8 +13,11 @@ import {
   syncScheduledNotifications,
   onNotificationTapped,
 } from '@/api/notifications';
-import { clearWidget, syncPendingWidgetActions, syncWidget } from '@/api/widgets';
+import { clearWidget, connectWidgetsToCloud, syncPendingWidgetActions, syncWidget } from '@/api/widgets';
+import { auth } from '@/lib/firebase';
+import { onIdTokenChanged } from 'firebase/auth';
 import { clearLiveActivities } from '@/api/liveActivity';
+import { watchPlannerChanges } from '@/api/liveSync';
 
 const ASKED_KEY = 'nw_notifications_asked';
 
@@ -87,25 +90,43 @@ export default function DeviceSync() {
       }, 400);
     };
 
-    askOnce().catch(() => {}).finally(sync);
+    // Widget publication must not wait for the notification permission dialog.
+    void askOnce().catch(() => {});
+    sync();
+    // The extension's credential follows the session: written now and again
+    // whenever Firebase refreshes or replaces it.
+    const stopWatchingToken = auth ? onIdTokenChanged(auth, () => { void connectWidgetsToCloud().catch(() => {}); }) : () => {};
+    // One pass per launch or return: durable widget taps go into the outbox
+    // first, so the cloud read that follows cannot make them disappear.
+    // Publication itself is driven by the data and cloud events below.
+    const refresh = () => {
+      void syncPendingWidgetActions().then(() => refreshPlannerData()).catch(() => {});
+    };
+    refresh();
     const stopWatchingData = onPlannerDataChanged(sync);
+    const stopWatchingCloud = onPlannerSyncChanged(sync);
+    // Changes from other devices arrive live while this app is in front;
+    // the listener is dropped in the background, where iOS would suspend it.
+    const uid = user.id;
+    let stopLive = AppState.currentState === 'active' ? watchPlannerChanges(uid) : () => {};
+    // Widgets are only tappable while this app is in the background, so
+    // coming back is the moment to look; no polling while active.
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') sync();
+      stopLive();
+      stopLive = () => {};
+      if (state === 'active') { sync(); refresh(); stopLive = watchPlannerChanges(uid); }
     });
-    // The extension has its own process. Check its durable inbox while this
-    // app is active without spending WidgetKit reloads when nothing changed.
-    const actionsTimer = setInterval(() => {
-      if (active && AppState.currentState === 'active') syncPendingWidgetActions().catch(() => {});
-    }, 3000);
 
     return () => {
       active = false;
       if (timer.current) clearTimeout(timer.current);
-      clearInterval(actionsTimer);
+      stopLive();
+      stopWatchingToken();
       stopWatchingData();
+      stopWatchingCloud();
       subscription.remove();
     };
-  }, [user, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
+  }, [user?.id, loading, settings.dueDateAlerts, settings.reminderDefault, settings.widgetShowTitles]);
 
   // A tapped alert should land on the thing it was about, not the home screen.
   // Subscribed once someone is signed in: a cold-start tap is replayed on

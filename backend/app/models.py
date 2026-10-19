@@ -128,6 +128,16 @@ class RecordUpsertRequest(StrictModel):
     approved_for_ai: bool = False
 
 
+class RecordCompleteRequest(StrictModel):
+    """Mark a task or reminder done without resending its content.
+
+    For clients that hold only a minimized copy of the record, such as the
+    iOS widget extension.
+    """
+    expected_revision: Optional[int] = Field(default=None, ge=1)
+    idempotency_key: IdempotencyKey
+
+
 class RecordDeleteRequest(StrictModel):
     expected_revision: int = Field(ge=1)
     idempotency_key: IdempotencyKey

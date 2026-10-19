@@ -1,3 +1,4 @@
+import { refreshPlannerData } from '@/api/plannerClient';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
@@ -81,7 +82,7 @@ export default function CalendarScreen() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); try { await refreshPlannerData(true); await loadData(); } finally { setRefreshing(false); } };
 
   const handleToggle = async (id: PlannerRecordId) => {
     const updated = await toggleTask(id);

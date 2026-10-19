@@ -5,8 +5,8 @@ widget_qa_dir="$(mktemp -d /tmp/nw-widget-qa.XXXXXX)"
 widget_app="$widget_qa_dir/WidgetHarness.app"
 mkdir -p "$widget_app"
 xcrun swiftc -D WIDGET_TESTS -parse-as-library -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-  -target arm64-apple-ios17.0-simulator plugins/widgets/PlannerWidgetStore.swift \
-  plugins/widgets/PlannerWidgetViews.swift tests/widgets/WidgetHarness.swift -o "$widget_app/WidgetHarness"
+  -target arm64-apple-ios17.0-simulator plugins/widgets/PlannerWidgetStore.swift plugins/widgets/PlannerWidgetCloud.swift \
+  plugins/widgets/PlannerWidgetIntents.swift plugins/widgets/PlannerWidgetViews.swift tests/widgets/WidgetHarness.swift -o "$widget_app/WidgetHarness"
 cat > "$widget_app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -24,7 +24,9 @@ codesign --force --sign - "$widget_app"
 xcrun simctl terminate booted com.nwmissouri.widget-validation 2>/dev/null || true
 xcrun simctl install booted "$widget_app"
 widget_data="$(xcrun simctl get_app_container booted com.nwmissouri.widget-validation data)"
-rm -f "$widget_data/Documents/result.txt"
+if [ -f "$widget_data/Documents/result.txt" ]; then
+  mv "$widget_data/Documents/result.txt" "$widget_qa_dir/previous-result.txt"
+fi
 xcrun simctl launch booted com.nwmissouri.widget-validation
 for ((attempt=0; attempt<30; attempt++)); do
   if [ -f "$widget_data/Documents/result.txt" ]; then

@@ -8,7 +8,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useToast } from '@/components/Toast';
 import { nativeWidgetsAvailable, syncWidget } from '@/api/widgets';
 
-/** Kept in step by hand with the `widgets` array under expo-widgets in app.json. */
+/** Kept in step by hand with the iOS widget definitions under expo-widgets in app.json. */
 const WIDGETS: { name: string; where: string; blurb: string }[] = [
   {
     name: 'Due Today',
@@ -30,6 +30,12 @@ const WIDGETS: { name: string; where: string; blurb: string }[] = [
     where: 'Home screen · Lock Screen',
     blurb: 'Progress for items due today, with overdue and unscheduled work on the medium Home Screen widget.',
   },
+  { name: "Overdue", where: "Home screen \u00b7 Lock Screen", blurb: "Missed deadlines with completion and links to review each item." },
+  { name: "High Priority", where: "Home screen \u00b7 Lock Screen", blurb: "All unfinished high priority tasks, including tasks without a date." },
+  { name: "Tomorrow", where: "Home screen \u00b7 Lock Screen", blurb: "Plan tomorrow with its tasks and reminders, without today\u2019s overdue work." },
+  { name: "Unscheduled", where: "Home screen \u00b7 Lock Screen", blurb: "Work waiting for a date. Tap a title to open the record and schedule it." },
+  { name: "Reminders", where: "Home screen \u00b7 Lock Screen", blurb: "A dedicated reminder list with times and completion." },
+  { name: "Quick Capture", where: "Home screen", blurb: "Open a new task, reminder or note from your Home Screen." },
 ];
 
 /** Kept in step by hand with the receivers in modules/planner-widgets-android. */
@@ -118,9 +124,9 @@ export default function WidgetsSiriSection() {
         <Text style={s.sectionTitle}>{android ? 'Widgets & shortcuts' : 'Widgets & Siri'}</Text>
       </View>
       <Text style={s.blurb}>
-        Keep your agenda, deadlines and progress within reach. Widget checkboxes
-        save on this device, even while the app is closed. Open the planner to
-        apply those changes and sync them to your account.
+        Keep your agenda, deadlines and progress within reach. {android
+          ? 'Widget checkboxes save on this device. Open the planner to sync them to your account.'
+          : 'Checking an item opens the planner to sync it to your account. Offline changes stay saved for later. Open the app on your other devices to refresh their widgets.'}
       </Text>
 
       <Text style={s.groupLabel}>Widgets</Text>
@@ -152,8 +158,8 @@ export default function WidgetsSiriSection() {
           <Text style={s.hint}>
             In Edit Widget, choose tasks, reminders, or both; sort by deadline or
             priority; include overdue or unscheduled work; and pick an accent.
-            Tap a title to open that record. Use Undo while a completion is waiting
-            to sync. Dates without a time stay all-day until the day ends.
+            Tap a title to open that record. Checking an item opens the app to sync;
+            offline changes are saved for the next refresh. Dates without a time stay all-day until the day ends.
           </Text>
         </>
       )}

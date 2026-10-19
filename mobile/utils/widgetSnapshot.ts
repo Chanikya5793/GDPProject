@@ -20,6 +20,9 @@ export interface WidgetSnapshot {
   schema: 1;
   owner: string;
   updatedAt: number;
+  cloudUpdatedAt?: number | null;
+  cloudError?: boolean;
+  conflictCount?: number;
   titlesAllowed: boolean;
   items: WidgetItem[];
 }
@@ -30,6 +33,8 @@ export interface WidgetSnapshot {
  */
 export function buildWidgetSnapshot(input: {
   tasks: Task[]; reminders: Reminder[]; now: number; showTitles: boolean; owner: string;
+  cloudUpdatedAt?: number | null; cloudError?: boolean;
+  conflictCount?: number;
 }): WidgetSnapshot {
   const items: WidgetItem[] = [];
   for (const [kind, records] of [['task', input.tasks], ['reminder', input.reminders]] as const) {
@@ -50,5 +55,7 @@ export function buildWidgetSnapshot(input: {
       });
     }
   }
-  return { schema: 1, owner: input.owner, updatedAt: input.now, titlesAllowed: input.showTitles, items };
+  return { schema: 1, owner: input.owner, updatedAt: input.now, titlesAllowed: input.showTitles, items,
+    cloudUpdatedAt: input.cloudUpdatedAt ?? null, cloudError: input.cloudError ?? false,
+    conflictCount: input.conflictCount ?? 0 };
 }

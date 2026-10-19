@@ -2,7 +2,7 @@ import { Note, PlannerRecordId, Tag } from '@/types';
 import { getItem, setItem } from './storage';
 import { addToTrash } from './trash';
 import { addLog } from './logs';
-import { createPlannerItem, deletePlannerItem, listPlannerItems, updatePlannerItem } from './plannerClient';
+import { createPlannerItem, deletePlannerItem, readCachedPlannerItems, updatePlannerItem } from './plannerClient';
 
 const NOTES_KEY = 'nw_notes';
 const TAGS_KEY = 'nw_tags';
@@ -25,7 +25,7 @@ async function saveNotes(notes: Note[]): Promise<void> {
 }
 
 export async function getNotes(userId: string): Promise<Note[]> {
-  return (await listPlannerItems<Note>('note')).filter(n => n.userId === userId);
+  return (await readCachedPlannerItems<Note>('note')).filter(n => n.userId === userId);
 }
 
 export async function createNote(note: Partial<Note> & { userId: string }): Promise<Note> {
@@ -48,7 +48,7 @@ export async function createNote(note: Partial<Note> & { userId: string }): Prom
 }
 
 export async function updateNote(id: PlannerRecordId, updates: Partial<Note>): Promise<Note> {
-  const before = (await listPlannerItems<Note>('note')).find(n => String(n.id) === String(id));
+  const before = (await readCachedPlannerItems<Note>('note')).find(n => String(n.id) === String(id));
   const updated = await updatePlannerItem<Note>('note', id, {
     ...updates, updatedAt: new Date().toISOString(),
   });

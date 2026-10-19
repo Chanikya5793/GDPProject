@@ -5,6 +5,7 @@ import {
 } from 'firebase/auth';
 import { User } from '@/types';
 import { setStorageUid } from '@/api/storage';
+import { disconnectWidgetPush } from '@/api/widgets';
 import { campusEmail } from '@/utils/campusEmail';
 import { auth, firebaseConfigured } from '@/lib/firebase';
 import { DEMO_USER_KEY, makeDemoUser, parseStoredDemoUser } from '@/utils/demoAuth';
@@ -168,6 +169,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // While still signed in: the request needs this account's token.
+    if (auth?.currentUser) await disconnectWidgetPush();
     if (auth) await signOut(auth);
     if (!firebaseConfigured || !auth) await AsyncStorage.removeItem(DEMO_USER_KEY);
     setStorageUid(null);

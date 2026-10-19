@@ -1,3 +1,5 @@
+import { refreshPlannerData } from '@/api/plannerClient';
+import PlannerSyncStatus from '@/components/PlannerSyncStatus';
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
@@ -158,8 +160,7 @@ export default function DashboardScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
+    try { await refreshPlannerData(true); await loadData(); } finally { setRefreshing(false); }
   };
 
   const handleToggle = async (id: PlannerRecordId) => {
@@ -239,6 +240,7 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
+      <PlannerSyncStatus />
       {/* Quick Actions */}
       <View style={styles.quickActions}>
         <TouchableOpacity

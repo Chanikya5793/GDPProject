@@ -11,8 +11,8 @@ for path in sorted(source.glob("*.png")):
     kind, family, mode = path.stem.split("-", 2)
     images.append({"kind": kind, "family": family, "mode": mode,
                    "src": "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()})
-if len(images) != 66:
-    raise SystemExit(f"Expected 66 renders, found {len(images)}")
+if len(images) != 168:
+    raise SystemExit(f"Expected 168 renders, found {len(images)}")
 
 page = """<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -30,13 +30,13 @@ figcaption{display:flex;justify-content:space-between;gap:8px;font-weight:650}fi
 .note{font-size:12px;color:#526b61}a{color:#006147}@media(max-width:650px){header,main{padding:20px}#gallery{grid-template-columns:1fr}h1{font-size:28px}}
 </style>
 <header><div class="eyebrow">NW STUDENT PLANNER / iOS</div><h1>Your planner, within reach.</h1>
-<p>Native agendas, deadline countdowns, a selectable week, and daily progress. Checkboxes save on the device; opening the app applies and syncs those changes.</p>
+<p>Native agendas, deadline countdowns, a selectable week, and daily progress. Completion opens the planner to sync. Offline changes remain saved on the device. No cloud polling or new cloud infrastructure.</p>
 <p class="note">These are renders of the actual SwiftUI views with synthetic records. They are not Home Screen screenshots. Use the controls to inspect the layouts.</p>
 <div class="controls"><label>Appearance and state <select id="mode"><option value="light">Light</option><option value="dark">Dark</option><option value="pending">Completion saved, waiting to sync</option><option value="private">Titles hidden</option><option value="empty">Nothing scheduled</option><option value="large-text">Larger text</option></select></label>
 <label>Size <select id="family"><option value="all">All sizes</option><option value="systemSmall">Small</option><option value="systemMedium">Medium</option><option value="systemLarge" selected>Large</option><option value="systemExtraLarge">Extra large · iPad</option></select></label></div></header>
 <main><div id="gallery" aria-live="polite"></div><p class="note">Full titles require permission in Settings → Widgets &amp; Siri. Existing widgets also retain their own Show titles setting. <a href="WIDGETS.md">Implementation and validation guide</a>.</p></main>
 <script>const images=__IMAGES__;
-const titles={DueToday:'Due Today',UpNext:'Up Next',ThisWeek:'This Week',Progress:'Today’s Progress'};
+const titles={DueToday:'Due Today',UpNext:'Up Next',ThisWeek:'This Week',Progress:'Today’s Progress',Overdue:'Overdue',HighPriority:'High Priority',Tomorrow:'Tomorrow',Unscheduled:'Unscheduled',Reminders:'Reminders',QuickCapture:'Quick Capture'};
 const families={systemSmall:'Small',systemMedium:'Medium',systemLarge:'Large',systemExtraLarge:'Extra large · iPad'};
 function render(){const gallery=document.getElementById('gallery');gallery.replaceChildren();
 for(const item of images.filter(i=>i.mode===document.getElementById('mode').value&&(document.getElementById('family').value==='all'||i.family===document.getElementById('family').value))){

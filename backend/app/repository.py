@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from contextvars import ContextVar
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from threading import RLock
@@ -80,6 +81,31 @@ class ProposalStateError(RuntimeError):
     """The proposal is no longer pending: a reject or another confirm got there first."""
 
 
+# Which device made the current request (the X-Planner-Client header). The
+# change marker records it so a device can ignore the echo of its own write.
+# Advisory only: it is not authenticated and never used for authorization.
+current_client: ContextVar[str] = ContextVar("current_client", default="")
+# Accounts whose records this request changed, filled in by _bump_sync so the
+# API can send widget pushes once the write has committed. A list, not a
+# value: endpoints run in a worker thread, and only a shared object's
+# mutation is visible back in the middleware.
+changed_accounts: ContextVar[Optional[List[str]]] = ContextVar("changed_accounts", default=None)
+MAX_PUSH_TOKENS = 10
+
+
+def _note_change(uid: str) -> None:
+    changed = changed_accounts.get()
+    if changed is not None and uid not in changed:
+        changed.append(uid)
+
+
+def _marker_fields(kinds: List[str], now: datetime) -> Dict[str, object]:
+    return {
+        "version": firestore.Increment(1), "updated_at": now, "by": current_client.get(),
+        **{kind: firestore.Increment(1) for kind in kinds},
+    }
+
+
 class PlannerRepository(Protocol):
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]: ...
     def get_record(self, uid: str, entity_type: EntityType, record_id: str) -> PlannerRecord: ...
@@ -90,6 +116,10 @@ class PlannerRepository(Protocol):
         self, uid: str, entity_type: EntityType, record_id: str, expected_revision: int,
         idempotency_key: str,
     ) -> None: ...
+    def get_sync_marker(self, uid: str) -> Dict[str, object]: ...
+    def list_widget_push_tokens(self, uid: str) -> List[Tuple[str, str]]: ...
+    def save_widget_push_token(self, uid: str, token: str, environment: str) -> None: ...
+    def delete_widget_push_token(self, uid: str, token: str) -> None: ...
     def get_planner_settings(self, uid: str) -> PlannerSettings: ...
     def set_planner_settings(self, uid: str, settings: PlannerSettings) -> PlannerSettings: ...
     def get_privacy(self, uid: str) -> PrivacySettings: ...
@@ -129,7 +159,34 @@ class MemoryPlannerRepository:
         # question, response, created_at, expires_at
         self.chats: Dict[Tuple[str, str], Tuple[str, ChatResponse, datetime, datetime]] = {}
         self.conversations: Dict[Tuple[str, str], ConversationDetail] = {}
+        self.sync_markers: Dict[str, Dict[str, object]] = {}
+        self.push_tokens: Dict[str, Dict[str, str]] = {}
         self._lock = RLock()
+
+    def get_sync_marker(self, uid: str) -> Dict[str, object]:
+        return deepcopy(self.sync_markers.get(uid, {"version": 0}))
+
+    def list_widget_push_tokens(self, uid: str) -> List[Tuple[str, str]]:
+        return sorted(self.push_tokens.get(uid, {}).items())
+
+    def save_widget_push_token(self, uid: str, token: str, environment: str) -> None:
+        with self._lock:
+            tokens = self.push_tokens.setdefault(uid, {})
+            tokens[token] = environment
+            # Bounded, oldest first: a reinstall mints a new token every time.
+            while len(tokens) > MAX_PUSH_TOKENS:
+                tokens.pop(next(iter(tokens)))
+
+    def delete_widget_push_token(self, uid: str, token: str) -> None:
+        with self._lock:
+            self.push_tokens.get(uid, {}).pop(token, None)
+
+    def _bump_sync(self, uid: str, kind: EntityType) -> None:
+        marker = self.sync_markers.setdefault(uid, {"version": 0})
+        marker["version"] = int(marker["version"]) + 1
+        marker[kind.value] = int(marker.get(kind.value, 0)) + 1
+        marker["by"] = current_client.get()
+        _note_change(uid)
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
         return [
@@ -182,6 +239,7 @@ class MemoryPlannerRepository:
             )
             self.records[key] = result
             self.idempotency[idem_key] = (request_hash, result)
+            self._bump_sync(uid, entity_type)
             return deepcopy(result)
 
     def delete_record(
@@ -206,6 +264,7 @@ class MemoryPlannerRepository:
                 raise RevisionConflict("Record changed since it was read")
             del self.records[key]
             self.idempotency[idem_key] = (request_hash, None)
+            self._bump_sync(uid, entity_type)
 
     def get_planner_settings(self, uid: str) -> PlannerSettings:
         return deepcopy(self.planner_settings.get(uid, PlannerSettings()))
@@ -376,6 +435,45 @@ class FirestorePlannerRepository:
         self.client = client
         self.cipher = cipher
 
+    def _sync_ref(self, uid: str):
+        return self.client.collection("users").document(uid).collection("meta").document("sync")
+
+    def _bump_sync(self, txn, uid: str, kind: EntityType, now: datetime) -> None:
+        # Content-free change marker: counters per kind and the writing device.
+        # Clients may read this one document (firestore.rules), listen to it,
+        # and refetch only the kinds that moved through the API. A blind
+        # transform, so it adds no read to the transaction.
+        txn.set(self._sync_ref(uid), _marker_fields([kind.value], now), merge=True)
+        # Transactions may retry; noting the same account twice is harmless.
+        _note_change(uid)
+
+    def _devices(self, uid: str):
+        return self.client.collection("users").document(uid).collection("widget_push")
+
+    def list_widget_push_tokens(self, uid: str) -> List[Tuple[str, str]]:
+        return [
+            (data["token"], data.get("environment", "production"))
+            for data in (snapshot.to_dict() for snapshot in self._devices(uid).stream())
+            if data and data.get("token")
+        ]
+
+    def save_widget_push_token(self, uid: str, token: str, environment: str) -> None:
+        devices = self._devices(uid)
+        devices.document(hashlib.sha256(token.encode()).hexdigest()[:40]).set({
+            "token": token, "environment": environment, "updated_at": datetime.now(timezone.utc),
+        })
+        stale = list(devices.order_by("updated_at", direction=firestore.Query.DESCENDING)
+                     .offset(MAX_PUSH_TOKENS).stream())
+        for snapshot in stale:
+            snapshot.reference.delete()
+
+    def delete_widget_push_token(self, uid: str, token: str) -> None:
+        self._devices(uid).document(hashlib.sha256(token.encode()).hexdigest()[:40]).delete()
+
+    def get_sync_marker(self, uid: str) -> Dict[str, object]:
+        snapshot = self._sync_ref(uid).get()
+        return (snapshot.to_dict() or {"version": 0}) if snapshot.exists else {"version": 0}
+
     def _record_ref(self, uid: str, entity_type: EntityType, record_id: str):
         return self.client.collection("users").document(uid).collection("records").document(
             f"{entity_type.value}:{record_id}"
@@ -464,6 +562,7 @@ class FirestorePlannerRepository:
                 "record_path": ref.path,
                 "created_at": now,
             })
+            self._bump_sync(txn, uid, entity_type, now)
             return None
 
         apply(transaction)
@@ -500,11 +599,13 @@ class FirestorePlannerRepository:
             if current.to_dict()["revision"] != expected_revision:
                 raise RevisionConflict("Record changed since it was read")
             txn.delete(ref)
+            now = datetime.now(timezone.utc)
             txn.create(idem_ref, {
                 "request_hash": request_hash,
                 "operation": "delete",
-                "created_at": datetime.now(timezone.utc),
+                "created_at": now,
             })
+            self._bump_sync(txn, uid, entity_type, now)
 
         apply(transaction)
 
@@ -674,6 +775,7 @@ class FirestorePlannerRepository:
                 "created_at": now,
             })
             txn.update(proposal_ref, {"status": "confirmed", "updated_at": now})
+            self._bump_sync(txn, uid, proposal.entity_type, now)
 
         apply(transaction)
         return self.get_proposal(uid, proposal.proposal_id)

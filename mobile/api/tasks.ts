@@ -1,7 +1,7 @@
 import { PlannerRecordId, Task } from '@/types';
 import { getItem, setItem } from './storage';
 import { addToTrash } from './trash';
-import { createPlannerItem, deletePlannerItem, listPlannerItems, updatePlannerItem } from './plannerClient';
+import { createPlannerItem, deletePlannerItem, readCachedPlannerItems, updatePlannerItem } from './plannerClient';
 import { addLog } from './logs';
 
 const KEY = 'nw_tasks';
@@ -15,7 +15,7 @@ async function save(tasks: Task[]): Promise<void> {
 }
 
 export async function getTasks(userId: string): Promise<Task[]> {
-  return (await listPlannerItems<Task>('task')).filter(t => t.userId === userId);
+  return (await readCachedPlannerItems<Task>('task')).filter(t => t.userId === userId);
 }
 
 export async function createTask(task: Partial<Task> & { userId: string; title: string }): Promise<Task> {
@@ -43,7 +43,7 @@ export async function createTask(task: Partial<Task> & { userId: string; title: 
 
 export async function updateTask(id: PlannerRecordId, updates: Partial<Task>): Promise<Task> {
   // Snapshot first: the log entry is only rollbackable if it carries `before`.
-  const before = (await listPlannerItems<Task>('task')).find(t => String(t.id) === String(id));
+  const before = (await readCachedPlannerItems<Task>('task')).find(t => String(t.id) === String(id));
   const updated = await updatePlannerItem<Task>('task', id, updates);
   await addLog('updated', 'task', updated.title, { entityId: id, before, after: updated });
   return updated;
@@ -76,7 +76,7 @@ export async function restoreTaskDirect(task: Task): Promise<void> {
 export async function batchUpdateTasks(
   updates: Array<{ id: PlannerRecordId; changes: Partial<Task> }>,
 ): Promise<void> {
-  const before = await listPlannerItems<Task>('task');
+  const before = await readCachedPlannerItems<Task>('task');
   const updated = await Promise.all(
     updates.map(update => updatePlannerItem<Task>('task', update.id, update.changes)),
   );

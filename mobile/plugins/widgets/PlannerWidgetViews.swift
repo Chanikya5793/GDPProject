@@ -2,60 +2,6 @@ import SwiftUI
 import WidgetKit
 import AppIntents
 
-@available(iOS 17.0, *)
-struct CompletePlannerWidgetIntent: AppIntent {
-  static var title: LocalizedStringResource = "Complete planner item"
-  static var isDiscoverable = false
-  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
-  @Parameter(title: "Account") var owner: String
-  @Parameter(title: "Item") var key: String
-  @Parameter(title: "Revision") var revision: Int
-  @Parameter(title: "Date") var date: String
-  @Parameter(title: "Time") var time: String
-  init() {}
-  init(owner: String, item: PlannerWidgetItem) {
-    self.owner = owner; self.key = item.key; self.revision = item.revision ?? -1
-    self.date = item.date; self.time = item.time
-  }
-  func perform() async throws -> some IntentResult {
-    try PlannerWidgetStore.complete(owner: owner, key: key, revision: revision < 0 ? nil : revision, date: date, time: time)
-    WidgetCenter.shared.reloadAllTimelines()
-    return .result()
-  }
-}
-
-@available(iOS 17.0, *)
-struct UndoPlannerWidgetIntent: AppIntent {
-  static var title: LocalizedStringResource = "Undo widget completion"
-  static var isDiscoverable = false
-  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
-  @Parameter(title: "Account") var owner: String
-  @Parameter(title: "Change") var commandId: String
-  init() {}
-  init(owner: String, commandId: String) { self.owner = owner; self.commandId = commandId }
-  func perform() async throws -> some IntentResult {
-    try PlannerWidgetStore.undo(owner: owner, commandId: commandId)
-    WidgetCenter.shared.reloadAllTimelines()
-    return .result()
-  }
-}
-
-@available(iOS 17.0, *)
-struct SelectPlannerWidgetIntent: AppIntent {
-  static var title: LocalizedStringResource = "Browse planner widget"
-  static var isDiscoverable = false
-  @Parameter(title: "Account") var owner: String
-  @Parameter(title: "Widget") var key: String
-  @Parameter(title: "Selection") var value: String
-  init() {}
-  init(owner: String, key: String, value: String) { self.owner = owner; self.key = key; self.value = value }
-  func perform() async throws -> some IntentResult {
-    try PlannerWidgetStore.select(owner: owner, key: key, value: value)
-    WidgetCenter.shared.reloadAllTimelines()
-    return .result()
-  }
-}
-
 struct PlannerWidgetOptions {
   var include = "all"
   var horizon = "today"
@@ -115,13 +61,7 @@ enum PlannerWidgetTimeline {
     return PlannerWidgetState(snapshot: PlannerWidgetSnapshot(owner: "preview", updatedAt: now.timeIntervalSince1970 * 1000, titlesAllowed: true, items: items))
   }
 
-  static func dateKey(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: date)
-  }
+  static func dateKey(_ date: Date) -> String { PlannerWidgetItem.dateKey(date) }
 }
 
 struct PlannerProgressProvider: TimelineProvider {
@@ -132,7 +72,74 @@ struct PlannerProgressProvider: TimelineProvider {
     completion(PlannerWidgetTimeline.entries(options: PlannerWidgetOptions(), preview: context.isPreview)[0])
   }
   func getTimeline(in context: Context, completion: @escaping (Timeline<PlannerEntry>) -> Void) {
-    completion(Timeline(entries: PlannerWidgetTimeline.entries(options: PlannerWidgetOptions()), policy: .atEnd))
+    Task {
+      await PlannerWidgetCloud.refresh()
+      completion(Timeline(entries: PlannerWidgetTimeline.entries(options: PlannerWidgetOptions()), policy: .atEnd))
+    }
+  }
+}
+
+enum PlannerWidgetContent {
+  static func filtered(items: [PlannerWidgetItem], options: PlannerWidgetOptions, kind: String) -> [PlannerWidgetItem] {
+    items.filter {
+      (kind != "Reminders" || $0.kind == "reminder") &&
+      (kind != "HighPriority" || ($0.kind == "task" && $0.priority == "high")) &&
+      (options.include == "all" || $0.kind == (options.include == "tasks" ? "task" : "reminder")) &&
+      (!options.onlyHigh || $0.priority == "high")
+    }
+  }
+  static func queue(items: [PlannerWidgetItem], options: PlannerWidgetOptions, kind: String, at now: Date) -> [PlannerWidgetItem] {
+    let end = Calendar.current.date(byAdding: .day, value: options.days, to: Calendar.current.startOfDay(for: now))!
+    return filtered(items: items, options: options, kind: kind).filter { item in
+      guard !item.done else { return false }
+      if kind == "Overdue" { return item.isOverdue(at: now) }
+      if kind == "Unscheduled" { return item.date.isEmpty }
+      if kind == "HighPriority" { return true }
+      if kind == "Tomorrow" {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        return item.date == PlannerWidgetTimeline.dateKey(tomorrow)
+      }
+      if item.date.isEmpty { return options.includeUndated }
+      guard let at = item.scheduled() else { return false }
+      if kind == "UpNext" || kind == "Reminders" { return options.includeOverdue || !item.isOverdue(at: now) }
+      return at < end && (options.includeOverdue || !item.isOverdue(at: now))
+    }
+  }
+}
+
+/// Everything a widget shows, derived once per entry. These were computed
+/// properties read many times per render, each re-filtering and re-sorting
+/// every record, which is what made reloads after a tap feel heavy.
+struct PlannerWidgetModel {
+  let today: String
+  let items: [PlannerWidgetItem]
+  let filtered: [PlannerWidgetItem]
+  let todayItems: [PlannerWidgetItem]
+  let finished: Int
+  let overdue: Int
+  let queue: [PlannerWidgetItem]
+
+  init(entry: PlannerEntry, kind: String) {
+    today = PlannerWidgetTimeline.dateKey(entry.date)
+    items = entry.state.items
+    filtered = PlannerWidgetContent.filtered(items: items, options: entry.options, kind: kind)
+    let today = today
+    todayItems = filtered.filter { $0.date == today }
+    finished = todayItems.filter(\.done).count
+    overdue = filtered.filter { $0.isOverdue(at: entry.date) }.count
+    queue = Self.sorted(PlannerWidgetContent.queue(items: items, options: entry.options, kind: kind, at: entry.date), by: entry.options.sort)
+  }
+
+  static func sorted(_ items: [PlannerWidgetItem], by sort: String) -> [PlannerWidgetItem] {
+    let rank = ["high": 0, "medium": 1, "low": 2]
+    return items.map { ($0, $0.scheduled() ?? .distantFuture) }.sorted { lhs, rhs in
+      if lhs.0.done != rhs.0.done { return !lhs.0.done }
+      if sort == "priority" {
+        let left = rank[lhs.0.priority, default: 3], right = rank[rhs.0.priority, default: 3]
+        if left != right { return left < right }
+      }
+      return lhs.1 == rhs.1 ? lhs.0.key < rhs.0.key : lhs.1 < rhs.1
+    }.map(\.0)
   }
 }
 
@@ -144,8 +151,18 @@ struct PlannerWidgetView: View {
   @ScaledMetric(relativeTo: .caption2) private var rowDetailSize: CGFloat = 10
   let entry: PlannerEntry
   let kind: String
+  private let model: PlannerWidgetModel
 #if WIDGET_TESTS
-  var familyOverride: WidgetFamily? = nil
+  var familyOverride: WidgetFamily?
+  init(entry: PlannerEntry, kind: String, familyOverride: WidgetFamily? = nil) {
+    self.entry = entry; self.kind = kind; self.familyOverride = familyOverride
+    model = PlannerWidgetModel(entry: entry, kind: kind)
+  }
+#else
+  init(entry: PlannerEntry, kind: String) {
+    self.entry = entry; self.kind = kind
+    model = PlannerWidgetModel(entry: entry, kind: kind)
+  }
 #endif
   private var family: WidgetFamily {
 #if WIDGET_TESTS
@@ -156,7 +173,7 @@ struct PlannerWidgetView: View {
   }
 
   private var options: PlannerWidgetOptions { entry.options }
-  private var today: String { PlannerWidgetTimeline.dateKey(entry.date) }
+  private var today: String { model.today }
   private var owner: String { entry.state.snapshot?.owner ?? "" }
   private var isLarge: Bool { family == .systemLarge || family == .systemExtraLarge }
   private var isSmall: Bool { family == .systemSmall }
@@ -171,44 +188,20 @@ struct PlannerWidgetView: View {
   }
   private var danger: Color { colorScheme == .dark ? Color(red: 1, green: 0.57, blue: 0.48) : Color(red: 0.72, green: 0.19, blue: 0.12) }
   private var paper: Color { colorScheme == .dark ? Color(red: 0.07, green: 0.105, blue: 0.12) : Color(red: 0.97, green: 0.98, blue: 0.96) }
-  private var filtered: [PlannerWidgetItem] {
-    entry.state.items.filter {
-      (options.include == "all" || $0.kind == (options.include == "tasks" ? "task" : "reminder")) &&
-      (!options.onlyHigh || $0.priority == "high")
-    }
-  }
-  private var todayItems: [PlannerWidgetItem] { filtered.filter { $0.date == today } }
-  private var finished: Int { todayItems.filter(\.done).count }
-  private var overdue: Int { filtered.filter { $0.isOverdue(at: entry.date) }.count }
-  private var queue: [PlannerWidgetItem] {
-    let end = Calendar.current.date(byAdding: .day, value: options.days, to: Calendar.current.startOfDay(for: entry.date))!
-    return sorted(filtered.filter { item in
-      guard !item.done else { return false }
-      if item.date.isEmpty { return options.includeUndated }
-      guard let at = item.scheduled() else { return false }
-      if kind == "UpNext" { return options.includeOverdue || !item.isOverdue(at: entry.date) }
-      return at < end && (options.includeOverdue || !item.isOverdue(at: entry.date))
-    })
-  }
+  private var filtered: [PlannerWidgetItem] { model.filtered }
+  private var todayItems: [PlannerWidgetItem] { model.todayItems }
+  private var finished: Int { model.finished }
+  private var overdue: Int { model.overdue }
+  private var queue: [PlannerWidgetItem] { model.queue }
   private var stateKey: String { "\(kind):\(options.key):\(today)" }
   private var stale: Bool {
     guard let snapshot = entry.state.snapshot else { return false }
-    return entry.date.timeIntervalSince1970 - snapshot.updatedAt / 1000 > 86400
+    guard let cloud = snapshot.cloudUpdatedAt else { return true }
+    return entry.date.timeIntervalSince1970 - cloud / 1000 > 3600
   }
 
   private func sorted(_ items: [PlannerWidgetItem]) -> [PlannerWidgetItem] {
-    items.sorted { lhs, rhs in
-      if lhs.done != rhs.done { return !lhs.done }
-      if options.sort == "priority" {
-        let rank = ["high": 0, "medium": 1, "low": 2, "": 3]
-        if rank[lhs.priority, default: 3] != rank[rhs.priority, default: 3] {
-          return rank[lhs.priority, default: 3] < rank[rhs.priority, default: 3]
-        }
-      }
-      let left = lhs.scheduled() ?? Date.distantFuture
-      let right = rhs.scheduled() ?? Date.distantFuture
-      return left == right ? lhs.key < rhs.key : left < right
-    }
+    PlannerWidgetModel.sorted(items, by: options.sort)
   }
 
   private func label(_ item: PlannerWidgetItem) -> String {
@@ -275,6 +268,7 @@ struct PlannerWidgetView: View {
         Link("Open planner", destination: route("tasks")).font(.caption.bold()).foregroundStyle(accent)
       } else if kind == "ThisWeek" { week }
       else if kind == "Progress" { progress }
+      else if kind == "QuickCapture" { quickCapture }
       else if kind == "UpNext" { upNext }
       else { agenda }
     }
@@ -308,6 +302,7 @@ struct PlannerWidgetView: View {
     VStack(alignment: .leading, spacing: 0) {
       Text(value, format: .number).font(.system(size: isSmall ? 23 : 27, weight: .bold, design: .rounded))
         .monospacedDigit().foregroundStyle(color)
+        .contentTransition(.numericText()).modifier(PlannerInvalidatable())
       Text(title).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
     }
     .accessibilityElement(children: .combine)
@@ -315,21 +310,26 @@ struct PlannerWidgetView: View {
 
   private var agenda: some View {
     Group {
-      header(options.heading, symbol: "checklist")
-      if isSmall {
+      header(agendaHeading, symbol: agendaSymbol)
+      if isSmall && !typeSize.isAccessibilitySize {
         HStack(spacing: 4) {
           Text("\(queue.count)").font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(accent)
-          Text(options.horizon == "today" ? "to do" : "in view").font(.caption).foregroundStyle(.secondary)
+            .contentTransition(.numericText()).modifier(PlannerInvalidatable())
+          Text("to do").font(.caption).foregroundStyle(.secondary)
           Spacer(minLength: 0)
-          if overdue > 0 { Text("\(overdue) late").font(.system(size: 10, weight: .semibold)).foregroundStyle(danger) }
+          if kind == "DueToday" && overdue > 0 { Text("\(overdue) late").font(.system(size: 10, weight: .semibold)).foregroundStyle(danger) }
         }
-      } else if isLarge { summary; Divider() }
-      if queue.isEmpty { empty("Nothing due in this view", detail: "Add a task or choose a longer look ahead.") }
+      } else if isLarge {
+        if kind == "DueToday" { summary }
+        else { Text("\(queue.count) remaining").font(.title2.bold()).foregroundStyle(accent) }
+        Divider()
+      }
+      if queue.isEmpty { empty("Nothing in this view", detail: emptyDetail) }
       else {
         let capacity = typeSize.isAccessibilitySize ? (isLarge ? 2 : 1) : isLarge ? (options.compact ? 6 : 5) : isSmall ? 1 : 2
         pagedRows(queue, capacity: capacity)
       }
-      if isLarge && !typeSize.isAccessibilitySize && queue.count <= 3 && family != .systemExtraLarge {
+      if kind == "DueToday" && isLarge && !typeSize.isAccessibilitySize && queue.count <= 3 && family != .systemExtraLarge {
         let later = sorted(filtered.filter { item in
           !item.done && item.date > today && !queue.contains(where: { $0.key == item.key })
         })
@@ -340,15 +340,82 @@ struct PlannerWidgetView: View {
         }
       }
       Spacer(minLength: 0)
-      footer
+      if !isSmall || !typeSize.isAccessibilitySize || !entry.state.commands.isEmpty ||
+          entry.state.snapshot?.cloudError == true || (entry.state.snapshot?.conflictCount ?? 0) > 0 { footer }
     }
+  }
+
+  private var agendaHeading: String {
+    switch kind {
+    case "Overdue": return "Overdue"
+    case "HighPriority": return "High priority"
+    case "Tomorrow": return "Tomorrow"
+    case "Unscheduled": return "Unscheduled"
+    case "Reminders": return "Reminders"
+    default: return options.heading
+    }
+  }
+  private var agendaSymbol: String {
+    switch kind {
+    case "Overdue": return "exclamationmark.circle"
+    case "HighPriority": return "flag.fill"
+    case "Tomorrow": return "sunrise"
+    case "Unscheduled": return "tray"
+    case "Reminders": return "bell"
+    default: return "checklist"
+    }
+  }
+  private var emptyDetail: String {
+    switch kind {
+    case "Overdue": return "No missed deadlines. Keep it going."
+    case "HighPriority": return "No high priority tasks waiting."
+    case "Tomorrow": return "Tomorrow is clear. Plan ahead."
+    case "Unscheduled": return "Your work has dates."
+    case "Reminders": return "No reminders waiting."
+    default: return "Add a task or choose a longer look ahead."
+    }
+  }
+
+  private var quickCapture: some View {
+    Group {
+      header("Quick capture", symbol: "plus.circle.fill")
+      if !isSmall && !typeSize.isAccessibilitySize {
+        Text("Get it out of your head.").font(.system(.headline, design: .rounded)).lineLimit(1)
+      }
+      if isSmall {
+        VStack(spacing: 6) {
+          captureLink("Task", symbol: "checkmark.circle", screen: "tasks")
+          captureLink("Reminder", symbol: "bell", screen: "reminders")
+        }
+      } else {
+        HStack(spacing: 8) {
+          captureLink("Task", symbol: "checkmark.circle", screen: "tasks")
+          captureLink("Reminder", symbol: "bell", screen: "reminders")
+          captureLink("Note", symbol: "note.text", screen: "notes")
+        }
+      }
+      Spacer(minLength: 0)
+      if entry.state.snapshot?.cloudError == true || !entry.state.commands.isEmpty ||
+          (entry.state.snapshot?.conflictCount ?? 0) > 0 { footer }
+      else if !isSmall { Text("Opens the planner").font(.caption2).foregroundStyle(.secondary) }
+    }
+  }
+  private func captureLink(_ title: String, symbol: String, screen: String) -> some View {
+    Link(destination: route(screen, ["new": ""])) {
+      Label(title, systemImage: symbol).font(.system(size: 12, weight: .semibold))
+        .lineLimit(1).minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, minHeight: isSmall ? 36 : 44)
+        .background(accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+    }.foregroundStyle(accent).accessibilityLabel("Add \(title.lowercased())")
   }
 
   private func pagedRows(_ items: [PlannerWidgetItem], capacity: Int) -> some View {
     let pages = max(1, Int(ceil(Double(items.count) / Double(capacity))))
     let page = max(0, Int(entry.state.selections[stateKey] ?? "0") ?? 0) % pages
     return VStack(alignment: .leading, spacing: options.compact ? 3 : 5) {
-      ForEach(Array(items.dropFirst(page * capacity).prefix(capacity)), id: \.key) { row($0) }
+      ForEach(Array(items.dropFirst(page * capacity).prefix(capacity)), id: \.key) {
+        row($0).transition(.asymmetric(insertion: .push(from: .bottom), removal: .opacity))
+      }
       if pages > 1 && !isSmall {
         HStack {
           Text("\(page * capacity + 1)–\(min((page + 1) * capacity, items.count)) of \(items.count)")
@@ -364,8 +431,20 @@ struct PlannerWidgetView: View {
     }
   }
 
-  private func row(_ item: PlannerWidgetItem) -> some View {
-    HStack(spacing: 7) {
+  @ViewBuilder private func row(_ item: PlannerWidgetItem) -> some View {
+    if isSmall && typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: 2) {
+        Link(destination: itemURL(item)) {
+          Text(label(item)).font(.system(size: rowTitleSize, weight: .semibold))
+            .lineLimit(2).minimumScaleFactor(0.85).privacySensitive(titles)
+        }.foregroundStyle(.primary).accessibilityHint(dueLabel(item))
+        HStack(spacing: 4) {
+          completeButton(item, size: 44)
+          Text(item.time.isEmpty ? "All day" : item.scheduled()?.formatted(date: .omitted, time: .shortened) ?? "No date")
+            .font(.caption).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(.secondary)
+        }
+      }
+    } else { HStack(spacing: 7) {
       completeButton(item, size: isSmall ? 28 : 32)
       Link(destination: itemURL(item)) {
         VStack(alignment: .leading, spacing: 2) {
@@ -382,18 +461,18 @@ struct PlannerWidgetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
       }.buttonStyle(.plain).foregroundStyle(.primary)
-    }
+    } }
   }
 
   @ViewBuilder private func completeButton(_ item: PlannerWidgetItem, size: CGFloat) -> some View {
     if #available(iOS 17.0, *), !item.done, !entry.preview {
-      Button(intent: CompletePlannerWidgetIntent(owner: owner, item: item)) {
-        Image(systemName: "circle").font(.system(size: 22, weight: .light))
-          .frame(width: size, height: size).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain).foregroundStyle(accent)
-      .accessibilityLabel("Complete \(label(item))")
-      .accessibilityHint("Saves on this device. Syncs when you open the planner.")
+      // A Toggle, not a Button: WidgetKit flips a toggle's state the moment it
+      // is tapped and only then runs the intent, so the tick never waits on
+      // the timeline reload.
+      Toggle(isOn: false, intent: CompletePlannerWidgetIntent(owner: owner, item: item)) { EmptyView() }
+        .toggleStyle(PlannerCheckStyle(size: size, accent: accent))
+        .accessibilityLabel("Complete \(label(item))")
+        .accessibilityHint("Marks this item complete and syncs it to your account.")
     } else {
       Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
         .font(.system(size: 22, weight: .light)).foregroundStyle(accent)
@@ -525,6 +604,7 @@ struct PlannerWidgetView: View {
             .stroke(accent, style: StrokeStyle(lineWidth: 8, lineCap: .round)).rotationEffect(.degrees(-90))
           VStack(spacing: 0) {
             Text("\(finished)/\(todayItems.count)").font(.system(size: 21, weight: .bold, design: .rounded)).monospacedDigit()
+              .contentTransition(.numericText()).modifier(PlannerInvalidatable())
             Text("done").font(.system(size: 10)).foregroundStyle(.secondary)
           }
         }.frame(width: isSmall ? 78 : 88, height: isSmall ? 78 : 88)
@@ -555,7 +635,8 @@ struct PlannerWidgetView: View {
     VStack(alignment: .leading, spacing: 4) {
       if !entry.state.commands.isEmpty {
         HStack(spacing: 5) {
-          Link("\(entry.state.commands.count) saved · Open to sync", destination: route("tasks"))
+          Link(entry.state.commands.contains(where: { $0.sending(at: entry.date) })
+               ? "Syncing…" : "\(entry.state.commands.count) saved · Open to sync", destination: route("tasks"))
             .lineLimit(1).minimumScaleFactor(0.8)
           Spacer(minLength: 0)
           if #available(iOS 17.0, *), let last = entry.state.commands.last(where: { !$0.claimed }) {
@@ -566,11 +647,15 @@ struct PlannerWidgetView: View {
         }.font(.system(size: 10)).foregroundStyle(accent)
       } else if let notice = entry.state.notice {
         Link(notice, destination: route("tasks")).font(.system(size: 10)).lineLimit(2).foregroundStyle(danger)
-      } else if entry.state.items.contains(where: { $0.pending }) {
+      } else if model.items.contains(where: { $0.pending }) {
         Link("Saved on device · Open to sync", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(accent)
+      } else if (entry.state.snapshot?.conflictCount ?? 0) > 0 {
+        Link("Changes need review · Open Settings", destination: route("settings")).font(.system(size: 10)).foregroundStyle(danger)
+      } else if entry.state.snapshot?.cloudError == true {
+        Link("Cloud unavailable · Open to retry", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
       } else if stale {
         Link("Open planner to refresh", destination: route("tasks")).font(.system(size: 10)).foregroundStyle(.secondary)
-      } else if !(entry.state.snapshot?.titlesAllowed ?? true) && !entry.state.items.isEmpty {
+      } else if !(entry.state.snapshot?.titlesAllowed ?? true) && !model.items.isEmpty {
         // The app's switch is off, so every row reads "Task" or "Reminder".
         // Name the switch rather than leave the widget looking broken.
         Link(isSmall ? "Titles hidden · tap to show" : "Titles hidden · turn on in Settings › Widgets & Siri",
@@ -582,7 +667,7 @@ struct PlannerWidgetView: View {
           if !isSmall {
             Link(destination: route("reminders", ["new": ""])) { Label("Reminder", systemImage: "bell.badge") }
             Spacer(minLength: 0)
-            if let updated = entry.state.snapshot?.updatedAt {
+            if let updated = entry.state.snapshot?.cloudUpdatedAt {
               Text(Date(timeIntervalSince1970: updated / 1000), style: .time).foregroundStyle(.secondary)
                 .accessibilityLabel("Last synced at \(Date(timeIntervalSince1970: updated / 1000).formatted(date: .omitted, time: .shortened))")
             }
@@ -598,6 +683,7 @@ struct PlannerWidgetView: View {
       else if kind == "UpNext", let lead = queue.first {
         Text("\(lead.isOverdue(at: entry.date) ? "Overdue: " : "")\(label(lead)) · \(dueLabel(lead))").privacySensitive(titles)
       } else if kind == "Progress" { Text("\(finished)/\(todayItems.count) done · \(overdue) overdue") }
+      else if kind != "DueToday" { Text("\(queue.count) · \(agendaHeading)") }
       else { Text("\(todayItems.filter { !$0.done }.count) left today · \(overdue) overdue") }
     }
   }
@@ -621,12 +707,36 @@ struct PlannerWidgetView: View {
         Text(label(lead)).font(.headline).lineLimit(1).privacySensitive(titles)
         Text(dueLabel(lead)).font(.caption)
         Text(lead.isOverdue(at: entry.date) ? "Overdue" : "\(queue.count) remaining").font(.caption2)
+      } else if kind != "DueToday" && kind != "Progress" {
+        Text(agendaHeading).font(.headline)
+        Text(queue.first.map(label) ?? "Nothing waiting").font(.caption).lineLimit(1).privacySensitive(titles)
+        Text("\(queue.count) items").font(.caption2)
       } else {
         Text(kind == "Progress" ? "\(finished) of \(todayItems.count) done" : "\(todayItems.filter { !$0.done }.count) left today").font(.headline)
         ProgressView(value: Double(finished), total: Double(max(1, todayItems.count)))
         Text("\(overdue) overdue\(entry.state.commands.isEmpty ? "" : " · Changes saved")").font(.caption2)
       }
     }
+  }
+}
+
+@available(iOS 17.0, *)
+private struct PlannerCheckStyle: ToggleStyle {
+  let size: CGFloat
+  let accent: Color
+  func makeBody(configuration: Configuration) -> some View {
+    Image(systemName: configuration.isOn ? "checkmark.circle.fill" : "circle")
+      .font(.system(size: 22, weight: .light))
+      .contentTransition(.symbolEffect(.replace))
+      .foregroundStyle(accent)
+      .frame(width: size, height: size).contentShape(Rectangle())
+  }
+}
+
+/// Counts and rows read as provisional while a tap's reload is in flight.
+private struct PlannerInvalidatable: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 17.0, *) { content.invalidatableContent() } else { content }
   }
 }
 

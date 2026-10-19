@@ -2,7 +2,7 @@ import { auth, firebaseConfigured } from '@/lib/firebase';
 import { EventStreamError, readEventStream } from '@/utils/eventStream';
 import { SseEvent } from '@/utils/sse';
 
-const API_URL = (process.env.EXPO_PUBLIC_PLANNER_API_URL || '').replace(/\/$/, '');
+export const API_URL = (process.env.EXPO_PUBLIC_PLANNER_API_URL || '').replace(/\/$/, '');
 
 /** True when a real backend is reachable; the offline demo build has none. */
 export function apiConfigured(): boolean {
@@ -47,58 +47,55 @@ export function describeDetail(detail: unknown, status: number): string {
   return `Planner request failed (${status})`;
 }
 
-/**
- * Ask the API for nothing in particular, early, so it is awake when needed.
- *
- * The service scales to zero to avoid paying for an idle instance, which puts
- * a container start in front of whoever asks first. Calling this as the app
- * mounts, and again when it returns from the background, moves that start
- * into the seconds spent on the splash screen rather than into the first
- * real request.
- *
- * Deliberately silent and unawaited: it is an optimisation, and a warm-up
- * that failed must never surface as an error or block anything.
- */
-export function warmUpApi(): void {
-  if (!apiConfigured()) return;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  fetch(`${API_URL}/v1/signup-policy`, { method: 'GET', signal: controller.signal })
-    .catch(() => {})
-    .finally(() => clearTimeout(timer));
-}
+/** Names this running app in the backend's change marker, so the live
+ * listener can skip the echo of our own writes. Per launch is enough. */
+export const CLIENT_ID = `app-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!firebaseConfigured || !API_URL) throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured');
   if (!auth?.currentUser) throw new ApiError('Sign in is required.', 401, 'unauthenticated');
-  const token = await auth.currentUser.getIdToken();
+  const user = auth.currentUser;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}${path}`, {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel: () => void = () => {};
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('The planner service took too long to answer. Your saved data is still available.'));
+    }, REQUEST_TIMEOUT_MS);
+    cancel = () => {
+      controller.abort();
+      reject(Object.assign(new Error('Planner request cancelled.'), { name: 'AbortError' }));
+    };
+    options.signal?.addEventListener('abort', cancel, { once: true });
+    if (options.signal?.aborted) cancel();
+  });
+  const request = async (): Promise<T> => {
+    // The deadline covers Firebase token refresh and reading the response body,
+    // not just fetching headers. A stalled token used to bypass the timeout.
+    const token = await user.getIdToken();
+    if (controller.signal.aborted) throw new Error('Planner request cancelled.');
+    if (auth?.currentUser?.uid !== user.uid) throw new ApiError('Account changed.', 401);
+    const response = await fetch(`${API_URL}${path}`, {
       ...options,
-      signal: options.signal ?? controller.signal,
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${token}`,
+        'X-Planner-Client': CLIENT_ID,
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...options.headers,
       },
     });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      // No status on purpose: the callers treat a status-less error as "the
-      // server was unreachable" and keep the change for later.
-      throw new Error('The planner service took too long to answer. Please try again.');
-    }
-    throw error;
-  } finally {
+    if (response.status === 204) return undefined as T;
+    const payload = await response.json();
+    if (!response.ok) throw new ApiError(describeDetail(payload.detail, response.status), response.status, payload.code);
+    return payload as T;
+  };
+  try { return await Promise.race([deadline, request()]); }
+  finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener('abort', cancel);
   }
-  if (response.status === 204) return undefined as T;
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(describeDetail(payload.detail, response.status), response.status, payload.code);
-  return payload as T;
 }
 
 export function idempotencyKey(prefix: string): string {

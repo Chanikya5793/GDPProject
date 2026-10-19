@@ -1,3 +1,4 @@
+import { refreshPlannerData } from '@/api/plannerClient';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
@@ -173,7 +174,7 @@ export default function TasksScreen() {
     router.setParams({ focus: undefined });
   }, [params.focus, tasks, loading]);
 
-  const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); try { await refreshPlannerData(true); await loadData(); } finally { setRefreshing(false); } };
 
   const handleToggle = async (id: PlannerRecordId) => {
     const updated = await toggleTask(id);

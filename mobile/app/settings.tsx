@@ -16,6 +16,7 @@ import ActivityLogSection from '@/components/ActivityLogSection';
 import AiPrivacySection from '@/components/AiPrivacySection';
 import NotificationsSection from '@/components/NotificationsSection';
 import WidgetsSiriSection from '@/components/WidgetsSiriSection';
+import SyncConflictsSection from '@/components/SyncConflictsSection';
 import RecycleBinSection from '@/components/RecycleBinSection';
 import { apiConfigured, apiRequest } from '@/api/client';
 
@@ -398,6 +399,7 @@ export default function SettingsScreen() {
       <NotificationsSection />
 
       <WidgetsSiriSection />
+      <SyncConflictsSection />
 
       <AiPrivacySection />
 

@@ -1,7 +1,7 @@
 import { PlannerRecordId, Reminder } from '@/types';
 import { getItem, setItem } from './storage';
 import { addToTrash } from './trash';
-import { createPlannerItem, deletePlannerItem, listPlannerItems, updatePlannerItem } from './plannerClient';
+import { createPlannerItem, deletePlannerItem, readCachedPlannerItems, updatePlannerItem } from './plannerClient';
 import { addLog } from './logs';
 
 const KEY = 'nw_reminders';
@@ -15,7 +15,7 @@ async function save(reminders: Reminder[]): Promise<void> {
 }
 
 export async function getReminders(userId: string): Promise<Reminder[]> {
-  return (await listPlannerItems<Reminder>('reminder')).filter(r => r.userId === userId);
+  return (await readCachedPlannerItems<Reminder>('reminder')).filter(r => r.userId === userId);
 }
 
 export async function createReminder(rem: Partial<Reminder> & { userId: string; title: string }): Promise<Reminder> {
@@ -37,7 +37,7 @@ export async function createReminder(rem: Partial<Reminder> & { userId: string; 
 }
 
 export async function updateReminder(id: PlannerRecordId, updates: Partial<Reminder>): Promise<Reminder> {
-  const before = (await listPlannerItems<Reminder>('reminder')).find(r => String(r.id) === String(id));
+  const before = (await readCachedPlannerItems<Reminder>('reminder')).find(r => String(r.id) === String(id));
   const updated = await updatePlannerItem<Reminder>('reminder', id, updates);
   await addLog('updated', 'reminder', updated.title, { entityId: id, before, after: updated });
   return updated;
@@ -51,7 +51,7 @@ export async function updateReminder(id: PlannerRecordId, updates: Partial<Remin
  * one on the web was undone by the next edit made on a phone.
  */
 export async function toggleReminder(id: PlannerRecordId): Promise<Reminder> {
-  const current = (await listPlannerItems<Reminder>('reminder'))
+  const current = (await readCachedPlannerItems<Reminder>('reminder'))
     .find(reminder => String(reminder.id) === String(id));
   const done = !(current?.completed ?? false);
   const updated = await updatePlannerItem<Reminder>('reminder', id, { completed: done });
