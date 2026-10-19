@@ -28,7 +28,7 @@
 }
 
 .task-filter-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
@@ -41,7 +41,7 @@
   appearance: none;
   padding: 5px 12px;
   border-radius: 20px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--muted);
   background: var(--off);
@@ -71,7 +71,7 @@
 
 .filter-dd-btn {
   padding: 5px 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   font-family: inherit;
   border: 1.5px solid var(--border);
@@ -131,7 +131,7 @@
 
 .filter-dd-opt {
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text);
   border-radius: 6px;
@@ -182,7 +182,7 @@
   padding-bottom: 7px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
 }
 
@@ -257,7 +257,7 @@
 }
 
 .task-card-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text);
   line-height: 1.35;
@@ -269,7 +269,7 @@
 }
 
 .task-date-compact {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   white-space: nowrap;
   flex-shrink: 0;
@@ -363,7 +363,7 @@
 }
 
 .task-date {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
 }
 
@@ -378,7 +378,7 @@
 }
 
 .task-cat {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--green);
   background: rgba(0,106,78,.08);
@@ -387,7 +387,7 @@
 }
 
 .task-notes {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   line-height: 1.5;
   margin-top: 6px;
@@ -493,7 +493,7 @@
 
 /* Small "↑ tmr", "↑ overdue" badge next to the title */
 .task-escalation-badge {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   color: #B45309;
   background: rgba(245, 158, 11, 0.15);
@@ -514,7 +514,7 @@
 
 /* Priority badge in the expanded detail row */
 .task-priority-badge {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: capitalize;
   padding: 2px 7px;
@@ -572,18 +572,18 @@
 }
 
 .overload-banner-text strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #92400E;
 }
 
 .overload-banner-text span {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: #B45309;
 }
 
 .overload-banner-cta {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #D97706;
   white-space: nowrap;
@@ -607,7 +607,7 @@
   border: 1px solid #F59E0B;
   border-radius: 8px;
   padding: 11px 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: #92400E;
   margin-bottom: 16px;
   line-height: 1.5;
@@ -636,12 +636,12 @@
 }
 
 .reschedule-day-header strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text);
 }
 
 .reschedule-day-count {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: #B45309;
   background: rgba(245, 158, 11, 0.15);
@@ -656,7 +656,7 @@
 }
 
 .reschedule-day-tasks li {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   margin-bottom: 2px;
   display: flex;
@@ -665,7 +665,7 @@
 }
 
 .reschedule-escalated-tag {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   color: #B45309;
   background: rgba(245, 158, 11, 0.15);
@@ -676,7 +676,7 @@
 
 /* Section label */
 .reschedule-section-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.07em;
   color: var(--muted);
@@ -731,7 +731,7 @@
 }
 
 .reschedule-task-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
@@ -743,7 +743,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .reschedule-from {
@@ -794,7 +794,7 @@
 }
 
 .reschedule-empty p {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   margin-bottom: 16px;
   line-height: 1.5;
@@ -942,7 +942,7 @@
 
 /* Small "↑ tmr", "↑ overdue" badge next to the title */
 .task-escalation-badge {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   color: #B45309;
   background: rgba(245, 158, 11, 0.15);
@@ -963,7 +963,7 @@
 
 /* Priority badge in the expanded detail row */
 .task-priority-badge {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: capitalize;
   padding: 2px 7px;
@@ -1021,18 +1021,18 @@
 }
 
 .overload-banner-text strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #92400E;
 }
 
 .overload-banner-text span {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: #B45309;
 }
 
 .overload-banner-cta {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #D97706;
   white-space: nowrap;
@@ -1056,7 +1056,7 @@
   border: 1px solid #F59E0B;
   border-radius: 8px;
   padding: 11px 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: #92400E;
   margin-bottom: 16px;
   line-height: 1.5;
@@ -1085,12 +1085,12 @@
 }
 
 .reschedule-day-header strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text);
 }
 
 .reschedule-day-count {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: #B45309;
   background: rgba(245, 158, 11, 0.15);
@@ -1105,7 +1105,7 @@
 }
 
 .reschedule-day-tasks li {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   margin-bottom: 2px;
   display: flex;
@@ -1114,7 +1114,7 @@
 }
 
 .reschedule-escalated-tag {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   color: #B45309;
   background: rgba(245, 158, 11, 0.15);
@@ -1125,7 +1125,7 @@
 
 /* Section label */
 .reschedule-section-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.07em;
   color: var(--muted);
@@ -1180,7 +1180,7 @@
 }
 
 .reschedule-task-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
@@ -1192,7 +1192,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .reschedule-from {
@@ -1243,7 +1243,7 @@
 }
 
 .reschedule-empty p {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   margin-bottom: 16px;
   line-height: 1.5;
@@ -1251,7 +1251,7 @@
 
 .form-error {
   color: var(--red);
-  font-size: 12px;
+  font-size: 0.75rem;
   margin-top: 5px;
 }
 

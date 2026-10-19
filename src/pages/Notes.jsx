@@ -123,7 +123,7 @@ function TagManagerModal({ tags, onCreateTag, onUpdateTag, onDeleteTag, onClose 
               <ColorChooser value={tag.color} onChange={c => onUpdateTag(tag.id, { color: c })} />
             </div>
           ))}
-          {tags.length === 0 && <p style={{ color: 'var(--muted)', fontSize: '13px', textAlign: 'center', padding: '12px' }}>No tags yet. Create one above.</p>}
+          {tags.length === 0 && <p style={{ color: 'var(--muted)', fontSize: '0.8125rem', textAlign: 'center', padding: '12px' }}>No tags yet. Create one above.</p>}
         </div>
       </div>
     </div>
@@ -384,7 +384,7 @@ export default function Notes() {
               <NoteListItem key={note.id} note={note} selected={note.id === selectedId} tags={tags} isPinned={pinnedNoteIds.includes(String(note.id))} onClick={() => selectNote(note)} />
             ))}
             {filteredNotes.length === 0 && (
-              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.8125rem' }}>
                 {search || tagFilter ? 'No matching notes.' : 'No notes yet.'}
               </div>
             )}
@@ -445,7 +445,7 @@ export default function Notes() {
                         {selectedNote.tagIds.includes(tag.id) && <span style={{ marginLeft: 'auto', color: 'var(--green)' }}>✓</span>}
                       </div>
                     ))}
-                    {tags.length === 0 && <div style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: '13px' }}>No tags. Use Manage Tags to create some.</div>}
+                    {tags.length === 0 && <div style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: '0.8125rem' }}>No tags. Use Manage Tags to create some.</div>}
                   </div>
                 )}
               </div>

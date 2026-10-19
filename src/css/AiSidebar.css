@@ -52,7 +52,7 @@
 }
 
 .ai-collapsed-label {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .1em;
@@ -73,7 +73,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--text);
 }
@@ -83,7 +83,7 @@
 }
 
 .ai-badge {
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .06em;
@@ -184,7 +184,7 @@
 .ai-msg-bubble {
   padding: 10px 14px;
   border-radius: 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -211,7 +211,7 @@
 }
 
 .ai-thinking span {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -222,7 +222,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
@@ -234,14 +234,14 @@
 
 .ai-citations a {
   color: var(--green);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.35;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .ai-retrieval-disclosure {
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--muted);
   border-left: 2px solid var(--green-mid);
   padding-left: 7px;
@@ -250,7 +250,7 @@
 /* Changes the assistant described but could not turn into a proposal. A notice
    rather than a paragraph welded onto the answer, so a short reply stays short. */
 .ai-unavailable {
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.45;
   color: var(--text);
   background: var(--red-soft, #fdecea);
@@ -273,14 +273,14 @@
   display: flex;
   gap: 6px;
   align-items: baseline;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
 .ai-diff-body {
   margin: 0;
   padding: 7px 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
   background: var(--surface-variant, #f5f6f5);
   border-radius: 6px;
@@ -323,7 +323,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text);
   background: var(--surface-variant, #f5f6f5);
   border: 1px solid var(--green-mid, #cfe3d8);
@@ -344,7 +344,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: var(--muted);
 }
 
@@ -360,7 +360,7 @@
 .ai-attachment-note {
   flex-basis: 100%;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   padding-left: 2px;
 }
 
@@ -391,20 +391,20 @@
   align-items: center;
   gap: 6px;
   color: var(--green);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-transform: capitalize;
 }
 
 .ai-proposal-title span {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 0.5625rem;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .ai-proposal p {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.4;
 }
 
@@ -416,7 +416,7 @@
 
 .ai-proposal-preview > div > span {
   display: block;
-  font-size: 9px;
+  font-size: 0.5625rem;
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 3px;
@@ -430,7 +430,7 @@
   background: var(--off);
   padding: 6px;
   border-radius: 6px;
-  font-size: 9px;
+  font-size: 0.5625rem;
 }
 
 .ai-proposal-actions {
@@ -447,7 +447,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
 }
 
@@ -470,7 +470,7 @@
 
 .ai-proposal-error {
   color: var(--red);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 /* ─── Suggestions ─── */
@@ -484,7 +484,7 @@
 .ai-suggestion {
   padding: 7px 12px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--green);
   background: var(--green-lt);
@@ -521,7 +521,7 @@
   border-color: var(--border);
   border-radius: 12px;
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-family: inherit;
   color: var(--text);
   background: var(--off);
@@ -610,19 +610,19 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin-bottom: 8px;
   color: var(--text);
 }
 .ai-first-run p {
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
   color: var(--muted);
   margin: 0 0 8px;
 }
 .ai-first-run-warn { color: var(--text); }
 .ai-first-run button {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   padding: 6px 14px;
   border-radius: 7px;
@@ -667,7 +667,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.35;
   color: var(--muted);
 }
@@ -693,13 +693,13 @@
   align-items: center;
   gap: 6px;
   color: var(--green-dk);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .ai-proposal-group-done {
   color: var(--muted);
   font-weight: 600;
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .ai-proposal-toggle {
@@ -710,7 +710,7 @@
   border: 0;
   background: transparent;
   color: var(--green);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
@@ -729,13 +729,13 @@
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink, inherit);
 }
 
 .ai-proposal-op {
   text-transform: uppercase;
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   letter-spacing: .04em;
   color: var(--green);
@@ -744,7 +744,7 @@
 
 .ai-proposal-status {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 0.5625rem;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -762,7 +762,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: var(--green-dk);
   background: var(--green-lt);
@@ -783,11 +783,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 0.75rem;
   margin-bottom: 6px;
 }
 
-.ai-threads-empty { font-size: 11px; color: var(--muted); margin: 0; }
+.ai-threads-empty { font-size: 0.6875rem; color: var(--muted); margin: 0; }
 
 .ai-threads ul { list-style: none; margin: 0; padding: 0; }
 
@@ -809,7 +809,7 @@
   border: 0;
   background: transparent;
   padding: 5px 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-align: left;
   color: inherit;
 }
@@ -822,7 +822,7 @@
   white-space: nowrap;
 }
 
-.ai-thread-count { color: var(--muted); font-size: 10px; }
+.ai-thread-count { color: var(--muted); font-size: 0.625rem; }
 
 .ai-thread-action {
   border: 0;
@@ -836,8 +836,8 @@
 
 /* The change as a person reads it, not as it is stored. */
 .ai-proposal-change { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.ai-proposal-change li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 12px; }
-.ai-change-label { min-width: 58px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.ai-proposal-change li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 0.75rem; }
+.ai-change-label { min-width: 58px; color: var(--muted); font-size: 0.625rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
 .ai-change-from { color: var(--muted); text-decoration: line-through; }
 .ai-change-arrow { color: var(--green); }
 .ai-change-to { font-weight: 600; }

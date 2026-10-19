@@ -420,14 +420,14 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
           )}
         </div>
         <div className="dash-note-actions">
-          <div className="editor-mode-toggle" style={{ fontSize: '11px' }}>
+          <div className="editor-mode-toggle" style={{ fontSize: '0.6875rem' }}>
             <button className={`editor-mode-btn${mode === 'preview' ? ' active' : ''}`}
               onClick={() => { if (dirty) handleSave(); setMode('preview') }}>Preview</button>
             <button className={`editor-mode-btn${mode === 'write' ? ' active' : ''}`}
               onClick={() => setMode('write')}>Edit</button>
           </div>
           <div className="dash-note-picker-wrap" ref={pickerRef}>
-            <button className="btn-ghost" style={{ fontSize: '11px', padding: '3px 8px' }}
+            <button className="btn-ghost" style={{ fontSize: '0.6875rem', padding: '3px 8px' }}
               onClick={() => setPickerOpen(!pickerOpen)}>
               Switch <ChevronDown size={10} />
             </button>
@@ -512,7 +512,7 @@ function PinnedNoteCard({ note, tags, onUpdate }) {
             {expanded ? <ChevronsDownUp size={12} /> : <ChevronsUpDown size={12} />}
             {expanded ? 'Less' : 'More'}
           </button>
-          <div className="editor-mode-toggle" style={{ fontSize: '11px' }}>
+          <div className="editor-mode-toggle" style={{ fontSize: '0.6875rem' }}>
             <button className={`editor-mode-btn${mode === 'preview' ? ' active' : ''}`}
               onClick={() => { if (dirty) handleSave(); setMode('preview') }}>Preview</button>
             <button className={`editor-mode-btn${mode === 'write' ? ' active' : ''}`}

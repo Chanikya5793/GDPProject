@@ -74,14 +74,14 @@
 }
 
 .dash-widget-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--text);
   flex: 1;
 }
 
 .dash-widget-link {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--green);
   cursor: pointer;
@@ -242,7 +242,7 @@
 }
 
 .dash-stat-drawer-title {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text);
   text-transform: uppercase;
@@ -250,7 +250,7 @@
 }
 
 .dash-stat-drawer-count {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   font-weight: 600;
 }
@@ -262,14 +262,14 @@
 }
 
 .dash-stat-n {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   color: var(--text);
   line-height: 1;
 }
 
 .dash-stat-l {
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: var(--muted);
   margin-top: 4px;
   text-transform: uppercase;
@@ -314,7 +314,7 @@
 }
 
 .dash-chart-title {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 8px;
@@ -348,7 +348,7 @@
   color: var(--white);
   padding: 6px 10px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: nowrap;
   pointer-events: none;
   display: flex;
@@ -371,7 +371,7 @@
 
 .pie-tip-val {
   opacity: .7;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 /* ═══════════════════════════
@@ -436,7 +436,7 @@
 
 /* Bell icon */
 .dash-bell {
-  font-size: 13px;
+  font-size: 0.8125rem;
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -448,7 +448,7 @@
 }
 
 .dash-row-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text);
   line-height: 1.4;
@@ -462,14 +462,14 @@
   align-items: center;
   gap: 8px;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   flex-wrap: wrap;
 }
 
 /* Empty state */
 .dash-empty {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   padding: 12px 0;
   text-align: center;
@@ -544,7 +544,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--muted);
   background: none;
@@ -573,7 +573,7 @@
   min-height: 120px;
 }
 .dash-note-empty p {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   margin-bottom: 12px;
 }
@@ -601,7 +601,7 @@
 .dash-note-picker-empty {
   padding: 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   text-align: center;
 }
 
@@ -623,12 +623,12 @@
 .dash-note-picker-item.active { background: var(--green-lt); }
 
 .dash-note-picker-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text);
 }
 .dash-note-picker-preview {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -659,7 +659,7 @@
 }
 
 .dash-note-title {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -670,7 +670,7 @@
 }
 
 .dash-note-title-input {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--text);
   border: none;
@@ -690,7 +690,7 @@
   flex-shrink: 0;
 }
 .dash-note-tag {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -717,7 +717,7 @@
   cursor: pointer;
   transition: all .15s;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   font-family: inherit;
   white-space: nowrap;
@@ -736,7 +736,7 @@
 }
 
 .dash-note-preview {
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.6;
   color: var(--text);
   max-height: 200px;
@@ -753,9 +753,9 @@
 .dash-note-preview.expanded {
   max-height: none;
 }
-.dash-note-preview h1 { font-size: 16px; margin: 6px 0 4px; }
-.dash-note-preview h2 { font-size: 14px; margin: 5px 0 3px; }
-.dash-note-preview h3 { font-size: 13px; margin: 4px 0 2px; }
+.dash-note-preview h1 { font-size: 1rem; margin: 6px 0 4px; }
+.dash-note-preview h2 { font-size: 0.875rem; margin: 5px 0 3px; }
+.dash-note-preview h3 { font-size: 0.8125rem; margin: 4px 0 2px; }
 .dash-note-preview ul { margin: 4px 0; padding-left: 18px; }
 .dash-note-preview li { margin: 2px 0; }
 .dash-note-preview strong { color: var(--text); }
@@ -775,7 +775,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-family: inherit;
   color: var(--text);
   background: var(--white);
@@ -799,7 +799,7 @@
 
 .dash-note-save {
   align-self: flex-end;
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 5px 14px;
 }
 
