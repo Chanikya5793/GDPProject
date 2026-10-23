@@ -16,9 +16,10 @@ export const CANDIDATES = RETRIEVAL_LIMIT * 5;
 export const MAX_DISTANCE = 0.98;
 export const QUERY_CHARS = 500;
 export const MESSAGE_CHARS = 8000;
+// The trace names no provider or model: it explains what any hosted LLM in
+// this position does. The settings below are the planner's real ones.
 export const MODEL = {
-  provider: "Meta (Muse Spark API)",
-  id: "muse-spark-1.3-contributor",
+  name: "an LLM",
   temperature: 0.1,
   reasoningEffort: "xhigh",
   output: "strict JSON schema (GeneratedAnswer)",

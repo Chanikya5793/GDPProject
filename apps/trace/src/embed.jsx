@@ -21,6 +21,7 @@ import space from "../public/fonts/SpaceGrotesk.ttf?url";
 const SHADOW_CSS = [baseCss, explainCss, plannerCss, transformerCss]
   .join("\n")
   .replace(/@font-face\s*{[^}]*}/g, "")
+  .replace(/:root\[data-theme="light"\]/g, ':host([data-theme="light"])')
   .replace(/:root/g, ":host");
 function registerFonts() {
   if (document.getElementById("trace-fonts")) return;
@@ -42,7 +43,7 @@ const hasWebGL = () => {
   }
 };
 
-function TraceOverlay({ copilot, onClose }) {
+function TraceOverlay({ copilot, onClose, theme, accent }) {
   const [view, setView] = useState("flow");
   const [table, setTable] = useState(null);
   const [runId] = useState(0);
@@ -102,6 +103,8 @@ function TraceOverlay({ copilot, onClose }) {
         </div>
       </header>
       <TrackView
+        theme={theme}
+        accent={accent}
         mode="copilot"
         steps={steps}
         ctx={ctx}
@@ -142,7 +145,9 @@ function TablePlayer({ module, ctx, start }) {
   );
 }
 
-export function mountTrace({ copilot, onClose }) {
+// theme: "light" | "dark"; accent and font: the host site's brand colour and
+// text font. Call update({ theme, accent, font }) when the host changes.
+export function mountTrace({ copilot, onClose, theme = "dark", accent = null, font = null }) {
   registerFonts();
   const host = document.createElement("div");
   host.setAttribute("data-trace-overlay", "");
@@ -154,12 +159,26 @@ export function mountTrace({ copilot, onClose }) {
   const container = document.createElement("div");
   shadow.append(style, container);
   const root = createRoot(container);
-  let current = { copilot, onClose };
+  let current = { copilot, onClose, theme, accent, font };
   const close = () => {
     root.unmount();
     host.remove();
   };
-  const render = () => root.render(<TraceOverlay copilot={current.copilot} onClose={() => current.onClose?.()} />);
+  const render = () => {
+    host.setAttribute("data-theme", current.theme === "light" ? "light" : "dark");
+    if (current.font) {
+      host.style.setProperty("--sans", current.font);
+      host.style.setProperty("--display", current.font);
+    }
+    root.render(
+      <TraceOverlay
+        copilot={current.copilot}
+        theme={current.theme}
+        accent={current.accent}
+        onClose={() => current.onClose?.()}
+      />,
+    );
+  };
   render();
   return {
     update(next) {

@@ -138,14 +138,14 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       const H = canvas.clientHeight;
       const z = s.cam.z;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = "#0b0e15";
+      ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, W, H);
 
       // Dot grid: one dot per unit up close, one per five units further out.
       const spacing = z > 22 ? 1 : 5;
       const a = toWorld(0, 0);
       const b = toWorld(W, H);
-      ctx.fillStyle = "rgba(120, 132, 160, 0.13)";
+      ctx.fillStyle = COLORS.dot;
       const dot = Math.max(1, Math.min(1.6, z / 30));
       for (let gx = Math.floor(a.x / spacing) * spacing; gx <= b.x; gx += spacing)
         for (let gy = Math.floor(a.y / spacing) * spacing; gy <= b.y; gy += spacing) {
@@ -154,7 +154,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         }
 
       const si = scene.si;
-      const accent = scene.column?.step.color ?? COLORS.active;
+      const accent = COLORS.accent;
       const t = reduced ? 1 : Math.min(1, (now - s.changedAt) / 420);
 
       // Arrows between steps and between blocks.
@@ -170,7 +170,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
           ? toScreen(to.x - 0.25, to.y + to.h / 2)
           : toScreen(to.x + to.w / 2, to.y - 0.25);
         const near = to.step === si;
-        ctx.strokeStyle = near ? `${accent}99` : "#273045";
+        ctx.strokeStyle = near ? `${accent}99` : COLORS.link;
         ctx.beginPath();
         ctx.moveTo(p0.x, p0.y);
         if (forward) {
@@ -203,7 +203,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         ctx.font = `600 ${size}px Manrope, system-ui, sans-serif`;
         ctx.textBaseline = "alphabetic";
         ctx.textAlign = "left";
-        ctx.fillStyle = i === si ? col.step.color : i < si ? "#8a93a8" : "#4a5369";
+        ctx.fillStyle = i === si ? accent : i < si ? COLORS.label : COLORS.faint;
         ctx.fillText(`${String(i + 1).padStart(2, "0")}  ${col.step.name}`, p.x, p.y);
       });
 
@@ -225,7 +225,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         ctx.globalAlpha = 1;
         // Cells that were just computed fade in.
         if (view.fresh?.length && t < 1) {
-          ctx.fillStyle = `rgba(20, 25, 36, ${1 - ease(t)})`;
+          ctx.fillStyle = `rgba(${COLORS.plateRgb.join(", ")}, ${1 - ease(t)})`;
           for (const [r, c] of view.fresh) {
             const q = toScreen(
               block.x + block.gx + block.offsets[c],
@@ -250,8 +250,8 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       const flowBox = s.flowTo;
       for (const g of scene.groups) {
         if (g.role !== "source") continue;
-        ctx.strokeStyle = `rgba(143, 184, 255, ${0.9 * fade})`;
-        ctx.fillStyle = `rgba(143, 184, 255, ${0.13 * fade})`;
+        ctx.strokeStyle = `rgba(${COLORS.sourceRgb.join(", ")}, ${0.9 * fade})`;
+        ctx.fillStyle = `rgba(${COLORS.sourceRgb.join(", ")}, ${0.13 * fade})`;
         ctx.lineWidth = 1.5;
         for (const [r, c] of g.cells) {
           cellPath(g.block, r, c);
@@ -266,7 +266,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         if (Math.hypot(a1.x - a0.x, a1.y - a0.y) < 12) continue;
         ctx.setLineDash([5, 6]);
         ctx.lineDashOffset = reduced ? 0 : -now / 40;
-        ctx.strokeStyle = `rgba(143, 184, 255, ${0.55 * fade})`;
+        ctx.strokeStyle = `rgba(${COLORS.sourceRgb.join(", ")}, ${0.55 * fade})`;
         ctx.lineWidth = 1.5;
         const at = curve(ctx, a0, a1);
         ctx.stroke();
@@ -284,8 +284,8 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       }
       for (const g of scene.groups) {
         if (g.role !== "active") continue;
-        ctx.strokeStyle = `rgba(255, 211, 138, ${fade})`;
-        ctx.fillStyle = `rgba(255, 211, 138, ${0.16 * fade})`;
+        ctx.strokeStyle = `rgba(${COLORS.activeRgb.join(", ")}, ${fade})`;
+        ctx.fillStyle = `rgba(${COLORS.activeRgb.join(", ")}, ${0.16 * fade})`;
         ctx.lineWidth = 2;
         for (const [r, c] of g.cells) {
           cellPath(g.block, r, c);

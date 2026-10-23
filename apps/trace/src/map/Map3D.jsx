@@ -55,7 +55,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setClearColor("#0b0e15");
+    renderer.setClearColor(COLORS.bg);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     renderer.domElement.setAttribute("aria-hidden", "true");
@@ -63,7 +63,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     const anisotropy = renderer.capabilities.getMaxAnisotropy();
 
     const world = new THREE.Scene();
-    world.fog = new THREE.Fog("#0b0e15", 60, 160);
+    world.fog = new THREE.Fog(COLORS.bg, 60, 160);
     const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 600);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -78,10 +78,10 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       props.current.onUserMove?.();
     });
 
-    const grid = new THREE.GridHelper(600, 120, "#1a2030", "#141a27");
+    const grid = new THREE.GridHelper(600, 120, COLORS.grid[0], COLORS.grid[1]);
     grid.position.y = -0.02;
     world.add(grid);
-    world.add(new THREE.HemisphereLight("#c9d4ff", "#0b0e15", 1.4));
+    world.add(new THREE.HemisphereLight("#ffffff", COLORS.bg, 1.4));
     const sun = new THREE.DirectionalLight("#ffffff", 1.6);
     sun.position.set(-20, 40, 30);
     world.add(sun);
@@ -91,10 +91,10 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       pos: new THREE.Color("rgb(98, 214, 190)"),
       neg: new THREE.Color("rgb(240, 152, 120)"),
       seq: new THREE.Color("rgb(166, 146, 255)"),
-      active: new THREE.Color("#ffd38a"),
-      source: new THREE.Color("#8fb8ff"),
-      pending: new THREE.Color("#262d3e"),
-      masked: new THREE.Color("#1b2030"),
+      active: new THREE.Color(COLORS.active),
+      source: new THREE.Color(COLORS.source),
+      pending: new THREE.Color(COLORS.faint),
+      masked: new THREE.Color(COLORS.edgeGhost),
     };
     const tmp = new THREE.Object3D();
     const tint = new THREE.Color();
@@ -111,7 +111,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       goal: null,
     };
     world.add(state.links, state.labels, state.overlay);
-    const sideMaterial = new THREE.MeshBasicMaterial({ color: "#121722" });
+    const sideMaterial = new THREE.MeshBasicMaterial({ color: COLORS.side });
     const frameMaterial = new THREE.LineBasicMaterial({ color: COLORS.active });
     const activeFrame = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 0.05, 1)),
@@ -187,7 +187,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
           : new THREE.CubicBezierCurve3(a, new THREE.Vector3(a.x, 0.03, mid.z), new THREE.Vector3(b.x, 0.03, mid.z), b);
         const line = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(curve.getPoints(40)),
-          new THREE.LineBasicMaterial({ color: "#2b3550" }),
+          new THREE.LineBasicMaterial({ color: COLORS.link }),
         );
         line.userData.to = to.step;
         state.links.add(line);
@@ -197,7 +197,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         const height = 1.1;
         const plane = new THREE.Mesh(
           new THREE.PlaneGeometry(height * 8 * width, height),
-          new THREE.MeshBasicMaterial({ map: texture, transparent: true, color: "#4a5369" }),
+          new THREE.MeshBasicMaterial({ map: texture, transparent: true, color: COLORS.faint }),
         );
         plane.geometry.translate((height * 8 * width) / 2, 0, 0);
         plane.rotation.x = -Math.PI / 2;
@@ -445,11 +445,11 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       state.labels.children.forEach((label) => {
         const i = label.userData.step;
         label.material.color.set(
-          i === scene.si ? scene.column.step.color : i < scene.si ? "#8a93a8" : "#4a5369",
+          i === scene.si ? COLORS.accent : i < scene.si ? COLORS.label : COLORS.faint,
         );
       });
       state.links.children.forEach((line) =>
-        line.material.color.set(line.userData.to === scene.si ? scene.column.step.color : "#2b3550"),
+        line.material.color.set(line.userData.to === scene.si ? COLORS.accent : COLORS.link),
       );
       // The amber frame glides from the last result to this one.
       if (state.activeTo) {

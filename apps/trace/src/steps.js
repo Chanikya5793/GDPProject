@@ -308,6 +308,20 @@ const COPILOT_HEAD = [
       "Recomputed over the records in this browser. The server searched its own index of the same records; its pick is in the citations.",
   },
   {
+    id: "memory",
+    name: "Context memory",
+    badge: "real",
+    algorithm: "Conversation memory",
+    color: "#9de7dc",
+    plain:
+      "The LLM itself forgets everything between messages. The copilot remembers for it: each turn it re-sends your earlier messages, the records it already pointed to, and any record you attached, so words like “it” still make sense.",
+    summary:
+      "Up to 20 earlier turns (4000 chars each) travel with every request. Sources cited earlier keep their S-numbers across turns, and an attached record is re-sent while its chip is on screen.",
+    formula: "context = last 20 turns + earlier sources (same S-numbers) + attached record",
+    io: ["earlier turns + sources", "what the LLM will remember"],
+    limit: "These are the turns and sources this conversation really carried.",
+  },
+  {
     id: "prompt",
     name: "Prompt",
     badge: "real",

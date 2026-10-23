@@ -469,7 +469,7 @@ export default function AiSidebar() {
                     onConfirm={confirmProposal} onReject={rejectProposal}
                     onConfirmAll={confirmProposals} onRejectAll={rejectProposals} />
                   {msg.role === 'bot' && !msg.streaming && (
-                    <TraceButton messages={messages} botId={msg.id} aiInfo={aiInfo} />
+                    <TraceButton messages={messages} botId={msg.id} />
                   )}
                 </div>
               </div>

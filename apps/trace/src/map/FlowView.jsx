@@ -1,13 +1,26 @@
+import { useEffect, useRef } from "react";
 import { ArrowRight } from "lucide-react";
 import { GROUPS, summarize } from "../flow.js";
 import Badge from "../Badge.jsx";
 
 // The system at stage level: each algorithm as a card with what went in and
 // what came out for this request. Click a card to open it on the map.
-export default function FlowView({ mode, track, si, ctx, onPick, onOpen }) {
+// In Simple mode the illustration cards drop their numbers: the plain text
+// says what happens, and the values belong to Detailed and the maps.
+export default function FlowView({ mode, track, si, ctx, onPick, onOpen, detail, reduced }) {
   const index = new Map(track.columns.map((c, i) => [c.step.id, i]));
+  const box = useRef(null);
+  // Keep the stage being explained in view as playback moves on.
+  useEffect(() => {
+    const el = box.current?.querySelector(".flow-card.is-current");
+    if (!el) return;
+    const frame = box.current.getBoundingClientRect();
+    const card = el.getBoundingClientRect();
+    const top = box.current.scrollTop + card.top - frame.top - frame.height / 2 + card.height / 2;
+    box.current.scrollTo({ top: Math.max(0, top), behavior: reduced ? "instant" : "smooth" });
+  }, [si, reduced]);
   return (
-    <div className="flow" aria-label="Pipeline overview">
+    <div className="flow" aria-label="Pipeline overview" ref={box}>
       {GROUPS[mode].map((group, gi) => (
         <section key={group.name} className="flow-group">
           <h3>
@@ -24,7 +37,6 @@ export default function FlowView({ mode, track, si, ctx, onPick, onOpen }) {
                 <article
                   key={id}
                   className={`flow-card ${state}`}
-                  style={{ "--c": step.color }}
                   onClick={() => onPick(i)}
                 >
                   <i className="flow-wire" aria-hidden="true" />
@@ -34,12 +46,14 @@ export default function FlowView({ mode, track, si, ctx, onPick, onOpen }) {
                     {step.badge && <Badge kind={step.badge} />}
                   </header>
                   <p>{step.plain}</p>
+                  {(detail || step.badge !== "illustration") && (
                   <dl>
                     <dt>in</dt>
                     <dd>{s.in}</dd>
                     <dt>out</dt>
                     <dd>{s.out}</dd>
                   </dl>
+                  )}
                   {i === si && (
                     <button
                       className="flow-open"

@@ -45,7 +45,18 @@ function summarizeCopilot(id, c) {
     case "prompt": {
       const kept = retrieve(c.message, c.records).kept ?? [];
       const sections = promptSections({ message: c.message, history: c.history, focus: c.focus, hits: kept, today: c.today });
-      return { in: "sources, conversation, question", out: `${sections.length} labelled sections → ${MODEL.id}` };
+      return { in: "sources, conversation, question", out: `${sections.length} labelled sections → ${MODEL.name}` };
+    }
+    case "memory": {
+      const earlier = c.earlier ?? [];
+      return {
+        in: `${c.history.length} earlier turn${c.history.length === 1 ? "" : "s"}`,
+        out: earlier.length
+          ? `remembers ${earlier.map((e) => `${e.citation_id} “${e.title}”`).join(", ")}`
+          : c.history.length
+            ? "remembers the earlier turns"
+            : "nothing earlier to remember",
+      };
     }
     case "lookups":
       return { in: "model output", out: !r ? "no reply yet" : r.steps?.length ? r.steps.map((s) => s.label).join(" · ") : "no extra lookups" };
@@ -164,7 +175,7 @@ export const GROUPS = {
   copilot: [
     { name: "Your message", steps: ["message"] },
     { name: "Search your planner (recomputed)", steps: ["searchwords", "hashvector", "retrieval"] },
-    { name: "Build the prompt", steps: ["prompt"] },
+    { name: "Remember and build the prompt", steps: ["memory", "prompt"] },
     { name: "Inside a language model (illustration)", steps: ["bpe", "embedding", "position", "qk", "attention", "output", "residual", "feedforward", "logits", "decode"] },
     { name: "Answer and act (real)", steps: ["lookups", "answer", "proposals"] },
   ],

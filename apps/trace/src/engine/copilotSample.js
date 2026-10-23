@@ -41,13 +41,20 @@ export const SAMPLE_RESPONSE = {
 export function sampleCopilot() {
   return {
     message: SAMPLE_MESSAGE,
-    history: [],
+    // An earlier turn, so the sample shows what the copilot remembers.
+    history: [
+      { role: "user", text: "What do I have due this week?" },
+      { role: "assistant", text: "Your GDP report is due Thursday at 5 PM, and studying for mobile computing is Wednesday at 2 PM." },
+    ],
+    earlier: [
+      { citation_id: "S1", record_id: "t1", title: "Submit GDP report" },
+      { citation_id: "S2", record_id: "t2", title: "Study for mobile computing" },
+    ],
     focus: null,
     timezone: "America/Chicago",
     today: "2026-10-22",
     records: SAMPLE_RECORDS,
     response: SAMPLE_RESPONSE,
-    model: null,
     timings: null,
     demo: true,
   };
