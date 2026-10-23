@@ -8,7 +8,7 @@ import TrackView from "./TrackView.jsx";
 import StepPlayer from "./explain/StepPlayer.jsx";
 import { analyze } from "./engine/pipeline.js";
 import { microscope } from "./engine/microscope.js";
-import { stepsFor } from "./steps.js";
+import { copilotSteps } from "./steps.js";
 import baseCss from "./styles.css?inline";
 import explainCss from "./explain/explain.css?inline";
 import plannerCss from "./explain/steps/planner/planner.css?inline";
@@ -48,7 +48,7 @@ function TraceOverlay({ copilot, onClose }) {
   const [runId] = useState(0);
   const [webgl] = useState(hasWebGL);
   const closeRef = useRef(null);
-  const steps = stepsFor("copilot");
+  const steps = useMemo(() => copilotSteps(copilot), [copilot]);
   const ctx = useMemo(() => {
     const trace = analyze(copilot.message);
     const data = microscope(trace);

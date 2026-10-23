@@ -24,6 +24,17 @@ function summarizeCopilot(id, c) {
       return { in: `${v.rows.length} search words`, out: v.rows.length ? list(v.rows.map((x) => `${x.token}→${x.slot}`), 5) : "empty vector" };
     }
     case "retrieval": {
+      const server = r?.retrieval?.searches?.[0];
+      if (server) {
+        const titles = new Map(c.records.map((x) => [String(x.id), x.title]));
+        const kept = server.candidates.filter((x) => x.outcome === "kept");
+        return {
+          in: `${server.candidates.length} nearest records (server)`,
+          out: kept.length
+            ? kept.map((x) => `${titles.get(String(x.record_id)) ?? x.record_id} (${x.distance.toFixed(2)})`).join(" · ")
+            : "nothing kept",
+        };
+      }
       const run = retrieve(c.message, c.records);
       if (run.skipped) return { in: `${c.records.length} records`, out: "search skipped" };
       return {

@@ -6,7 +6,7 @@ import StepPlayer from "./explain/StepPlayer.jsx";
 import { DataPanel, RequestPanel } from "./Panels.jsx";
 import { analyze, applyProposal, SCENARIOS, SEED_RECORDS } from "./engine/pipeline.js";
 import { microscope } from "./engine/microscope.js";
-import { stepsFor } from "./steps.js";
+import { copilotSteps, stepsFor } from "./steps.js";
 import { sampleCopilot, SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
 
 const seeds = () => SEED_RECORDS.map((r) => ({ ...r }));
@@ -77,7 +77,10 @@ export default function App() {
   // Earlier turns when the visitor answers a question instead of rewriting.
   const [thread, setThread] = useState([]);
 
-  const steps = stepsFor(mode);
+  const steps =
+    mode === "copilot"
+      ? copilotSteps({ response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null })
+      : stepsFor(mode);
   const data = useMemo(() => microscope(trace, generatedTokens), [trace, generatedTokens]);
   const ctx = useMemo(() => {
     // The copilot track uses the sample exchange; any other message has no

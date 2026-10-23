@@ -373,5 +373,21 @@ const COPILOT_TAIL = [
 ];
 export const COPILOT_STEPS = [...COPILOT_HEAD, ...COPILOT_MODEL, ...COPILOT_TAIL];
 
+// When the reply carried the server's own search (retrieval.searches), the
+// Retrieval step shows real values and says so.
+export function copilotSteps(copilot) {
+  if (!copilot?.response?.retrieval?.searches?.length) return COPILOT_STEPS;
+  return COPILOT_STEPS.map((s) =>
+    s.id === "retrieval"
+      ? {
+          ...s,
+          badge: "real",
+          limit:
+            "The ranking, distances and filter outcomes are the server's own, sent with your reply. The browser's recomputation is shown first so you can check the arithmetic.",
+        }
+      : s,
+  );
+}
+
 export const stepsFor = (mode) =>
   mode === "planner" ? PLANNER_STEPS : mode === "copilot" ? COPILOT_STEPS : TRANSFORMER_STEPS;

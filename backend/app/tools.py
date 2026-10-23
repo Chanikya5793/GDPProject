@@ -32,6 +32,7 @@ from .models import (
     NoteContent,
     PlannerRecord,
     ReminderContent,
+    RetrievalSearch,
     ScheduleContent,
     TaskContent,
 )
@@ -63,6 +64,10 @@ class RecordSearch(Protocol):
     this module does not have to import the service that implements it."""
 
     def retrieve(self, uid: str, query: str) -> Tuple[List[PlannerRecord], List[Citation]]: ...
+
+    def search(
+        self, uid: str, query: str, entity_type: Optional[EntityType] = None,
+    ) -> Tuple[List[PlannerRecord], List[Citation], RetrievalSearch]: ...
 
 
 # How far "the week ahead" reaches. Past this the briefing stops volunteering
@@ -199,6 +204,8 @@ class PlannerSession:
         # briefing is volunteered, so its presence must not turn a general
         # planning question into a refusal.
         self.search_citation_ids: List[str] = []
+        # What each planner search saw and kept, for the client's trace view.
+        self.searches: List[RetrievalSearch] = []
         self.settings = toolbox.repository.get_privacy(uid)
         if not self.settings.ai_enabled:
             toolbox.audit.record(uid, "retrieval", "denied", {"reason": "opt_out"})
@@ -434,7 +441,7 @@ class PlannerSession:
         if not query:
             return ToolOutcome("search", "Skipped a search with no terms",
                                {"error": "search needs a query.", "count": 0})
-        records, _ = self.toolbox.retrieval.retrieve(self.uid, query, request.entity_type)
+        records, _, trace = self.toolbox.retrieval.search(self.uid, query, request.entity_type)
         results = []
         for record in records:
             text = record_text(record)
@@ -447,6 +454,13 @@ class PlannerSession:
                 "injection_suspected": assess_untrusted_text(text).suspicious,
             })
         self.search_citation_ids.extend(item["citation_id"] for item in results)
+        # The citation ids the assistant actually sees come from the turn's
+        # evidence, not the search's own S-numbers; report those.
+        issued = {str(record.record_id): item["citation_id"] for record, item in zip(records, results)}
+        for candidate in trace.candidates:
+            candidate.citation_id = issued.get(candidate.record_id or "")
+        if len(self.searches) < 8:
+            self.searches.append(trace)
         return ToolOutcome(
             "search", f"Searched the planner for “{safe_excerpt(query, 60)}”",
             {"query": query, "count": len(results), "results": results},

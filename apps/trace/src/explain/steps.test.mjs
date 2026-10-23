@@ -60,6 +60,40 @@ function copilotContexts() {
       },
     ],
   ];
+  variants.push([
+    "server funnel edges",
+    {
+      ...base,
+      response: {
+        ...base.response,
+        retrieval: {
+          ...base.response.retrieval,
+          searches: [
+            {
+              query: base.message,
+              requested: 25,
+              limit: 5,
+              max_distance: 0.98,
+              candidates: [
+                { rank: 1, distance: 0.611692, outcome: "kept", entity_type: "task", record_id: "t1", citation_id: "S1" },
+                { rank: 2, distance: 0.7, outcome: "not_approved", entity_type: "note", record_id: null },
+                { rank: 3, distance: 0.8, outcome: "kept", entity_type: "task", record_id: "server-only", citation_id: "S2" },
+                { rank: 4, distance: 0.99, outcome: "too_far", entity_type: "reminder", record_id: "r1" },
+              ],
+            },
+            {
+              query: "GDP",
+              entity_type: "task",
+              requested: 25,
+              limit: 5,
+              max_distance: 0.98,
+              candidates: [{ rank: 1, distance: 0.5, outcome: "stale_revision", entity_type: "task", record_id: "t1" }],
+            },
+          ],
+        },
+      },
+    },
+  ]);
   return variants.map(([label, copilot]) => {
     const trace = analyze(copilot.message);
     const data = microscope(trace);

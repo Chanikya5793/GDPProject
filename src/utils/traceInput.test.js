@@ -40,6 +40,13 @@ describe('traceInputFor', () => {
     expect(input.demo).toBe(false)
   })
 
+  it('passes the server\'s retrieval funnel through untouched', () => {
+    const searches = [{ query: 'q', requested: 25, limit: 5, max_distance: 0.98, candidates: [{ rank: 1, distance: 0.6, outcome: 'kept', entity_type: 'task', record_id: 't1', citation_id: 'S1' }] }]
+    const withSearch = messages.map(m => (m.id === 'b1' ? { ...m, retrieval: { attempted: true, result_count: 1, searches } } : m))
+    const input = traceInputFor({ messages: withSearch, botId: 'b1', records, aiInfo: null })
+    expect(input.response.retrieval.searches).toEqual(searches)
+  })
+
   it('falls back to the user message for replies saved before tracing existed', () => {
     const input = traceInputFor({ messages: messages.slice(0, 2), botId: 'b0', records, aiInfo: null })
     expect(input.message).toBe('What is due this week?')

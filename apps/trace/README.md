@@ -28,6 +28,12 @@ loaded only on the first click. Inputs come from what the page already holds: th
 turns before it, the reply's citations, lookups and proposals, and the user's records read from
 the encrypted local cache. Nothing is sent anywhere, and the message never goes into a URL.
 
+Replies from a backend with this change carry `retrieval.searches`: every search the turn ran,
+each candidate's rank, cosine distance and filter outcome, and the citation id it was shown to
+the model as. The Retrieval step then switches its badge to **real** and walks the server's own
+funnel next to the browser's recomputed distances. Candidates dropped as not approved, of a type
+you do not index, or deleted are reported without their record id.
+
 Search in the copilot is feature hashing, not TF–IDF: `slot = sha256(word)[0:4] mod 768`,
 `weight = 1 + ln(count)`, cosine distance, cutoff 0.98, top 5 after the approval and shared-word
 filters. Regenerate the parity fixture after changing the backend tokenizer:
