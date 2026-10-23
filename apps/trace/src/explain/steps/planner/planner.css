@@ -1,0 +1,143 @@
+/* Extras for the planner step modules (2D view). */
+.p-empty {
+  margin: 0;
+  font: 13px var(--mono);
+  color: var(--faint);
+}
+.p-dim {
+  font: 12px var(--mono);
+  color: var(--muted);
+}
+.p-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.p-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--code-bg);
+  font: 12.5px var(--mono);
+  color: var(--soft);
+  white-space: nowrap;
+}
+.p-chip small {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.p-chip.is-hit {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+}
+.p-chip.is-kept {
+  border-color: color-mix(in srgb, var(--good) 60%, transparent);
+  color: var(--text);
+}
+.p-chip.is-dropped {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.p-chip.is-dim {
+  color: var(--faint);
+}
+.p-lists {
+  display: grid;
+  gap: 10px;
+}
+.p-lists > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.p-lists > div > span {
+  font-size: 12px;
+  color: var(--muted);
+  padding-top: 3px;
+}
+.p-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  font: 13px var(--mono);
+}
+.p-kv dt {
+  color: var(--muted);
+}
+.p-kv dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.p-kv dd.is-pending {
+  color: var(--faint);
+}
+.p-kv dd.is-new {
+  color: var(--accent);
+}
+.p-change {
+  display: grid;
+  gap: 8px;
+}
+.p-change > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.p-change > div > span {
+  font-size: 12px;
+  color: var(--muted);
+  padding-top: 6px;
+}
+.p-old {
+  color: var(--faint);
+  text-decoration: line-through;
+  margin-right: 6px;
+}
+.p-new {
+  color: var(--accent);
+}
+.p-rule-test {
+  color: var(--soft);
+}
+.p-values {
+  font: 12.5px var(--mono);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.x-table tr.p-skipped td {
+  color: var(--faint);
+  opacity: 0.6;
+}
+.x-table tr.p-hit td {
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+}
+.x-table tr.p-deleted td {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+.x-table tr.p-added td,
+.x-table tr.p-changed td {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+}
+.p-message {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--code-bg);
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--text);
+}
+.p-table .x-tag {
+  white-space: nowrap;
+}
