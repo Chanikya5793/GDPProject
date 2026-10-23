@@ -23,6 +23,19 @@ function highlight(line) {
   return out;
 }
 
+// Code is shown without comments; the guide does the explaining. A `//`
+// inside a string or regex literal is kept.
+export function stripComment(line) {
+  let out = "";
+  let last = 0;
+  for (const m of line.matchAll(TOKEN)) {
+    if (m[1]) return (out + line.slice(last, m.index)).replace(/\s+$/, "");
+    out += line.slice(last, m.index + m[0].length);
+    last = m.index + m[0].length;
+  }
+  return out + line.slice(last);
+}
+
 // Variables whose name appears on a source line, for inline values.
 function onLine(vars, text) {
   return vars.filter(([name]) => {
@@ -72,7 +85,9 @@ export default function SourcePanel({ module, frame, previous = {}, reduced }) {
               <span>:{block.line}</span>
             </h4>
             <ol>
-              {block.lines.map((text, li) => {
+              {block.lines.map((raw, li) => {
+                const text = stripComment(raw);
+                if (!text.trim() && raw.trim()) return null;
                 const key = `${bi}:${li}`;
                 const running = active.has(key);
                 const inline = running ? onLine(vars, text).slice(0, 4) : [];
@@ -100,7 +115,7 @@ export default function SourcePanel({ module, frame, previous = {}, reduced }) {
       <footer>
         <p className="src-step">
           {lines.length ? (
-            lines.map((i) => <code key={i}>{module.code[i]?.trim()}</code>)
+            lines.map((i) => <code key={i}>{stripComment(module.code[i] ?? "").trim()}</code>)
           ) : (
             <span>Setting up: no line is running yet.</span>
           )}

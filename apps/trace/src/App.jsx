@@ -7,6 +7,7 @@ import { DataPanel, RequestPanel } from "./Panels.jsx";
 import { analyze, applyProposal, SCENARIOS, SEED_RECORDS } from "./engine/pipeline.js";
 import { microscope } from "./engine/microscope.js";
 import { stepsFor } from "./steps.js";
+import { sampleCopilot, SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
 
 const seeds = () => SEED_RECORDS.map((r) => ({ ...r }));
 function useReducedMotion() {
@@ -78,10 +79,16 @@ export default function App() {
 
   const steps = stepsFor(mode);
   const data = useMemo(() => microscope(trace, generatedTokens), [trace, generatedTokens]);
-  const ctx = useMemo(
-    () => ({ trace, data, model: data.transformer, records, applied, generatedTokens }),
-    [trace, data, records, applied, generatedTokens],
-  );
+  const ctx = useMemo(() => {
+    // The copilot track uses the sample exchange; any other message has no
+    // real reply to show.
+    const copilot = {
+      ...sampleCopilot(),
+      message: trace.original || SAMPLE_MESSAGE,
+      response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null,
+    };
+    return { trace, data, model: data.transformer, records, applied, generatedTokens, copilot };
+  }, [trace, data, records, applied, generatedTokens]);
   // Playback halts after Decide while the request still needs an answer.
   const stopAt =
     mode === "planner" && trace.decision.status === "clarify"
@@ -147,6 +154,7 @@ export default function App() {
     if (next === mode) return;
     setMode(next);
     setGeneratedTokens([]);
+    if (next === "copilot" && trace.original !== SAMPLE_MESSAGE) run(SAMPLE_MESSAGE);
   }
 
   return (
@@ -165,6 +173,9 @@ export default function App() {
           </button>
           <button aria-pressed={mode === "transformer"} onClick={() => switchMode("transformer")}>
             Transformer block
+          </button>
+          <button aria-pressed={mode === "copilot"} onClick={() => switchMode("copilot")}>
+            Copilot
           </button>
         </div>
         <div className="segmented" role="group" aria-label="View">

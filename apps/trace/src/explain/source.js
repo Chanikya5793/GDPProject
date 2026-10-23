@@ -1,8 +1,9 @@
 // The real engine source, shown next to the pseudocode.
 import pipeline from "../engine/pipeline.js?raw";
 import transformer from "../engine/transformer.js?raw";
+import copilot from "../engine/copilot.js?raw";
 
-const FILES = { pipeline, transformer };
+const FILES = { pipeline, transformer, copilot };
 
 // Returns the top-level declaration `name` from an engine file: its first
 // line through the end of its indented body (and the closing bracket).

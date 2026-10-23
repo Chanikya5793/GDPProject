@@ -13,10 +13,12 @@
 // sentence about this micro-step, with the real numbers), vars (name →
 // value shown in the Variables panel), hold? (relative duration), ...state }
 //
-// ctx: { trace, data, model, records, applied, generatedTokens }
+// ctx: { trace, data, model, records, applied, generatedTokens, copilot }
+// ctx.copilot (copilot track only): see src/engine/copilotSample.js
 import planner from "./planner/index.js";
 import transformer from "./transformer/index.js";
+import copilot from "./copilot/index.js";
 
-const modules = [...planner, ...transformer];
+const modules = [...planner, ...transformer, ...copilot];
 
 export const STEP_MODULES = Object.fromEntries(modules.map((m) => [m.id, m]));

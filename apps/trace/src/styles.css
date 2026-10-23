@@ -1088,6 +1088,30 @@ kbd {
   border-color: var(--accent);
 }
 
+/* Honesty badges on copilot steps */
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font: 600 11px var(--sans);
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+}
+.badge.is-real {
+  color: #0d1a14;
+  background: #8fe3c8;
+}
+.badge.is-recomputed {
+  color: #0d1420;
+  background: #9fc4ff;
+}
+.badge.is-illustration {
+  color: #f4c38b;
+  background: transparent;
+  border: 1px solid #f4c38b88;
+}
+
 /* Error fallback */
 .crash {
   position: fixed;

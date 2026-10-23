@@ -11,7 +11,30 @@ value:
   The weights are fixed formulas, not trained, so the arithmetic is real and the predicted
   tokens are meaningless.
 
+- **Copilot**: how the Northwest Planner copilot turns a chat message into a reply. Each step is
+  badged **real** (values from the actual exchange), **recomputed** (the server's exact search
+  algorithm, rerun in the browser; parity with the Python is tested against a fixture generated
+  from `backend/app/local_embeddings.py`), or **illustration** (the transformer steps, which show
+  how language models work in general on the user's words, not what the hosted model did).
+
 Nothing calls a model or a network service.
+
+## Inside the planner
+
+The planner shows a **Trace** button under every copilot reply, and "See how the copilot works"
+in the demo build. It calls `mountTrace` from `@gdp/trace/embed`, which opens TRACE full-screen
+in its own shadow root so neither app's CSS reaches the other. The trace code and three.js are
+loaded only on the first click. Inputs come from what the page already holds: the message, the
+turns before it, the reply's citations, lookups and proposals, and the user's records read from
+the encrypted local cache. Nothing is sent anywhere, and the message never goes into a URL.
+
+Search in the copilot is feature hashing, not TF–IDF: `slot = sha256(word)[0:4] mod 768`,
+`weight = 1 + ln(count)`, cosine distance, cutoff 0.98, top 5 after the approval and shared-word
+filters. Regenerate the parity fixture after changing the backend tokenizer:
+
+```sh
+backend/.venv312/bin/python apps/trace/scripts/lexical_fixture.py
+```
 
 ```sh
 # from the repository root
@@ -83,6 +106,9 @@ src/engine/pipeline.js       normalization, tokenizer, extraction, TF–IDF, cos
 src/engine/transformer.js    BPE training/encoding, weights, attention, layer norm, GELU, vocabulary head
 src/engine/microscope.js     per-character and per-product inspection data
 src/engine/classroom.js      the eight self-checks offered in the Data panel
+src/engine/copilot.js        browser port of the copilot's lexical search and prompt sections
+src/engine/copilotSample.js  a sample copilot exchange for the demo and tests
+src/embed.jsx                mountTrace(): the overlay the planner opens
 src/steps.js                 step names, summaries and formulas
 src/explain/steps/           one module per step: frames, narration, pseudocode, map blocks and state
 src/map/                     block layout and painting, the 2D canvas map, the 3D map, camera

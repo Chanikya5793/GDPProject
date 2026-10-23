@@ -15,7 +15,8 @@ const server = await createServer({
 });
 const load = (path) => server.ssrLoadModule(path);
 const { STEP_MODULES } = await load("/src/explain/steps/index.js");
-const { PLANNER_STEPS, TRANSFORMER_STEPS } = await load("/src/steps.js");
+const { PLANNER_STEPS, TRANSFORMER_STEPS, COPILOT_STEPS } = await load("/src/steps.js");
+const { sampleCopilot, SAMPLE_RECORDS } = await load("/src/engine/copilotSample.js");
 const { analyze, applyProposal, SCENARIOS, SEED_RECORDS } = await load("/src/engine/pipeline.js");
 const { microscope } = await load("/src/engine/microscope.js");
 const { buildTrack } = await load("/src/map/track.js");
@@ -37,6 +38,35 @@ function contexts() {
   return out;
 }
 
+// The copilot track: a full exchange, and the edges a real chat can produce.
+function copilotContexts() {
+  const base = sampleCopilot();
+  const variants = [
+    ["sample", base],
+    ["stopwords only", { ...base, message: "please show me what i have to do", response: null }],
+    ["no response yet", { ...base, response: null }],
+    ["no records", { ...base, records: [] }],
+    ["unicode", { ...base, message: "Straße café ﬁnal résumé 👋 C++" }],
+    [
+      "focus and history",
+      {
+        ...base,
+        focus: SAMPLE_RECORDS[0],
+        history: [
+          { role: "user", text: "What is due this week?" },
+          { role: "assistant", text: "Your GDP report is due Thursday." },
+        ],
+        response: { ...base.response, steps: [], proposals: [], unavailable: ["No matching task was found to update."] },
+      },
+    ],
+  ];
+  return variants.map(([label, copilot]) => {
+    const trace = analyze(copilot.message);
+    const data = microscope(trace);
+    return { label, ctx: { trace, data, model: data.transformer, records: SEED_RECORDS, applied: false, generatedTokens: [], copilot } };
+  });
+}
+
 test.after(() => server.close());
 
 const inBounds = (block, cells, label) =>
@@ -44,9 +74,13 @@ const inBounds = (block, cells, label) =>
     assert.ok(r >= 0 && r < block.rows && c >= 0 && c < block.cols, `${label}: cell ${r},${c} outside ${block.id}`),
   );
 
-for (const [mode, steps] of [["planner", PLANNER_STEPS], ["transformer", TRANSFORMER_STEPS]]) {
+for (const [mode, steps, make] of [
+  ["planner", PLANNER_STEPS, contexts],
+  ["transformer", TRANSFORMER_STEPS, contexts],
+  ["copilot", COPILOT_STEPS, copilotContexts],
+]) {
   test(`${mode} map: blocks, per-frame state and math are consistent`, () => {
-    for (const { label, ctx } of contexts()) {
+    for (const { label, ctx } of make()) {
       const track = buildTrack(steps, STEP_MODULES, ctx);
       const ids = track.blocks.map((b) => b.id);
       assert.equal(new Set(ids).size, ids.length, `${label}: duplicate block ids ${ids}`);
@@ -92,12 +126,14 @@ for (const [mode, steps] of [["planner", PLANNER_STEPS], ["transformer", TRANSFO
   });
 }
 
-for (const step of [...PLANNER_STEPS, ...TRANSFORMER_STEPS]) {
+const copilotOnly = new Set(COPILOT_STEPS.map((s) => s.id).filter((id) => !TRANSFORMER_STEPS.some((t) => t.id === id)));
+for (const step of [...PLANNER_STEPS, ...TRANSFORMER_STEPS, ...COPILOT_STEPS.filter((s) => copilotOnly.has(s.id))]) {
   test(`step ${step.id} renders every frame`, (t) => {
     const module = STEP_MODULES[step.id];
     if (!module) return t.skip("no 2D module yet");
     assert.ok(module.code.length && module.source.length, "code and source are listed");
-    for (const { label, ctx } of contexts()) {
+    const all = copilotOnly.has(step.id) ? copilotContexts() : [...contexts(), ...(TRANSFORMER_STEPS.some((s) => s.id === step.id) ? copilotContexts() : [])];
+    for (const { label, ctx } of all) {
       const frames = module.frames(ctx);
       assert.ok(frames.length > 0, `${label}: no frames`);
       assert.ok(frames.length <= 400, `${label}: ${frames.length} frames`);

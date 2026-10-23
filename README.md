@@ -4,6 +4,9 @@ This repository also contains **[TRACE — Language Observatory](apps/trace/READ
 an independent NLP teaching website under `apps/trace`. Start it with
 `npm run dev:trace`; verify it with `npm run test:trace` and `npm run build:trace`.
 The root npm workspace includes `apps/*`; the planner commands below retain their existing behavior.
+Every copilot reply in the planner has a **Trace** button that opens TRACE on that exchange:
+real values where the browser has them, the server's search recomputed locally, and the
+language-model internals as a labelled illustration.
 
 GDPProject is an offline-capable planner with Firebase Authentication, encrypted web and
 mobile storage, and a user-scoped FastAPI RAG copilot. Planner mutations remain ordinary

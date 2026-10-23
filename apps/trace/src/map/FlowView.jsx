@@ -1,5 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import { GROUPS, summarize } from "../flow.js";
+import Badge from "../Badge.jsx";
 
 // The system at stage level: each algorithm as a card with what went in and
 // what came out for this request. Click a card to open it on the map.
@@ -30,6 +31,7 @@ export default function FlowView({ mode, track, si, ctx, onPick, onOpen }) {
                   <header>
                     <small>{String(i + 1).padStart(2, "0")}</small>
                     <b>{step.algorithm}</b>
+                    {step.badge && <Badge kind={step.badge} />}
                   </header>
                   <p>{step.plain}</p>
                   <dl>

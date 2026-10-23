@@ -13,16 +13,19 @@ import {
 import Map2D from "./map/Map2D.jsx";
 import Map3D from "./map/Map3D.jsx";
 import FlowView from "./map/FlowView.jsx";
+import Badge from "./Badge.jsx";
 import { buildTrack, sceneAt } from "./map/track.js";
 import { STEP_MODULES } from "./explain/steps/index.js";
 import { show } from "./explain/kit.jsx";
 import StepActions from "./StepActions.jsx";
-import SourcePanel from "./explain/SourcePanel.jsx";
+import SourcePanel, { stripComment } from "./explain/SourcePanel.jsx";
 
 const BASE_MS = 1250;
 const INTRO = {
   planner:
     "Your sentence passes through a chain of small, classic algorithms. None of them is an AI model: each one does a single, checkable job, and the next one builds on its result.",
+  copilot:
+    "Your message went through real search code, a real prompt and a real model, and came back as an answer and maybe a proposed change. Steps marked real show your actual values; recomputed steps rerun the server's exact algorithm in your browser; the language-model steps are an illustration of how such models work, on your words.",
   transformer:
     "This is the core of a language model, run on your sentence: text becomes numbers, the numbers look at each other (attention), get processed, and turn into a guess for the next chunk of text. The weights here are untrained, so the guess is arithmetic, not meaning.",
 };
@@ -190,7 +193,9 @@ export default function TrackView({
   useEffect(() => {
     function key(e) {
       if (paused || e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target instanceof Element ? e.target : null;
+      // Inside a shadow root the window sees the host; the path has the real target.
+      const origin = e.composedPath?.()[0] ?? e.target;
+      const target = origin instanceof Element ? origin : null;
       if (target?.closest("input,textarea,select,[contenteditable]")) return;
       const k = e.key;
       if (k === " " && !target?.closest("button,a")) {
@@ -287,7 +292,13 @@ export default function TrackView({
           </div>
           {flow ? (
             <>
-              <h1>{mode === "planner" ? "How the planner reads you" : "Inside a transformer block"}</h1>
+              <h1>
+                {mode === "planner"
+                  ? "How the planner reads you"
+                  : mode === "copilot"
+                    ? "From your message to this reply"
+                    : "Inside a transformer block"}
+              </h1>
               <p className="g-summary">{INTRO[mode]}</p>
               <p className="g-at">
                 Now at <b>{step.algorithm}</b>. Press play to move stage by stage, or open any stage
@@ -297,7 +308,10 @@ export default function TrackView({
           ) : (
             <>
               <h1>{step.name}</h1>
-              <p className="g-algo">{step.algorithm}</p>
+              <p className="g-algo">
+                {step.algorithm}
+                {step.badge && <Badge kind={step.badge} />}
+              </p>
               <p className="g-summary">{detail ? step.summary : step.plain}</p>
               {detail && <code className="g-formula">{step.formula}</code>}
             </>
@@ -345,7 +359,7 @@ export default function TrackView({
                 {module.code.map((line, i) => (
                   <li key={i} className={lines.has(i) ? "is-active" : ""}>
                     <span>{i + 1}</span>
-                    <code>{line || " "}</code>
+                    <code>{stripComment(line) || " "}</code>
                   </li>
                 ))}
               </ol>

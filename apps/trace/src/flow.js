@@ -1,6 +1,7 @@
 // One-line "went in / came out" summaries per step, from the real results,
 // for the Flow view. Kept short: details live in the 2D and 3D maps.
 import { friendlyDate, friendlyTime } from "./engine/pipeline.js";
+import { MODEL, promptSections, QUERY_CHARS, retrieve, tokenSteps, vectorize } from "./engine/copilot.js";
 
 const q = (s) => `“${s}”`;
 const list = (items, max = 6) =>
@@ -8,7 +9,56 @@ const list = (items, max = 6) =>
 const pct = (p) => `${(p * 100).toFixed(1)}%`;
 const vec = (row) => `[${row.map((v) => v.toFixed(2)).join(", ")}]`;
 
-export function summarize(id, { trace, data, records, applied, generatedTokens }) {
+function summarizeCopilot(id, c) {
+  const query = c.message.trim().slice(0, QUERY_CHARS);
+  const r = c.response;
+  switch (id) {
+    case "message":
+      return { in: q(c.message.trim()), out: `${c.message.trim().length} chars · ${c.history.length} earlier turns${c.focus ? ` · about “${c.focus.title}”` : ""}` };
+    case "searchwords": {
+      const s = tokenSteps(query);
+      return { in: `${s.words.length} words`, out: s.kept.length ? list(s.kept) : "only stopwords: search skipped" };
+    }
+    case "hashvector": {
+      const v = vectorize(query);
+      return { in: `${v.rows.length} search words`, out: v.rows.length ? list(v.rows.map((x) => `${x.token}→${x.slot}`), 5) : "empty vector" };
+    }
+    case "retrieval": {
+      const run = retrieve(c.message, c.records);
+      if (run.skipped) return { in: `${c.records.length} records`, out: "search skipped" };
+      return {
+        in: `${c.records.length} records in this browser`,
+        out: run.kept.length ? run.kept.map((k) => `${k.record.title} (${k.distance.toFixed(2)})`).join(" · ") : "no record close enough",
+      };
+    }
+    case "prompt": {
+      const kept = retrieve(c.message, c.records).kept ?? [];
+      const sections = promptSections({ message: c.message, history: c.history, focus: c.focus, hits: kept, today: c.today });
+      return { in: "sources, conversation, question", out: `${sections.length} labelled sections → ${MODEL.id}` };
+    }
+    case "lookups":
+      return { in: "model output", out: !r ? "no reply yet" : r.steps?.length ? r.steps.map((s) => s.label).join(" · ") : "no extra lookups" };
+    case "answer":
+      return { in: "model JSON", out: !r ? "no reply yet" : `${q(r.answer.slice(0, 90))}${r.answer.length > 90 ? "…" : ""} · ${r.citations?.length ?? 0} citations` };
+    case "proposals":
+      return {
+        in: "suggested actions",
+        out: !r ? "no reply yet" : r.proposals?.length ? r.proposals.map((p) => `${p.operation} “${p.after?.title ?? p.before?.title ?? p.record_id}”`).join(" · ") : "no changes suggested",
+      };
+    default:
+      return null;
+  }
+}
+
+export function summarize(id, ctx) {
+  if (ctx.copilot) {
+    const c = summarizeCopilot(id, ctx.copilot);
+    if (c) return c;
+  }
+  return summarizeTrack(id, ctx);
+}
+
+function summarizeTrack(id, { trace, data, records, applied, generatedTokens }) {
   const m = data.transformer;
   const e = trace.entities;
   const last = m.tokens.length - 1;
@@ -100,6 +150,13 @@ export function summarize(id, { trace, data, records, applied, generatedTokens }
 
 // The higher-level grouping the Flow view uses: which steps form one stage.
 export const GROUPS = {
+  copilot: [
+    { name: "Your message", steps: ["message"] },
+    { name: "Search your planner (recomputed)", steps: ["searchwords", "hashvector", "retrieval"] },
+    { name: "Build the prompt", steps: ["prompt"] },
+    { name: "Inside a language model (illustration)", steps: ["bpe", "embedding", "position", "qk", "attention", "output", "residual", "feedforward", "logits", "decode"] },
+    { name: "Answer and act (real)", steps: ["lookups", "answer", "proposals"] },
+  ],
   planner: [
     { name: "Read the words", steps: ["signal", "tokenize"] },
     { name: "Understand the request", steps: ["parse", "filter"] },

@@ -245,5 +245,133 @@ export const TRANSFORMER_STEPS = [
   },
 ];
 
+// The planner copilot, from your message to its answer. `badge` says how much
+// of the step is the real system: "real" values from your actual exchange,
+// "recomputed" by the same algorithm in your browser, or "illustration" of a
+// mechanism we cannot show from the inside.
+const COPILOT_HEAD = [
+  {
+    id: "message",
+    name: "Your message",
+    badge: "real",
+    algorithm: "Request validation",
+    color: "#c6acff",
+    plain:
+      "Your message is trimmed and checked (1 to 8,000 characters). The first 500 characters become the search query; earlier turns and any attached record travel with it.",
+    summary:
+      "The API validates the request (message 1–8000 chars, up to 20 earlier turns of 4000 chars, optional focus record, timezone), checks your rate limit, and cuts the search query to 500 characters.",
+    formula: "query = message.trim().slice(0, 500)",
+    io: ["your message", "validated request + search query"],
+    limit: "The message is the real one you sent.",
+  },
+  {
+    id: "searchwords",
+    name: "Search words",
+    badge: "recomputed",
+    algorithm: "Lexical tokenizer",
+    color: "#b4a2ff",
+    plain:
+      "The search query is lowercased and split into plain letters and digits. Common filler words like “the”, “my” and “please” are dropped.",
+    summary:
+      "casefold() the query, keep every run of [a-z0-9], and drop the 32 stopwords. No stemming: “reports” and “report” are different words.",
+    formula: "tokens = casefold(q).match(/[a-z0-9]+/g) − STOPWORDS",
+    io: ["search query", "search words"],
+    limit: "Recomputed in your browser with the same rules as backend/app/local_embeddings.py.",
+  },
+  {
+    id: "hashvector",
+    name: "Hashed vector",
+    badge: "recomputed",
+    algorithm: "Feature hashing",
+    color: "#96ddf1",
+    plain:
+      "Each word is turned into a fingerprint (SHA-256) and dropped into one of 768 numbered boxes. Words that repeat make their box heavier.",
+    summary:
+      "slot = first 4 bytes of sha256(word) mod 768; weight = 1 + ln(count). Record titles add +2 to their words. There is no IDF.",
+    formula: "v[sha256(w)[0:4] mod 768] += 1 + ln(count(w))",
+    io: ["search words", "768-slot vector"],
+    limit: "Exactly the server's formula, checked against the Python code in a test.",
+  },
+  {
+    id: "retrieval",
+    name: "Retrieval",
+    badge: "recomputed",
+    algorithm: "Cosine nearest neighbours",
+    color: "#91ead3",
+    plain:
+      "Your vector is compared with the vector of every record you allowed the copilot to read. The closest ones that really share a word with your question are kept, up to 5.",
+    summary:
+      "Cosine distance to each record's vector; take the 25 nearest, then drop distance > 0.98, records not approved for AI, and hash collisions with no shared word; keep 5.",
+    formula: "distance = 1 − (q · d) / (‖q‖ ‖d‖)",
+    io: ["query vector + your records", "up to 5 sources"],
+    limit:
+      "Recomputed over the records in this browser. The server searched its own index of the same records; its pick is in the citations.",
+  },
+  {
+    id: "prompt",
+    name: "Prompt",
+    badge: "real",
+    algorithm: "Prompt assembly",
+    color: "#a4c5ff",
+    plain:
+      "Everything the model will read is packed into labelled sections: today’s date, a briefing of your planner, the search results, the conversation and your question.",
+    summary:
+      "Sections in a fixed order so the provider can cache the stable prefix. Search hits are wrapped as untrusted content; character caps, not token counts, keep it bounded.",
+    formula: "prompt = [TODAY, BRIEFING, SOURCES, TOOLS, CONVERSATION, FOCUS, QUESTION]",
+    io: ["sources + conversation + question", "one prompt"],
+    limit: "The order and caps are real. The system instructions themselves are not shown.",
+  },
+];
+const COPILOT_MODEL = TRANSFORMER_STEPS.map((s) => ({
+  ...s,
+  badge: "illustration",
+  limit: `How a language model works in general, run on your words with small untrained weights. ${s.limit}`,
+}));
+const COPILOT_TAIL = [
+  {
+    id: "lookups",
+    name: "Lookups",
+    badge: "real",
+    algorithm: "Tool loop",
+    color: "#f5c6a6",
+    plain:
+      "Before answering, the model may ask the planner for more: a search or a date range. Each lookup runs, its results are added, and the model writes again.",
+    summary:
+      "The model returns tool_requests in its JSON instead of an answer; the server runs at most 4 lookups over at most 3 generations within 90 seconds.",
+    formula: "while answer.tool_requests and rounds < 3: run tools, generate again",
+    io: ["model output", "extra evidence"],
+    limit: "The lookups listed are the ones that really ran for your message.",
+  },
+  {
+    id: "answer",
+    name: "Answer",
+    badge: "real",
+    algorithm: "Structured output + citation check",
+    color: "#a0e8ca",
+    plain:
+      "The model must reply in a fixed JSON shape: the answer, which sources it used, and any changes it suggests. Answers that cite sources it was never given are thrown away.",
+    summary:
+      "GeneratedAnswer {answer, citation_ids, needs_clarification, actions}. Inline [S2] markers are removed; citations are only the sources the answer used.",
+    formula: "citations = sources ∩ answer.citation_ids",
+    io: ["model JSON", "answer + citations"],
+    limit: "The text and citations are the real ones from your reply.",
+  },
+  {
+    id: "proposals",
+    name: "Proposals",
+    badge: "real",
+    algorithm: "Validated, revision-checked change",
+    color: "#abefd2",
+    plain:
+      "Suggested changes become proposals. Nothing is written until you confirm, and only if the record has not changed since the proposal was made.",
+    summary:
+      "Each action is validated per record type and stored as a proposal for 24 hours. Confirming sends the expected base revision; the write is a transaction that rejects stale proposals.",
+    formula: "if record.revision === proposal.base_revision: write, revision + 1",
+    io: ["actions", "proposals waiting for you"],
+    limit: "Before and after are the real proposed values.",
+  },
+];
+export const COPILOT_STEPS = [...COPILOT_HEAD, ...COPILOT_MODEL, ...COPILOT_TAIL];
+
 export const stepsFor = (mode) =>
-  mode === "planner" ? PLANNER_STEPS : TRANSFORMER_STEPS;
+  mode === "planner" ? PLANNER_STEPS : mode === "copilot" ? COPILOT_STEPS : TRANSFORMER_STEPS;
