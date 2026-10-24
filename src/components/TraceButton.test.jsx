@@ -18,7 +18,7 @@ describe('TraceButton', () => {
       { id: 'u', role: 'user', text: 'When is the report due?' },
       { id: 'b', role: 'bot', text: 'Thursday.' },
     ]
-    render(<TraceButton messages={messages} botId="b" aiInfo={null} />)
+    render(<TraceButton messages={messages} botId="b" />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /trace/i })) })
     expect(mountTrace).toHaveBeenCalledTimes(1)
     const { copilot } = mountTrace.mock.calls[0][0]

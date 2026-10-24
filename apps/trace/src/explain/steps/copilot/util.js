@@ -72,3 +72,36 @@ export const value = (v) =>
   v === undefined || v === null ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
 
 export const reasonOf = (u) => (typeof u === "string" ? u : (u?.reason ?? JSON.stringify(u)));
+
+// The server's own searches for this reply, when the backend reported them
+// (retrieval.searches): each candidate's rank, distance and outcome.
+export const serverSearchesOf = (ctx) => ctx.copilot.response?.retrieval?.searches ?? [];
+
+export const OUTCOME_TEXT = {
+  kept: "kept",
+  too_far: "too far (distance over the cutoff)",
+  type_not_indexed: "type not indexed in your settings",
+  type_filtered: "not the type this lookup asked for",
+  missing: "record no longer exists",
+  not_approved: "not approved for AI",
+  stale_revision: "vector older than the record (stale revision)",
+  no_shared_word: "no shared word (hash collision)",
+  limit_reached: "limit of 5 already reached",
+};
+
+// Every server candidate as one row, across all of the turn's searches.
+export function serverRows(ctx) {
+  const titles = new Map((ctx.copilot.records ?? []).map((r) => [String(r.id), r.title]));
+  const browser = new Map((retrievalOf(ctx).scored ?? []).map((s) => [String(s.record.id), s.distance]));
+  return serverSearchesOf(ctx).flatMap((search, si) =>
+    search.candidates.map((c) => ({
+      ...c,
+      search: si,
+      query: search.query,
+      title: c.record_id === null || c.record_id === undefined
+        ? null
+        : titles.get(String(c.record_id)) ?? `record ${c.record_id} (not in this browser)`,
+      browser: c.record_id != null ? browser.get(String(c.record_id)) : undefined,
+    })),
+  );
+}

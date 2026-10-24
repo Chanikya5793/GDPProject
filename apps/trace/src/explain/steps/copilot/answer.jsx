@@ -17,7 +17,7 @@ function view(ctx) {
     lines,
     chunk,
     cites: res?.citations ?? [],
-    model: c.model?.model ?? MODEL.id,
+    model: MODEL.name,
     firstText: t?.firstText && t?.sent ? t.firstText - t.sent : null,
     total: t?.final && t?.sent ? t.final - t.sent : null,
   };
@@ -72,8 +72,8 @@ export default {
       {
         phase: "Schema",
         line: 0,
-        say: `The model (${v.model}, temperature ${MODEL.temperature}) must reply with JSON that fits the GeneratedAnswer schema exactly.${v.res ? sampleNote(ctx) : ""}`,
-        vars: { model: v.model, temperature: MODEL.temperature },
+        say: `The LLM (temperature ${MODEL.temperature}) must reply with JSON that fits the GeneratedAnswer schema exactly.${v.res ? sampleNote(ctx) : ""}`,
+        vars: { temperature: MODEL.temperature },
         stage: "schema",
         field: -1,
       },

@@ -1,7 +1,7 @@
 import { Panel, Table, Tag } from "../../kit.jsx";
 import { CANDIDATES, MAX_DISTANCE, RETRIEVAL_LIMIT, tokens, VECTOR_COLS } from "../../../engine/copilot.js";
 import { all, row, tableBlock } from "../../../map/blocks.js";
-import { messageOf, plural, retrievalOf, short } from "./util.js";
+import { messageOf, OUTCOME_TEXT, plural, retrievalOf, serverRows, serverSearchesOf, short } from "./util.js";
 
 const cellOf = (slot) => [Math.floor(slot / VECTOR_COLS), slot % VECTOR_COLS];
 const f3 = (v) => v.toFixed(3);
@@ -195,6 +195,46 @@ export default {
         compare: true,
       });
     }
+    // The server's real ranking, when the reply carried it.
+    const searches = serverSearchesOf(ctx);
+    if (searches.length) {
+      const rowsAll = serverRows(ctx);
+      const real = { ...end, server: rowsAll.length };
+      frames.push({
+        phase: "Server",
+        line: [7, 8],
+        say: `Now the real thing: the server reported ${plural(searches.length, "search", "searches")} for this reply, with every candidate's distance and what the filters did. These are the server's values, not a recomputation.`,
+        vars: { searches: searches.length, candidates: rowsAll.length },
+        at: -1,
+        ...real,
+        server: 0,
+      });
+      rowsAll.forEach((c, k) => {
+        const same = c.browser !== undefined && Math.abs(c.browser - c.distance) < 5e-6;
+        frames.push({
+          phase: "Server",
+          line: c.outcome === "kept" ? 11 : c.outcome === "too_far" ? 9 : c.outcome === "no_shared_word" ? 10 : 8,
+          say: `${c.search === 0 ? "Opening search" : `Lookup ${c.search}`}, rank ${c.rank}: ${c.title ? `“${short(c.title, 40)}”` : "a record the trace does not name"} at distance ${f3(c.distance)} — ${OUTCOME_TEXT[c.outcome] ?? c.outcome}.${c.citation_id ? ` Shown to the model as ${c.citation_id}.` : ""}${c.browser !== undefined ? (same ? " The browser computed the same distance." : ` The browser computed ${f3(c.browser)}; the record may have changed since it was indexed.`) : ""}`,
+          vars: { rank: c.rank, distance: c.distance, outcome: c.outcome, ...(c.citation_id ? { citation: c.citation_id } : {}) },
+          at: -1,
+          ...real,
+          server: k + 1,
+          serverAt: k,
+          hold: 0.55,
+        });
+      });
+      const kept = rowsAll.filter((c) => c.outcome === "kept");
+      frames.push({
+        phase: "Server",
+        line: 13,
+        say: kept.length
+          ? `The server kept ${plural(kept.length, "record")} across these searches: ${kept.map((c) => (c.title ? `“${short(c.title, 30)}”` : c.record_id)).join(", ")}.`
+          : "The server's searches kept nothing; the reply rests on the planner briefing or on no records.",
+        vars: { kept: kept.map((c) => c.record_id) },
+        at: -1,
+        ...real,
+      });
+    }
     return frames;
   },
   blocks(ctx) {
@@ -226,6 +266,27 @@ export default {
           { text: count, tone: count === "server only" ? "muted" : count.startsWith("−") ? "warn" : "number" },
         ]),
       }),
+      ...(serverSearchesOf(ctx).length
+        ? [
+            tableBlock({
+              id: "cserver",
+              title: "the server's real search: rank, distance, outcome",
+              head: ["search", "rank", "record", "server", "browser", "outcome", "cite"],
+              widths: [0.8, 0.6, 2.1, 0.9, 0.9, 1.6, 0.6],
+              rows: serverRows(ctx).map((c) => [
+                { text: c.search === 0 ? "opening" : `lookup ${c.search}`, dim: true },
+                String(c.rank),
+                c.title
+                  ? { text: short(c.title, 24), full: c.title, align: "left" }
+                  : { text: "not named", tone: "muted", full: OUTCOME_TEXT[c.outcome] },
+                { text: f3(c.distance), value: c.distance },
+                c.browser !== undefined ? { text: f3(c.browser), value: c.browser, dim: true } : { text: "—", tone: "muted" },
+                { text: c.outcome.replaceAll("_", " "), tone: c.outcome === "kept" ? "good" : "muted", full: OUTCOME_TEXT[c.outcome] },
+                c.citation_id ? { text: c.citation_id, tone: "accent" } : "",
+              ]),
+            }),
+          ]
+        : []),
     ];
   },
   output: "cscores",
@@ -246,10 +307,32 @@ export default {
         source: frame.compare ? comparison(ctx).rows.flatMap((i) => row(i, 5)) : [],
       },
       cfunnel: { done: () => !!frame.funnel, active: frame.phase === "Funnel" ? all(9, 2) : [] },
+      ...(serverSearchesOf(ctx).length
+        ? {
+            cserver: {
+              done: (r_) => frame.server === undefined ? false : r_ < frame.server || frame.server >= serverRows(ctx).length,
+              active: frame.serverAt !== undefined ? row(frame.serverAt, 7) : [],
+              source: (() => {
+                const c = frame.serverAt !== undefined ? serverRows(ctx)[frame.serverAt] : null;
+                const i = c?.record_id != null ? r.candidates.findIndex((x) => String(x.record.id) === String(c.record_id)) : -1;
+                return i >= 0 ? row(i, 5) : [];
+              })(),
+            },
+          }
+        : {}),
     };
   },
   math(frame, ctx) {
     const r = retrievalOf(ctx);
+    if (frame.serverAt !== undefined) {
+      const c = serverRows(ctx)[frame.serverAt];
+      return [
+        { label: "server", terms: [`distance ${f3(c.distance)}`], op: "", result: c.outcome.replaceAll("_", " ") },
+        ...(c.browser !== undefined
+          ? [{ label: "browser", terms: [`distance ${f3(c.browser)}`], op: "", result: Math.abs(c.browser - c.distance) < 5e-6 ? "same" : "differs" }]
+          : []),
+      ];
+    }
     const s = frame.at >= 0 ? r.candidates[frame.at] : null;
     if (!s) return [];
     if (frame.filter)

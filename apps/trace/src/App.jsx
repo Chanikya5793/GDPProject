@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Database, PenLine, Square, Workflow, X } from "lucide-react";
+import { Box, Database, Moon, PenLine, Square, Sun, Workflow, X } from "lucide-react";
 import TrackView from "./TrackView.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import StepPlayer from "./explain/StepPlayer.jsx";
 import { DataPanel, RequestPanel } from "./Panels.jsx";
 import { analyze, applyProposal, SCENARIOS, SEED_RECORDS } from "./engine/pipeline.js";
 import { microscope } from "./engine/microscope.js";
-import { stepsFor } from "./steps.js";
+import { copilotSteps, stepsFor } from "./steps.js";
 import { sampleCopilot, SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
 
 const seeds = () => SEED_RECORDS.map((r) => ({ ...r }));
@@ -60,8 +60,37 @@ const HAS_WEBGL = (() => {
   }
 })();
 
+// Light or dark: the system's choice until the visitor picks one.
+function useTheme() {
+  const query = "(prefers-color-scheme: light)";
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem("trace-theme");
+      if (saved === "light" || saved === "dark") return saved;
+    } catch {
+      /* fall back to the system */
+    }
+    return matchMedia(query).matches ? "light" : "dark";
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  const toggle = () =>
+    setTheme((t) => {
+      const next = t === "light" ? "dark" : "light";
+      try {
+        localStorage.setItem("trace-theme", next);
+      } catch {
+        /* the choice just won't persist */
+      }
+      return next;
+    });
+  return [theme, toggle];
+}
+
 export default function App() {
   const reduced = useReducedMotion();
+  const [theme, toggleTheme] = useTheme();
   const [mode, setMode] = useState("planner");
   const [view, setView] = useState("flow");
   const [records, setRecords] = useState(seeds);
@@ -77,7 +106,10 @@ export default function App() {
   // Earlier turns when the visitor answers a question instead of rewriting.
   const [thread, setThread] = useState([]);
 
-  const steps = stepsFor(mode);
+  const steps =
+    mode === "copilot"
+      ? copilotSteps({ response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null })
+      : stepsFor(mode);
   const data = useMemo(() => microscope(trace, generatedTokens), [trace, generatedTokens]);
   const ctx = useMemo(() => {
     // The copilot track uses the sample exchange; any other message has no
@@ -194,6 +226,9 @@ export default function App() {
             <PenLine size={14} />
             <span>{trace.original || "Enter a request"}</span>
           </button>
+          <button onClick={toggleTheme} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}>
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
           <button onClick={() => setDrawer("data")} aria-label="Records, checks and export">
             <Database size={16} />
             <span>Data</span>
@@ -206,6 +241,7 @@ export default function App() {
         mode={mode}
         steps={steps}
         ctx={ctx}
+        theme={theme}
         view={view}
         runId={runId}
         reduced={reduced}

@@ -12,31 +12,88 @@ const TITLE_FONT = 0.36;
 const CELL_FONT = 0.29;
 const SUB_FONT = 0.2;
 
-export const COLORS = {
-  plate: "#141924",
-  plateGhost: "#10141d",
-  edge: "#252d3f",
-  edgeGhost: "#1b2131",
-  title: "#d4d9e5",
-  label: "#7e889e",
-  text: "#e4e8f0",
-  faint: "#3a4258",
-  pos: [98, 214, 190],
-  neg: [240, 152, 120],
-  seq: [166, 146, 255],
-  active: "#ffd38a",
-  source: "#8fb8ff",
+// Canvas colours for both maps, per theme. setPalette() swaps them in place
+// so every renderer reading COLORS / TONES follows the page's light or dark.
+const PALETTES = {
+  dark: {
+    colors: {
+      bg: "#111513",
+      dot: "rgba(160, 185, 172, 0.12)",
+      link: "#2c3631",
+      plate: "#1a1f1d",
+      plateGhost: "#151a18",
+      plateRgb: [26, 31, 29],
+      edge: "#2a332e",
+      edgeGhost: "#212825",
+      title: "#dde5e0",
+      label: "#8fa69a",
+      text: "#e8ede9",
+      faint: "#3d4a44",
+      pos: [98, 214, 190],
+      neg: [240, 152, 120],
+      seq: [166, 146, 255],
+      active: "#ffcf7a",
+      activeRgb: [255, 207, 122],
+      source: "#8fb8ff",
+      sourceRgb: [143, 184, 255],
+      side: "#121614",
+      grid: ["#1e2522", "#181d1b"],
+    },
+    tones: {
+      keyword: { fg: "#c9b8ff", bg: "rgba(185, 160, 255, 0.16)" },
+      context: { fg: "#93a0bd", bg: "rgba(147, 160, 189, 0.10)" },
+      number: { fg: "#f4c09e", bg: "rgba(244, 180, 140, 0.15)" },
+      punctuation: { fg: "#7d889f", bg: "rgba(125, 136, 159, 0.10)" },
+      good: { fg: "#8fe3c8", bg: "rgba(110, 220, 190, 0.14)" },
+      warn: { fg: "#f4c38b", bg: "rgba(244, 195, 139, 0.15)" },
+      muted: { fg: "#6f8278", bg: "rgba(111, 130, 120, 0.06)" },
+      accent: { fg: "#ffe2ad", bg: "rgba(255, 207, 122, 0.18)" },
+    },
+  },
+  light: {
+    colors: {
+      bg: "#f3f7f5",
+      dot: "rgba(6, 20, 16, 0.10)",
+      link: "#c3d3cc",
+      plate: "#ffffff",
+      plateGhost: "#f7faf8",
+      plateRgb: [255, 255, 255],
+      edge: "#d2e0da",
+      edgeGhost: "#e4ece8",
+      title: "#061410",
+      label: "#537268",
+      text: "#061410",
+      faint: "#c3d3cc",
+      pos: [4, 150, 120],
+      neg: [220, 100, 60],
+      seq: [124, 58, 237],
+      active: "#d97706",
+      activeRgb: [217, 119, 6],
+      source: "#2563eb",
+      sourceRgb: [37, 99, 235],
+      side: "#dfe9e4",
+      grid: ["#dde7e2", "#e8efeb"],
+    },
+    tones: {
+      keyword: { fg: "#6d28d9", bg: "rgba(109, 40, 217, 0.09)" },
+      context: { fg: "#64748b", bg: "rgba(100, 116, 139, 0.08)" },
+      number: { fg: "#b45309", bg: "rgba(180, 83, 9, 0.10)" },
+      punctuation: { fg: "#94a3b8", bg: "rgba(148, 163, 184, 0.08)" },
+      good: { fg: "#047857", bg: "rgba(4, 120, 87, 0.10)" },
+      warn: { fg: "#b45309", bg: "rgba(180, 83, 9, 0.10)" },
+      muted: { fg: "#8ea59b", bg: "rgba(142, 165, 155, 0.06)" },
+      accent: { fg: "#92400e", bg: "rgba(217, 119, 6, 0.14)" },
+    },
+  },
 };
-export const TONES = {
-  keyword: { fg: "#c9b8ff", bg: "rgba(185, 160, 255, 0.16)" },
-  context: { fg: "#93a0bd", bg: "rgba(147, 160, 189, 0.10)" },
-  number: { fg: "#f4c09e", bg: "rgba(244, 180, 140, 0.15)" },
-  punctuation: { fg: "#7d889f", bg: "rgba(125, 136, 159, 0.10)" },
-  good: { fg: "#8fe3c8", bg: "rgba(110, 220, 190, 0.14)" },
-  warn: { fg: "#f4c38b", bg: "rgba(244, 195, 139, 0.15)" },
-  muted: { fg: "#6f7a92", bg: "rgba(111, 122, 146, 0.06)" },
-  accent: { fg: "#ffe3b0", bg: "rgba(255, 211, 138, 0.18)" },
-};
+export const COLORS = { ...PALETTES.dark.colors };
+export const TONES = { ...PALETTES.dark.tones };
+export function setPalette(mode, accent) {
+  const p = PALETTES[mode === "light" ? "light" : "dark"];
+  Object.assign(COLORS, p.colors, { accent: accent || (mode === "light" ? "#006a4e" : "#00c87a") });
+  Object.assign(TONES, p.tones);
+}
+setPalette("dark");
 
 const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace';
 const SANS = "Manrope, system-ui, sans-serif";

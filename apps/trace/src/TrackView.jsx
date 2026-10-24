@@ -15,6 +15,7 @@ import Map3D from "./map/Map3D.jsx";
 import FlowView from "./map/FlowView.jsx";
 import Badge from "./Badge.jsx";
 import { buildTrack, sceneAt } from "./map/track.js";
+import { setPalette } from "./map/paint.js";
 import { STEP_MODULES } from "./explain/steps/index.js";
 import { show } from "./explain/kit.jsx";
 import StepActions from "./StepActions.jsx";
@@ -47,6 +48,23 @@ function useInsets(withSource) {
     const right = withSource && size.w >= WIDE ? sourceWidth(size.w) + 24 : 16;
     return { left: guideWidth(size.w) + 24, right, top: 72, bottom: 96, wide: size.w >= WIDE };
   }, [size, withSource]);
+}
+
+// A paragraph that folds to two lines once playback starts, with a toggle.
+function Intro({ text, folded }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  const short = folded && !open;
+  return (
+    <div className={`g-intro ${short ? "is-folded" : ""}`}>
+      <p className="g-summary">{text}</p>
+      {folded && (
+        <button className="g-more" onClick={() => setOpen((v) => !v)}>
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function MathLines({ lines }) {
@@ -84,7 +102,11 @@ export default function TrackView({
   on3DFail,
   onOpenMap,
   paused,
+  theme = "dark",
+  accent = null,
 }) {
+  // Canvas colours follow the page theme; renderers are rebuilt on change.
+  useMemo(() => setPalette(theme, accent), [theme, accent]);
   const track = useMemo(() => buildTrack(steps, STEP_MODULES, ctx), [steps, ctx]);
   const [g, setG] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -100,6 +122,9 @@ export default function TrackView({
     }
   });
   const flow = view === "flow";
+  // Once playback has begun, the fixed intro text steps back and the text
+  // that changes with each frame takes the focus.
+  const [startedRun, setStartedRun] = useState(false);
   const insets = useInsets(detail && !flow);
   const showSource = detail && !flow && insets.wide;
   const setDetailed = (on) => {
@@ -182,6 +207,10 @@ export default function TrackView({
     return () => document.removeEventListener("visibilitychange", hidden);
   }, []);
 
+  useEffect(() => {
+    if (playing) setStartedRun(true);
+  }, [playing]);
+  const started = startedRun || at > 0;
   const play = useCallback(() => {
     if (playing) return setPlaying(false);
     if (at >= last) setG(0);
@@ -242,7 +271,7 @@ export default function TrackView({
   const lines = new Set([].concat(frame.line ?? []));
   const Renderer = view === "3d" ? Map3D : Map2D;
   return (
-    <div className="track" style={{ "--accent": step.color }}>
+    <div className="track" style={accent ? { "--accent": accent } : undefined}>
       <div className="track-map" data-background>
         {flow ? (
           <FlowView
@@ -255,9 +284,12 @@ export default function TrackView({
               seek(track.columns[i].start);
               onOpenMap();
             }}
+            detail={detail}
+            reduced={reduced}
           />
         ) : (
         <Renderer
+          key={`${theme}-${accent}`}
           track={track}
           scene={scene}
           insets={insets}
@@ -299,11 +331,20 @@ export default function TrackView({
                     ? "From your message to this reply"
                     : "Inside a transformer block"}
               </h1>
-              <p className="g-summary">{INTRO[mode]}</p>
-              <p className="g-at">
-                Now at <b>{step.algorithm}</b>. Press play to move stage by stage, or open any stage
-                to watch every calculation.
-              </p>
+              <Intro text={INTRO[mode]} folded={started} />
+              {started ? (
+                <section className="g-live" key={step.id} aria-live="polite">
+                  <p className="g-live-label">
+                    Now · {step.algorithm}
+                    {step.badge && <Badge kind={step.badge} />}
+                  </p>
+                  <p className="g-live-text">{step.plain ?? step.summary}</p>
+                </section>
+              ) : (
+                <p className="g-at">
+                  Press play to move stage by stage, or open any stage to watch every calculation.
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -312,13 +353,13 @@ export default function TrackView({
                 {step.algorithm}
                 {step.badge && <Badge kind={step.badge} />}
               </p>
-              <p className="g-summary">{detail ? step.summary : step.plain}</p>
+              <Intro text={detail ? step.summary : step.plain} folded={started} />
               {detail && <code className="g-formula">{step.formula}</code>}
             </>
           )}
         </div>
         {!flow && (
-          <section className="g-now" aria-live="polite">
+          <section className={`g-now ${started ? "is-live" : ""}`} aria-live="polite">
             <p className="g-frame">
               {frame.phase && <b>{frame.phase}</b>}
               <span>
@@ -425,7 +466,7 @@ export default function TrackView({
               <button
                 key={c.step.id}
                 className={i === scene.si ? "is-current" : i < scene.si ? "is-past" : ""}
-                style={{ flexGrow: Math.max(3, Math.sqrt(c.count) * 2), "--c": c.step.color, "--p": progress }}
+                style={{ flexGrow: Math.max(3, Math.sqrt(c.count) * 2), "--p": progress }}
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
                   const f = Math.floor(((e.clientX - r.left) / r.width) * c.count);

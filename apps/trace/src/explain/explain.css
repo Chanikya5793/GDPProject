@@ -345,7 +345,7 @@ button.x-cell:hover {
 }
 .x-cell.is-masked {
   color: var(--faint);
-  background: repeating-linear-gradient(45deg, transparent 0 4px, #ffffff08 4px 8px);
+  background: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--text) 3%, transparent) 4px 8px);
   text-align: center;
 }
 .x-cell.is-dim {

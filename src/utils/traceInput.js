@@ -30,7 +30,7 @@ const today = () => {
 }
 
 // messages: the chat as shown; botId: the reply being traced.
-export function traceInputFor({ messages, botId, records, aiInfo }) {
+export function traceInputFor({ messages, botId, records }) {
   const index = messages.findIndex(message => message.id === botId)
   const bot = messages[index]
   const before = messages.slice(0, Math.max(0, index))
@@ -41,9 +41,20 @@ export function traceInputFor({ messages, botId, records, aiInfo }) {
     .filter(message => message.role === 'user' || message.role === 'bot')
     .slice(-20)
     .map(message => ({ role: message.role === 'bot' ? 'assistant' : 'user', text: message.text || '' }))
+  // Sources cited earlier in the thread keep their S-numbers on the server,
+  // which is how the copilot can point back at them.
+  const earlier = []
+  for (const message of before.slice(0, Math.max(0, userIndex))) {
+    for (const citation of message.citations || []) {
+      if (!earlier.some(item => item.citation_id === citation.citation_id)) {
+        earlier.push({ citation_id: citation.citation_id, record_id: citation.record_id, title: citation.title })
+      }
+    }
+  }
   return {
     message: bot?.trace?.question || user?.text || '',
     history,
+    earlier,
     focus: bot?.trace?.focusId
       ? records.find(record => String(record.id) === String(bot.trace.focusId)) || null
       : null,
@@ -58,7 +69,6 @@ export function traceInputFor({ messages, botId, records, aiInfo }) {
       proposals: bot.proposals || [],
       unavailable: bot.unavailable || [],
     } : null,
-    model: aiInfo ? { provider: aiInfo.provider, model: aiInfo.model } : null,
     timings: bot?.trace?.sent ? { sent: bot.trace.sent, firstText: bot.trace.firstText, final: bot.trace.final } : null,
     demo: false,
   }

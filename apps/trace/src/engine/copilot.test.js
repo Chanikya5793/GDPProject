@@ -81,3 +81,14 @@ test("the citation check and the confirm rule follow the backend", () => {
   assert.match(canConfirm({ base_revision: 3, status: "pending" }, 4).reason, /revision 4/);
   assert.equal(canConfirm({ base_revision: 3, status: "confirmed" }, 3).ok, false);
 });
+
+test("the retrieval step is badged real only when the reply carries the server's search", async () => {
+  const { copilotSteps, COPILOT_STEPS } = await import("../steps.js");
+  const { sampleCopilot } = await import("./copilotSample.js");
+  const badge = (steps) => steps.find((s) => s.id === "retrieval").badge;
+  assert.equal(badge(COPILOT_STEPS), "recomputed");
+  assert.equal(badge(copilotSteps({ response: null })), "recomputed");
+  assert.equal(badge(copilotSteps(sampleCopilot())), "real");
+  const kept = sampleCopilot().response.retrieval.searches[0].candidates.filter((c) => c.outcome === "kept");
+  assert.equal(kept[0].record_id, sampleCopilot().response.citations[0].record_id);
+});
