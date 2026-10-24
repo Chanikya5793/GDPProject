@@ -144,6 +144,24 @@ describe('AiContext streaming', () => {
     expect(last.proposals[0].proposal_id).toBe('p1')
   })
 
+  it('keeps changes that could not be prepared and what the trace view needs', async () => {
+    streamMock.mockImplementation(scripted([
+      { event: 'delta', data: { text: 'Done.' } },
+      { event: 'final', data: {
+        answer: 'Done.', citations: [], retrieval: {}, proposals: [],
+        unavailable: ['No matching task was found to update.'],
+      } },
+    ]))
+    renderAi()
+    await act(async () => { await ctx.current.sendMessage('  move the report  ') })
+    const last = ctx.current.messages.at(-1)
+    expect(last.unavailable).toEqual(['No matching task was found to update.'])
+    expect(last.trace.question).toBe('move the report')
+    expect(last.trace.focusId).toBeNull()
+    expect(last.trace.sent).toBeLessThanOrEqual(last.trace.firstText)
+    expect(last.trace.firstText).toBeLessThanOrEqual(last.trace.final)
+  })
+
   it('sends prior turns so a clarifying question can be answered', async () => {
     streamMock.mockImplementation(scripted([
       { event: 'final', data: { answer: 'Which class?', citations: [], proposals: [], retrieval: {} } },
