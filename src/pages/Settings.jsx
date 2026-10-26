@@ -598,9 +598,10 @@ export default function Settings() {
                 value={settings.fontSize}
                 onChange={e => updateSetting('fontSize', e.target.value)}
               >
-                <option value="default">Default</option>
-                <option value="large">Large</option>
-                <option value="larger">Larger</option>
+                <option value="default">16</option>
+                <option value="large">18</option>
+                <option value="larger">20</option>
+                <option value="largest">22</option>
               </select>
             </div>
 

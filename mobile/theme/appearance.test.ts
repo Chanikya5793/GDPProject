@@ -21,10 +21,15 @@ describe('appearanceFromSettings', () => {
   });
 
   it('maps each font size step', () => {
-    for (const size of ['default', 'large', 'larger'] as const) {
+    for (const size of ['default', 'large', 'larger', 'largest'] as const) {
       expect(appearanceFromSettings({ ...baseSettings, fontSize: size }).fontScale)
         .toBe(FONT_SCALES[size]);
     }
+  });
+
+  it('scales the 22px option relative to 16px', () => {
+    expect(appearanceFromSettings({ ...baseSettings, fontSize: 'largest' }).fontScale)
+      .toBe(1.375);
   });
 
   it('tightens spacing for compact mode', () => {

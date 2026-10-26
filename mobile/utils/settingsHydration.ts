@@ -28,8 +28,17 @@ export function hydrateSettings(
   defaults: Settings,
   stored: Partial<Settings> | null | undefined,
 ): { settings: Settings; migrated: boolean } {
+  const legacySettings = stored as (Partial<Settings> & { fontSize?: string; customFontSize?: number }) | null | undefined;
   const merged: Settings = { ...defaults, ...(stored || {}) };
   let migrated = false;
+  if (legacySettings?.fontSize === 'custom') {
+    merged.fontSize = 'largest';
+    migrated = true;
+  }
+  if (legacySettings && 'customFontSize' in legacySettings) {
+    delete (merged as Settings & { customFontSize?: number }).customFontSize;
+    migrated = true;
+  }
   for (const { key, decided } of MIGRATED_DEFAULTS) {
     if (!merged[decided] && merged[key] !== defaults[key]) {
       merged[key] = defaults[key];

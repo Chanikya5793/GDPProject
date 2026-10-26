@@ -1217,13 +1217,7 @@ button { font-family: inherit; cursor: pointer; }
    SETTINGS: FONT SIZE
    ═══════════════════════════════════════ */
 
-[data-font-size="large"] body {
-  font-size: 18px;
-}
-
-[data-font-size="larger"] body {
-  font-size: 20px;
-}
+.app-shell { zoom: var(--app-font-scale, 1); }
 
 /* ═══════════════════════════════════════
    SETTINGS: COMPACT MODE

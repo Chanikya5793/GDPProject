@@ -18,6 +18,13 @@ describe('hydrateSettings', () => {
     expect(migrated).toBe(false)
   })
 
+  it('migrates a saved custom font size to the 22 preset', () => {
+    const { settings, migrated } = hydrateSettings({ fontSize: 'custom', customFontSize: 24 })
+    expect(settings.fontSize).toBe('largest')
+    expect(settings).not.toHaveProperty('customFontSize')
+    expect(migrated).toBe(true)
+  })
+
   it('leaves the rest as stored', () => {
     expect(hydrateSettings({ theme: 'dark', dailyTaskLimit: 3 }).settings).toMatchObject({ theme: 'dark', dailyTaskLimit: 3 })
   })

@@ -110,7 +110,7 @@ export interface Settings {
   theme: 'light' | 'dark' | 'system';
   accentColor: 'green' | 'blue' | 'purple' | 'amber';
   compactMode: boolean;
-  fontSize: 'default' | 'large' | 'larger';
+  fontSize: 'default' | 'large' | 'larger' | 'largest';
   reducedMotion: boolean;
   weekStartsOn: 'sunday' | 'monday';
   defaultPriority: 'high' | 'medium' | 'low';

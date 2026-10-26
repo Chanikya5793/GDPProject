@@ -25,11 +25,12 @@ export interface Appearance {
   reducedMotion: boolean;
 }
 
-/** Web steps the body from 16px to 18px to 20px; these are the same ratios. */
+/** Web scales the app shell from 16px through 22px; these are the same ratios. */
 export const FONT_SCALES: Record<Settings['fontSize'], number> = {
   default: 1,
   large: 1.125,
   larger: 1.25,
+  largest: 1.375,
 };
 
 /** Compact mode pulls the padding in without touching type size. */

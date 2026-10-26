@@ -28,9 +28,10 @@ const ACCENT_COLORS = [
 
 /** Matches web's Font Size select. */
 const FONT_SIZES: { value: Settings['fontSize']; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'large', label: 'Large' },
-  { value: 'larger', label: 'Larger' },
+  { value: 'default', label: '16' },
+  { value: 'large', label: '18' },
+  { value: 'larger', label: '20' },
+  { value: 'largest', label: '22' },
 ];
 
 /** Copilot capacity choices. `null` defers to the deployment default. */
@@ -201,7 +202,6 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
-
         <Text style={s.rowLabel}>Accent Color</Text>
         <View style={s.accentRow}>
           {ACCENT_COLORS.map(c => (

@@ -27,6 +27,14 @@ const MIGRATED_DEFAULTS = [{ key: 'autoBalance', decided: 'autoBalanceDecided' }
 export function hydrateSettings(stored) {
   const merged = { ...DEFAULTS, ...(stored || {}) }
   let migrated = false
+  if (merged.fontSize === 'custom') {
+    merged.fontSize = 'largest'
+    migrated = true
+  }
+  if ('customFontSize' in merged) {
+    delete merged.customFontSize
+    migrated = true
+  }
   for (const { key, decided } of MIGRATED_DEFAULTS) {
     if (!merged[decided] && merged[key] !== DEFAULTS[key]) {
       merged[key] = DEFAULTS[key]
@@ -67,6 +75,8 @@ export function SettingsProvider({ children }) {
 
     // Font size
     root.setAttribute('data-font-size', settings.fontSize)
+    const presetFontScales = { default: 1, large: 1.125, larger: 1.25, largest: 1.375 }
+    root.style.setProperty('--app-font-scale', String(presetFontScales[settings.fontSize] || 1))
 
     // Compact mode
     root.setAttribute('data-compact', settings.compactMode ? 'true' : 'false')

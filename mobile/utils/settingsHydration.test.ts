@@ -10,6 +10,14 @@ const defaults = {
 } as Settings;
 
 describe('hydrateSettings', () => {
+  it('migrates a saved custom font size to the 22 preset', () => {
+    const legacy = { ...defaults, fontSize: 'custom', customFontSize: 24 } as unknown as Partial<Settings>;
+    const { settings, migrated } = hydrateSettings(defaults, legacy);
+    expect(settings.fontSize).toBe('largest');
+    expect(settings).not.toHaveProperty('customFontSize');
+    expect(migrated).toBe(true);
+  });
+
   it('starts a fresh install with titles on', () => {
     const { settings, migrated } = hydrateSettings(defaults, null);
     expect(settings.widgetShowTitles).toBe(true);
