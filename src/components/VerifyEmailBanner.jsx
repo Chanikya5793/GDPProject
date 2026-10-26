@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { verificationMessage } from '../utils/verificationEmail'
 
-// Firebase refuses a second verification mail requested within about a
-// minute of the last one, and the app used to hand that refusal to the
-// student on their very first Resend. Hold the button for this long instead.
+// Give an accepted request time to arrive and avoid rapid repeated sends.
+// Firebase may impose a longer cooldown than this client-side minimum.
 const RESEND_COOLDOWN_MS = 60_000
 // How often to ask Firebase whether the link has been opened. The link is
 // clicked in a mail app, not here, so without this the student had to come
@@ -15,7 +15,7 @@ const POLL_FOR_MS = 20 * 60_000
    every request until the link in the verification mail is opened, so
    without this the pages would only say "Verify your email" as an error. */
 export default function VerifyEmailBanner() {
-  const { user, configured, refreshUser, resendVerification, verificationSentAt } = useAuth()
+  const { user, configured, refreshUser, resendVerification, verificationSentAt, verificationError } = useAuth()
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -82,16 +82,16 @@ export default function VerifyEmailBanner() {
     setStatus('')
     try {
       await resendVerification()
-      setStatus(`Sent to ${user.email}. Older links stop working once a new one is sent.`)
+      setNow(Date.now())
+      setStatus(`Verification email requested for ${user.email}. Check your inbox and Junk folder; delivery can take a few minutes.`)
     } catch (error) {
       if (error?.code === 'auth/too-many-requests') {
-        // Firebase's own limit. The mail it already sent is almost certainly
-        // sitting in a folder; say so rather than just "wait".
+        // A provider rate limit does not establish that any mail arrived.
         setWaitUntil(Date.now() + 2 * RESEND_COOLDOWN_MS)
         setNow(Date.now())
-        setStatus('Firebase is limiting resends for a few minutes. The email it already sent is probably in Junk.')
+        setStatus(verificationMessage(error))
       } else {
-        setStatus(error?.message || 'Could not send the email.')
+        setStatus(verificationMessage(error))
       }
     } finally {
       setBusy(false)
@@ -101,9 +101,11 @@ export default function VerifyEmailBanner() {
   return (
     <div className="verify-banner" role="status">
       <span>
-        <strong>Verify your email.</strong> We sent a link to <strong>{user.email}</strong> from{' '}
-        <code>noreply@planner.chanakyachowdary.in</code>. University mail usually files it under{' '}
-        <strong>Junk</strong>. The planner stays read-only until the link is opened.
+        <strong>Verify your email.</strong>{' '}
+        {verificationSentAt ? 'A verification email was requested for ' : 'Request a verification link for '}
+        <strong>{user.email}</strong>. Check your inbox and <strong>Junk</strong> for{' '}
+        <code>noreply@planner.chanakyachowdary.in</code>. If it is missing, ask university IT to check quarantine
+        for this sender. Cloud sync requires a verified email.
       </span>
       <span className="verify-banner-actions">
         <button className="btn-ghost" onClick={resend} disabled={busy || secondsLeft > 0}>
@@ -111,7 +113,7 @@ export default function VerifyEmailBanner() {
         </button>
         <button className="btn-primary" onClick={check} disabled={busy}>I’ve verified</button>
       </span>
-      {status && <span className="verify-banner-status">{status}</span>}
+      {(status || verificationError) && <span className="verify-banner-status">{status || verificationError}</span>}
     </div>
   )
 }

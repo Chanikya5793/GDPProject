@@ -50,19 +50,21 @@ traffic goes through FastAPI with verified Firebase ID tokens.
 
 ## Email verification
 
-The API refuses an unverified address while `PLANNER_REQUIRE_VERIFIED_EMAIL` is `true`
-(the code default). The GitHub deploy sets it explicitly with `--update-env-vars`; note
-that a source deploy keeps whatever environment the service already has, and the Cloud
-Run template under `infra/` is read only by the manual `scripts/deploy.sh`, so a flag
-changed in the template alone does not ship through CI. Both clients show a banner with *Resend* and
-*I've verified* until the address is verified.
+The API requires verified email while `PLANNER_REQUIRE_VERIFIED_EMAIL=true`.
+Keep this enabled: disabling it allows someone to claim an eligible university
+address without proving ownership. The deployed service was checked with this
+setting enabled on 2026-10-26.
 
-Verification mail is sent from `noreply@planner.chanakyachowdary.in`. Firebase's default
-sender, `noreply@nw-student-planner.firebaseapp.com`, was quarantined by the
-nwmissouri.edu Microsoft 365 tenant: Identity Toolkit metrics showed every sign-up's
-`SendOobCode` accepted (200) and no user ever verified. The custom domain was set up on
-2026-09-19 in Firebase console → Authentication → Templates → *Customize domain*, with
-these records in the Cloudflare zone for `chanakyachowdary.in` (all DNS-only):
+Both clients request email directly through Firebase Authentication, independently
+of Cloud Run. An account can be created successfully while the subsequent email
+request fails. The auth contexts retain that failure for the verification banner;
+login pages do not consume the register function's returned `notice`. The banner
+therefore distinguishes a request accepted by Firebase from a request that failed
+or has not been made in the current session. Neither is proof of inbox delivery.
+Concurrent sends for the same account/address are coalesced, and a successful
+request starts the 60-second resend cooldown. Firebase may impose a longer limit.
+
+The applied custom sender is `noreply@planner.chanakyachowdary.in`. Expected DNS:
 
 | Name | Type | Value |
 | --- | --- | --- |
@@ -71,29 +73,49 @@ these records in the Cloudflare zone for `chanakyachowdary.in` (all DNS-only):
 | `firebase1._domainkey.planner` | CNAME | `mail-planner-chanakyachowdary-in.dkim1._domainkey.firebasemail.com` |
 | `firebase2._domainkey.planner` | CNAME | `mail-planner-chanakyachowdary-in.dkim2._domainkey.firebasemail.com` |
 
-If mail stops arriving again, check those records first, then Firebase's *Customize
-domain* status. Setting `PLANNER_REQUIRE_VERIFIED_EMAIL` to `"false"` in the Cloud Run
-template and redeploying lets everyone back in while it is fixed; note that this
-reopens the sign-up-policy bypass (anyone can register an allowed-domain address).
+Run the read-only diagnostic with existing `gcloud` authentication:
 
-Microsoft 365 (the university's mail) files the message under **Junk** and tags it
-`[EXT]`; the in-app banner says so. Firebase invalidates an older verification link when a
-new one is requested, so the banner holds *Resend* for 60 seconds and tells the student
-that only the newest email works. While unverified, the clients poll Firebase every 8
-seconds and, on success, force a new ID token before reloading -- the token carries
-`email_verified` from when it was minted, and without the refresh the API kept refusing
-a freshly verified student until they signed out and back in.
+```sh
+python3 scripts/diagnose-email-verification.py --project nw-student-planner
+```
 
-The web app carries its own link handler (`src/pages/AuthAction.jsx`): a verification
-link that lands on `https://chanikya5793.github.io/GDPProject/?mode=verifyEmail&oobCode=…`
-applies the code on a button press, so a mail scanner that pre-opens every link in an
-external message cannot use it up, and a dead link says what to do instead of Firebase's
-"expired or already been used" page. Firebase currently refuses to point the templates
-at it: *Customize action URL* fails in the console and the Admin API answers
-`EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED` for every URL, an anti-phishing restriction Google
-applies to some projects. Retry it periodically (Authentication → Templates → pencil →
-*Customize action URL* → `https://chanikya5793.github.io/GDPProject/`); until it takes,
-links open Firebase's hosted handler, which still verifies the account.
+It prints public sender/DNS configuration, aggregate verified/unverified account
+counts, and email-action API response counts. It never sends email or prints
+addresses, user IDs, passwords, tokens, action codes, SMTP credentials, or account
+records. It supplies the Google quota-project header required by this project.
+`dnsInfo.customDomain` is the applied verified domain; `customDomainState` describes
+a pending verification. `NOT_STARTED` alone does not mean an applied domain is broken.
+
+For a missing message, distinguish these cases:
+
+1. A rejected send: use the banner's network, rate limit, quota, or expired-session
+   guidance. Do not automatically retry and send multiple messages.
+2. Accepted request, no message: check Inbox and Junk, then ask university IT for a
+   Microsoft 365 message trace or quarantine check using the sender, recipient,
+   and request time. API HTTP 200 and valid DNS do not establish delivery or
+   prove that university filtering caused the failure. Google default delivery
+   does not expose recipient inbox placement through the checked API metrics.
+3. Link failure: open the newest message, then check the exact Firebase error.
+   Never include the action code or full verification URL in logs or tickets.
+4. Verified profile, API still refuses: the clients force a fresh ID token on
+   every successful verified-profile check, including sessions restored with the
+   verified flag already true. Late checks are discarded after an account switch.
+
+The web app has a button-confirmed action handler (`src/pages/AuthAction.jsx`). It
+is present in the public Pages build, but Firebase still uses its default hosted
+handler. On 2026-10-26, an attempt to set
+`https://chanikya5793.github.io/GDPProject/` as `notification.sendEmail.callbackUri`
+was rejected with `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`; the live callback remained
+`https://nw-student-planner.firebaseapp.com/__/auth/action`. The custom handler is
+not active just because its code is deployed. A recipient-side security scanner
+consuming a link is a hypothesis until a message trace or link evidence confirms
+it. Escalate the template restriction through Firebase support; changing a client
+continue URL does not replace the email action handler.
+
+See `docs/EMAIL_VERIFICATION_DIAGNOSIS.html` for the 2026-10-26 evidence, source
+repairs, and remaining delivery checks. Merging the fix ships the web changes via
+Pages CI. Mobile changes require a new native/TestFlight release. No backend
+redeploy is required by these client changes.
 
 ## Deploy
 

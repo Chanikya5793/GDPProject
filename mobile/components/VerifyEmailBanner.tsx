@@ -4,10 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppTheme } from '@/theme/useAppTheme';
+import { verificationMessage } from '@/utils/verificationEmail';
 
-// Firebase refuses a second verification mail requested within about a
-// minute of the last one, and the app used to hand that refusal to the
-// student on their very first Resend. Hold the button for this long instead.
+// Give an accepted request time to arrive and avoid rapid repeated sends.
+// Firebase may impose a longer cooldown than this client-side minimum.
 const RESEND_COOLDOWN_MS = 60_000;
 // How often to ask Firebase whether the link has been opened. The link is
 // tapped in a mail app, not here, so without this the student had to come
@@ -22,7 +22,7 @@ const POLL_FOR_MS = 20 * 60_000;
  * mail is opened, so without this the tabs would just show an empty planner.
  */
 export default function VerifyEmailBanner() {
-  const { user, configured, refreshUser, resendVerification, verificationSentAt } = useAuth();
+  const { user, configured, refreshUser, resendVerification, verificationSentAt, verificationError } = useAuth();
   const { colors, accent } = useAppTheme();
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState('');
@@ -86,15 +86,16 @@ export default function VerifyEmailBanner() {
     setStatus('');
     try {
       await resendVerification();
-      setStatus(`Sent to ${user.email}. Older links stop working once a new one is sent.`);
+      setNow(Date.now());
+      setStatus(`Verification email requested for ${user.email}. Check your inbox and Junk folder; delivery can take a few minutes.`);
     } catch (error) {
       const code = (error as { code?: string })?.code;
       if (code === 'auth/too-many-requests') {
         setWaitUntil(Date.now() + 2 * RESEND_COOLDOWN_MS);
         setNow(Date.now());
-        setStatus('Firebase is limiting resends for a few minutes. The email it already sent is probably in Junk.');
+        setStatus(verificationMessage(error));
       } else {
-        setStatus(error instanceof Error ? error.message : 'Could not send the email.');
+        setStatus(verificationMessage(error));
       }
     } finally {
       setBusy(false);
@@ -108,8 +109,9 @@ export default function VerifyEmailBanner() {
     >
       <Text style={[s.text, { color: colors.text }]}>
         <Text style={s.strong}>Verify your email. </Text>
-        We sent a link to {user.email} from noreply@planner.chanakyachowdary.in. University mail usually
-        files it under <Text style={s.strong}>Junk</Text>. The planner stays read-only until the link is opened.
+        {verificationSentAt ? 'A verification email was requested for ' : 'Request a verification link for '}
+        {user.email}. Check your inbox and <Text style={s.strong}>Junk</Text> for noreply@planner.chanakyachowdary.in.
+        {' '}If it is missing, ask university IT to check quarantine for this sender. Cloud sync requires a verified email.
       </Text>
       <View style={s.actions}>
         <Pressable onPress={resend} disabled={busy || secondsLeft > 0} accessibilityRole="button">
@@ -121,7 +123,7 @@ export default function VerifyEmailBanner() {
           <Text style={[s.action, { color: accent.primary }]}>I’ve verified</Text>
         </Pressable>
       </View>
-      {status ? <Text style={[s.status, { color: colors.textMuted }]}>{status}</Text> : null}
+      {(status || verificationError) ? <Text style={[s.status, { color: colors.textMuted }]}>{status || verificationError}</Text> : null}
     </View>
   );
 }

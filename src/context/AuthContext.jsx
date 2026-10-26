@@ -14,6 +14,7 @@ import { auth, firebaseConfigured, persistenceReady } from '../lib/firebase'
 import { fetchSignupPolicy } from '../api/client'
 import { refusalFor } from '../utils/signupPolicy'
 import { campusEmail } from '../utils/campusEmail'
+import { createVerificationSender, verificationMessage } from '../utils/verificationEmail'
 
 const AuthContext = createContext(null)
 
@@ -74,25 +75,36 @@ function authMessage(error) {
   return messages[error?.code] || 'Authentication failed. Please try again.'
 }
 
-// When the last verification mail went out, so the banner can hold its
-// Resend button until Firebase will accept another request. Survives a
-// reload within the tab; a fresh tab starts with no wait.
-const SENT_AT_KEY = 'nw_verification_sent_at'
-
-function markVerificationSent() {
-  const now = Date.now()
-  try { sessionStorage.setItem(SENT_AT_KEY, String(now)) } catch { /* private mode */ }
-  return now
-}
-
-function readVerificationSent() {
-  try { return Number(sessionStorage.getItem(SENT_AT_KEY)) || null } catch { return null }
+// Scope persisted feedback to the recipient, so switching accounts cannot inherit
+// another student's success message or cooldown.
+const SENT_AT_KEY = 'nw_verification_status'
+function readVerificationStatus() {
+  try { return JSON.parse(sessionStorage.getItem(SENT_AT_KEY)) } catch { return null }
 }
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [verificationSentAt, setVerificationSentAt] = useState(readVerificationSent)
+  const [verificationStatus, setVerificationStatus] = useState(readVerificationStatus)
+  const [requestVerification] = useState(() => createVerificationSender(sendEmailVerification))
+  const matchesRecipient = verificationStatus?.uid === user?.uid && verificationStatus?.email === user?.email
+  const verificationSentAt = matchesRecipient ? verificationStatus?.sentAt || null : null
+  const verificationError = matchesRecipient ? verificationStatus?.error || null : null
+  const sendVerificationFor = async recipient => {
+    let status
+    try {
+      const sentAt = await requestVerification(recipient)
+      status = { uid: recipient.uid, email: recipient.email, sentAt, error: null }
+    } catch (error) {
+      status = { uid: recipient.uid, email: recipient.email, sentAt: null, error: verificationMessage(error) }
+      throw error
+    } finally {
+      if (auth?.currentUser === recipient) {
+        setVerificationStatus(status)
+        try { sessionStorage.setItem(SENT_AT_KEY, JSON.stringify(status)) } catch { /* private mode */ }
+      }
+    }
+  }
 
   useEffect(() => {
     if (!firebaseConfigured || !auth) {
@@ -173,14 +185,13 @@ export function AuthProvider({ children }) {
     try {
       await updateProfile(credential.user, { displayName: name.trim() })
     } catch { /* the address is what matters; the name can be set in Settings */ }
-    let notice = 'Check your inbox for the verification link.'
+    let notice = 'Verification email requested. Check your inbox and Junk folder.'
     try {
-      await sendEmailVerification(credential.user)
-      setVerificationSentAt(markVerificationSent())
-    } catch {
-      notice = 'We could not send the verification email just now. Use "Resend" on the next screen.'
+      await sendVerificationFor(credential.user)
+    } catch (error) {
+      notice = verificationMessage(error)
     }
-    setUser(publicUser(credential.user))
+    if (auth.currentUser === credential.user) setUser(publicUser(credential.user))
     return { success: true, notice }
   }
 
@@ -190,23 +201,23 @@ export function AuthProvider({ children }) {
   // Reloading the profile is not enough on its own. The ID token the API
   // sees carries email_verified from when it was minted and lives for an
   // hour, so a student who had just verified was still refused until they
-  // signed out and back in. Force a new token the moment the flag flips.
+  // signed out and back in. Force a new token whenever a verification check succeeds, including after a restart.
   const refreshUser = async () => {
-    if (!firebaseConfigured || !auth?.currentUser) return user
-    const wasVerified = auth.currentUser.emailVerified
-    await reload(auth.currentUser)
-    if (auth.currentUser.emailVerified && !wasVerified) {
-      await auth.currentUser.getIdToken(true)
-    }
-    const refreshed = publicUser(auth.currentUser)
+    if (!firebaseConfigured) return user
+    if (!auth?.currentUser) return null
+    const recipient = auth.currentUser
+    await reload(recipient)
+    if (auth.currentUser !== recipient) return null
+    if (recipient.emailVerified) await recipient.getIdToken(true)
+    if (auth.currentUser !== recipient) return null
+    const refreshed = publicUser(recipient)
     setUser(refreshed)
     return refreshed
   }
 
   const resendVerification = async () => {
     if (!firebaseConfigured || !auth?.currentUser) return
-    await sendEmailVerification(auth.currentUser)
-    setVerificationSentAt(markVerificationSent())
+    await sendVerificationFor(auth.currentUser)
   }
 
   // Apply a code from a verification link opened in this app. Returns the
@@ -256,9 +267,9 @@ export function AuthProvider({ children }) {
   // to resolve and bounces a signed-in user to the login screen on reload.
   const value = useMemo(() => ({
     user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
-    refreshUser, resendVerification, applyVerification, verificationSentAt,
+    refreshUser, resendVerification, applyVerification, verificationSentAt, verificationError,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [user, loading, verificationSentAt])
+  }), [user, loading, verificationSentAt, verificationError])
 
   return (
     <AuthContext.Provider value={value}>

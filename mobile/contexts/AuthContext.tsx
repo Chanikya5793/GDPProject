@@ -7,6 +7,7 @@ import { User } from '@/types';
 import { setStorageUid } from '@/api/storage';
 import { disconnectWidgetPush } from '@/api/widgets';
 import { campusEmail } from '@/utils/campusEmail';
+import { createVerificationSender, verificationMessage } from '@/utils/verificationEmail';
 import { auth, firebaseConfigured } from '@/lib/firebase';
 import { DEMO_USER_KEY, makeDemoUser, parseStoredDemoUser } from '@/utils/demoAuth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,6 +25,7 @@ interface AuthContextType {
   resendVerification: () => Promise<void>;
   /** When the last verification mail went out, for the banner's cooldown. */
   verificationSentAt: number | null;
+  verificationError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -63,7 +65,20 @@ async function persistDemoUser(value: User): Promise<User> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [verificationSentAt, setVerificationSentAt] = useState<number | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<{ uid: string; email: string | null; sentAt: number | null; error: string | null } | null>(null);
+  const [requestVerification] = useState(() => createVerificationSender(sendEmailVerification));
+  const matchesRecipient = verificationStatus?.uid === user?.uid && verificationStatus?.email === user?.email;
+  const verificationSentAt = matchesRecipient ? verificationStatus?.sentAt || null : null;
+  const verificationError = matchesRecipient ? verificationStatus?.error || null : null;
+  const sendVerificationFor = async (recipient: NonNullable<NonNullable<typeof auth>['currentUser']>) => {
+    try {
+      const sentAt = await requestVerification(recipient);
+      if (auth?.currentUser === recipient) setVerificationStatus({ uid: recipient.uid, email: recipient.email, sentAt, error: null });
+    } catch (error) {
+      if (auth?.currentUser === recipient) setVerificationStatus({ uid: recipient.uid, email: recipient.email, sentAt: null, error: verificationMessage(error) });
+      throw error;
+    }
+  };
 
   useEffect(() => {
     // Demo mode: no Firebase project configured, so restore any saved session.
@@ -122,32 +137,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // to set the name or send the mail is not a failed sign-up, and used to
     // be reported as one while the session was already live.
     try { await updateProfile(credential.user, { displayName: name.trim() }); } catch { /* set later in Settings */ }
-    let notice = 'Check your inbox for the verification link.';
-    try { await sendEmailVerification(credential.user); setVerificationSentAt(Date.now()); }
-    catch { notice = 'We could not send the verification email just now. Use Resend on the next screen.'; }
-    setUser(toUser(credential.user));
+    let notice = 'Verification email requested. Check your inbox and Junk folder.';
+    try { await sendVerificationFor(credential.user); }
+    catch (error) { notice = verificationMessage(error); }
+    if (auth.currentUser === credential.user) setUser(toUser(credential.user));
     return { success: true, notice };
   };
 
   // Reloading the profile is not enough on its own. The ID token the API
   // sees carries email_verified from when it was minted and lives for an
   // hour, so a student who had just verified was still refused until they
-  // signed out and back in. Force a new token the moment the flag flips.
+  // signed out and back in. Force a new token whenever verification is confirmed, including after a restart.
   // The tabs load on `user`, so the new object below makes them fetch again.
   const refreshUser = async () => {
-    if (!firebaseConfigured || !auth?.currentUser) return user;
-    const wasVerified = auth.currentUser.emailVerified;
-    await reload(auth.currentUser);
-    if (auth.currentUser.emailVerified && !wasVerified) await auth.currentUser.getIdToken(true);
-    const refreshed = toUser(auth.currentUser);
+    if (!firebaseConfigured) return user;
+    if (!auth?.currentUser) return null;
+    const recipient = auth.currentUser;
+    await reload(recipient);
+    if (auth.currentUser !== recipient) return null;
+    if (recipient.emailVerified) await recipient.getIdToken(true);
+    if (auth.currentUser !== recipient) return null;
+    const refreshed = toUser(recipient);
     setUser(refreshed);
     return refreshed;
   };
 
   const resendVerification = async () => {
     if (!firebaseConfigured || !auth?.currentUser) return;
-    await sendEmailVerification(auth.currentUser);
-    setVerificationSentAt(Date.now());
+    await sendVerificationFor(auth.currentUser);
   };
 
   const updateUser = async (updates: Partial<User>) => {
@@ -180,7 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, loading, configured: firebaseConfigured, login, register, updateUser, logout,
-      refreshUser, resendVerification, verificationSentAt,
+      refreshUser, resendVerification, verificationSentAt, verificationError,
     }}>
       {children}
     </AuthContext.Provider>
