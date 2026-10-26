@@ -104,6 +104,8 @@ export default function TrackView({
   paused,
   theme = "dark",
   accent = null,
+  params = null,
+  onTune = null,
 }) {
   // Canvas colours follow the page theme; renderers are rebuilt on change.
   useMemo(() => setPalette(theme, accent), [theme, accent]);

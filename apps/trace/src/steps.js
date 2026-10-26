@@ -1,3 +1,5 @@
+import { SETTINGS, changed } from "./tune/schema.js";
+
 // One entry per step, shared by the 3D and 2D views. `id` keys the 3D scene
 // geometry and the 2D step module; the prose describes the code that runs.
 export const PLANNER_STEPS = [
@@ -388,10 +390,11 @@ const COPILOT_TAIL = [
 export const COPILOT_STEPS = [...COPILOT_HEAD, ...COPILOT_MODEL, ...COPILOT_TAIL];
 
 // When the reply carried the server's own search (retrieval.searches), the
-// Retrieval step shows real values and says so.
-export function copilotSteps(copilot) {
-  if (!copilot?.response?.retrieval?.searches?.length) return COPILOT_STEPS;
-  return COPILOT_STEPS.map((s) =>
+// Retrieval step shows real values and says so. Tuned settings turn the steps
+// they reach into what-ifs.
+export function copilotSteps(copilot, params) {
+  if (!copilot?.response?.retrieval?.searches?.length) return withTuning(COPILOT_STEPS, "copilot", params);
+  const steps = COPILOT_STEPS.map((s) =>
     s.id === "retrieval"
       ? {
           ...s,
@@ -401,7 +404,22 @@ export function copilotSteps(copilot) {
         }
       : s,
   );
+  return withTuning(steps, "copilot", params);
 }
 
-export const stepsFor = (mode) =>
-  mode === "planner" ? PLANNER_STEPS : mode === "copilot" ? COPILOT_STEPS : TRANSFORMER_STEPS;
+// Marks each step a changed setting can reach: `tuned` lists the settings'
+// labels, and a real or recomputed copilot step becomes a what-if.
+export function withTuning(steps, track, params) {
+  const tuned = params?.[track];
+  if (!tuned) return steps;
+  const keys = new Set(changed(track, tuned));
+  if (!keys.size) return steps;
+  return steps.map((s) => {
+    const labels = SETTINGS[track].filter((x) => keys.has(x.key) && x.steps.includes(s.id)).map((x) => x.label);
+    if (!labels.length) return s;
+    return { ...s, tuned: labels, ...(s.badge && s.badge !== "illustration" ? { badge: "tuned" } : {}) };
+  });
+}
+
+export const stepsFor = (mode, params) =>
+  withTuning(mode === "planner" ? PLANNER_STEPS : mode === "copilot" ? COPILOT_STEPS : TRANSFORMER_STEPS, mode, params);

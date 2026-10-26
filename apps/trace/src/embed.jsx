@@ -3,12 +3,17 @@
 // { update(props), close() }. Nothing here touches the network.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Box, Square, Workflow, X } from "lucide-react";
+import { Box, SlidersHorizontal, Square, Workflow, X } from "lucide-react";
 import TrackView from "./TrackView.jsx";
 import StepPlayer from "./explain/StepPlayer.jsx";
 import { analyze } from "./engine/pipeline.js";
-import { microscope } from "./engine/microscope.js";
 import { copilotSteps } from "./steps.js";
+import { buildCtx } from "./tune/context.js";
+import { useParams } from "./tune/useParams.js";
+import { changed } from "./tune/schema.js";
+import TunePanel from "./tune/TunePanel.jsx";
+import tuneCss from "./tune/tune.css?inline";
+import teachCss from "./teach/teach.css?inline";
 import baseCss from "./styles.css?inline";
 import explainCss from "./explain/explain.css?inline";
 import plannerCss from "./explain/steps/planner/planner.css?inline";
@@ -18,7 +23,7 @@ import space from "../public/fonts/SpaceGrotesk.ttf?url";
 
 // Inside a shadow root :root matches nothing and @font-face is ignored, so the
 // variables move to :host and the fonts are registered on the document once.
-const SHADOW_CSS = [baseCss, explainCss, plannerCss, transformerCss]
+const SHADOW_CSS = [baseCss, explainCss, plannerCss, transformerCss, tuneCss, teachCss]
   .join("\n")
   .replace(/@font-face\s*{[^}]*}/g, "")
   .replace(/:root\[data-theme="light"\]/g, ':host([data-theme="light"])')
@@ -49,18 +54,22 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
   const [runId] = useState(0);
   const [webgl] = useState(hasWebGL);
   const closeRef = useRef(null);
-  const steps = useMemo(() => copilotSteps(copilot), [copilot]);
-  const ctx = useMemo(() => {
-    const trace = analyze(copilot.message);
-    const data = microscope(trace);
-    return { trace, data, model: data.transformer, records: [], applied: false, generatedTokens: [], copilot };
-  }, [copilot]);
+  const { params, tune, reset, set } = useParams();
+  const [tuneOpen, setTuneOpen] = useState(false);
+  const [tuneFocus, setTuneFocus] = useState(null);
+  const steps = useMemo(() => copilotSteps(copilot, params), [copilot, params]);
+  const ctx = useMemo(
+    () => buildCtx({ trace: analyze(copilot.message), params, copilot }),
+    [copilot, params],
+  );
+  const tunedCount = changed("copilot", params.copilot).length;
 
   useEffect(() => {
     closeRef.current?.focus();
     function key(e) {
       if (e.key !== "Escape") return;
-      if (table) setTable(null);
+      if (tuneOpen) setTuneOpen(false);
+      else if (table) setTable(null);
       else onClose();
     }
     window.addEventListener("keydown", key);
@@ -70,7 +79,7 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
       window.removeEventListener("keydown", key);
       document.body.style.overflow = overflow;
     };
-  }, [onClose, table]);
+  }, [onClose, table, tuneOpen]);
 
   return (
     <div className="app mode-copilot" role="dialog" aria-modal="true" aria-label="Trace of this reply">
@@ -96,6 +105,18 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
             : "Real where marked real. The language model steps are an illustration."}
         </p>
         <div className="topbar-tools">
+          <button
+            className={tunedCount ? "is-tuned" : undefined}
+            onClick={() => {
+              setTuneFocus(null);
+              setTuneOpen((v) => !v);
+            }}
+            aria-expanded={tuneOpen}
+            aria-label="Tune the search"
+          >
+            <SlidersHorizontal size={16} />
+            <span>Tune{tunedCount ? ` · ${tunedCount}` : ""}</span>
+          </button>
           <button ref={closeRef} onClick={onClose} aria-label="Close trace">
             <X size={18} />
             <span>Close</span>
@@ -108,6 +129,12 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
         mode="copilot"
         steps={steps}
         ctx={ctx}
+        params={params}
+        onTune={(path, value) => {
+          if (value !== undefined) tune(path, value);
+          setTuneFocus(path);
+          setTuneOpen(true);
+        }}
         view={view}
         runId={runId}
         reduced={reducedMotion()}
@@ -117,6 +144,19 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
         onOpenMap={() => setView("2d")}
         onOpenTable={(module, at) => setTable({ module, at })}
         actionProps={{ mode: "copilot", trace: ctx.trace, records: [], applied: false, generatedTokens: [], actions: {} }}
+      />
+      <TunePanel
+        open={tuneOpen}
+        mode="copilot"
+        params={params}
+        focus={tuneFocus}
+        onTune={tune}
+        onSet={set}
+        onReset={reset}
+        onClose={() => setTuneOpen(false)}
+        baseline={ctx.baseline}
+        ctx={ctx}
+        steps={steps}
       />
       {table && (
         <div className="drawer-backdrop" onClick={() => setTable(null)}>

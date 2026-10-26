@@ -128,6 +128,23 @@ export const DAYS = [
   "saturday",
 ];
 export const ALIASES = { adviser: "advisor", phone: "call" };
+// The settings a visitor can tune; the defaults are the values above.
+export const PLANNER_DEFAULTS = {
+  stopWords: [...STOP_WORDS],
+  aliases: ALIASES,
+  dropDates: true,
+  smoothIdf: true,
+  useIdf: true,
+  matchThreshold: MATCH_THRESHOLD,
+  tieGap: TIE_GAP,
+};
+const stopSets = new WeakMap();
+const stopSet = (p) => {
+  if (p.stopWords === PLANNER_DEFAULTS.stopWords) return STOP_WORDS;
+  let set = stopSets.get(p.stopWords);
+  if (!set) stopSets.set(p.stopWords, (set = new Set(p.stopWords)));
+  return set;
+};
 // Alternatives are tried left to right at each position; the first that
 // matches wins. Whitespace matches none of them, so it is skipped.
 export const TOKEN_PATTERNS = [
@@ -155,14 +172,15 @@ export function normalizeSteps(text) {
   const collapsed = lower.replace(/\s+/g, " ");
   return { nfkc, lower, collapsed, trimmed: collapsed.trim() };
 }
-const alias = (word) => ALIASES[word] || word;
-export function tokenize(text) {
+const alias = (word, p = PLANNER_DEFAULTS) => p.aliases[word] || word;
+export function tokenize(text, p = PLANNER_DEFAULTS) {
+  const stop = stopSet(p);
   return Array.from(text.matchAll(TOKEN_RE), (match, id) => {
     const normalized = normalize(match[0]);
     const kind = /^\d/.test(normalized)
       ? "number"
       : /^[\p{L}]/u.test(normalized)
-        ? STOP_WORDS.has(normalized)
+        ? stop.has(normalized)
           ? "context"
           : "keyword"
         : "punctuation";
@@ -178,8 +196,8 @@ export function tokenize(text) {
   });
 }
 // Each token's fate on the way to a retrieval term, with the reason.
-export function termSteps(text) {
-  return tokenize(normalize(text)).map((t) => {
+export function termSteps(text, p = PLANNER_DEFAULTS) {
+  return tokenize(normalize(text), p).map((t) => {
     const reason =
       t.kind === "context"
         ? "stop word"
@@ -187,9 +205,9 @@ export function termSteps(text) {
           ? "number"
           : t.kind === "punctuation"
             ? "punctuation"
-            : MONTHS.includes(t.normalized)
+            : p.dropDates && MONTHS.includes(t.normalized)
               ? "month name"
-              : DAYS.includes(t.normalized)
+              : p.dropDates && DAYS.includes(t.normalized)
                 ? "weekday name"
                 : null;
     return {
@@ -197,13 +215,13 @@ export function termSteps(text) {
       kind: t.kind,
       kept: !reason,
       reason,
-      term: reason ? null : alias(t.normalized),
-      aliased: !reason && alias(t.normalized) !== t.normalized,
+      term: reason ? null : alias(t.normalized, p),
+      aliased: !reason && alias(t.normalized, p) !== t.normalized,
     };
   });
 }
-export function terms(text) {
-  return termSteps(text)
+export function terms(text, p = PLANNER_DEFAULTS) {
+  return termSteps(text, p)
     .filter((s) => s.kept)
     .map((s) => s.term);
 }
@@ -226,7 +244,7 @@ export function friendlyTime(time) {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
 }
 // `steps` records what every rule saw and produced, for the explainer.
-export function extract(text) {
+export function extract(text, p = PLANNER_DEFAULTS) {
   const input = normalize(text);
   const command = input.replace(/^please\s+/, "");
   const intentRule = INTENT_RULES.find((r) =>
@@ -430,7 +448,7 @@ export function extract(text) {
       .replace(/\b(to|on|at)\s*$/g, "")
       .trim(),
   );
-  const keywords = terms(title);
+  const keywords = terms(title, p);
   if (intent === "unknown")
     issues.push(
       "Start with remind me, find, move, or delete. This demo uses explicit command rules.",
@@ -448,12 +466,17 @@ export function extract(text) {
   };
 }
 
-export function vectorize(queryTerms, records) {
-  const documents = records.map((r) => terms(r.title));
+export function vectorize(queryTerms, records, p = PLANNER_DEFAULTS) {
+  const documents = records.map((r) => terms(r.title, p));
   const vocabulary = [...new Set([...documents.flat(), ...queryTerms])].sort();
   const dimensions = vocabulary.map((term) => {
     const df = documents.filter((doc) => doc.includes(term)).length;
-    return { term, df, idf: Math.log((records.length + 1) / (df + 1)) + 1 };
+    const idf = !p.useIdf
+      ? 1
+      : p.smoothIdf
+        ? Math.log((records.length + 1) / (df + 1)) + 1
+        : Math.log(records.length / Math.max(df, 1)) + 1;
+    return { term, df, idf };
   });
   const encode = (values) =>
     dimensions.map(
@@ -487,14 +510,14 @@ export function vectorize(queryTerms, records) {
   };
 }
 
-export function analyze(text, records = SEED_RECORDS, selectedId = null) {
+export function analyze(text, records = SEED_RECORDS, selectedId = null, p = PLANNER_DEFAULTS) {
   const started = performance.now();
   const original = text.slice(0, MAX_INPUT);
   const normalized = normalize(original);
-  const tokens = tokenize(original);
-  const entities = extract(original);
-  const vectors = vectorize(entities.keywords, records);
-  const candidates = vectors.results.filter((r) => r.score > MATCH_THRESHOLD);
+  const tokens = tokenize(original, p);
+  const entities = extract(original, p);
+  const vectors = vectorize(entities.keywords, records, p);
+  const candidates = vectors.results.filter((r) => r.score > p.matchThreshold);
   const ask = (reason, message) => ({ status: "clarify", reason, message });
   const edits = ["update", "delete"].includes(entities.intent);
   const gap = candidates.length > 1 ? candidates[0].score - candidates[1].score : null;
@@ -538,7 +561,7 @@ export function analyze(text, records = SEED_RECORDS, selectedId = null) {
     },
     {
       id: "no-match",
-      test: `update/delete, and no record scores above ${MATCH_THRESHOLD}`,
+      test: `update/delete, and no record scores above ${p.matchThreshold}`,
       hit: () => edits && !candidates.length,
       decide: () =>
         ask(
@@ -559,8 +582,8 @@ export function analyze(text, records = SEED_RECORDS, selectedId = null) {
     },
     {
       id: "duplicate",
-      test: `update/delete, nothing chosen, top two scores differ by < ${TIE_GAP}`,
-      hit: () => edits && !selectedId && gap !== null && gap < TIE_GAP,
+      test: `update/delete, nothing chosen, top two scores differ by < ${p.tieGap}`,
+      hit: () => edits && !selectedId && gap !== null && gap < p.tieGap,
       decide: () =>
         ask(
           "duplicate",
@@ -636,6 +659,7 @@ export function analyze(text, records = SEED_RECORDS, selectedId = null) {
     selectedId,
     elapsed: +(performance.now() - started).toFixed(2),
     referenceDate: DEMO_TODAY,
+    params: p,
   };
 }
 

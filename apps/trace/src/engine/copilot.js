@@ -16,6 +16,26 @@ export const CANDIDATES = RETRIEVAL_LIMIT * 5;
 export const MAX_DISTANCE = 0.98;
 export const QUERY_CHARS = 500;
 export const MESSAGE_CHARS = 8000;
+// The search settings a visitor can tune. The defaults are the server's own;
+// anything else is a what-if the server never ran.
+export const COPILOT_DEFAULTS = {
+  stopwords: [...STOPWORDS],
+  dimensions: DIMENSIONS,
+  titleBoost: 2,
+  logWeight: true,
+  candidates: CANDIDATES,
+  limit: RETRIEVAL_LIMIT,
+  maxDistance: MAX_DISTANCE,
+  requireShared: true,
+  queryChars: QUERY_CHARS,
+};
+const stopSets = new WeakMap();
+const stopSet = (p) => {
+  if (p.stopwords === COPILOT_DEFAULTS.stopwords) return STOPWORDS;
+  let set = stopSets.get(p.stopwords);
+  if (!set) stopSets.set(p.stopwords, (set = new Set(p.stopwords)));
+  return set;
+};
 // The trace names no provider or model: it explains what any hosted LLM in
 // this position does. The settings below are the planner's real ones.
 export const MODEL = {
@@ -32,17 +52,18 @@ export const MODEL = {
 const FOLD = { ß: "ss", ẞ: "ss", ﬀ: "ff", ﬁ: "fi", ﬂ: "fl", ﬃ: "ffi", ﬄ: "ffl", ﬅ: "st", ﬆ: "st" };
 export const casefold = (text) => text.toLowerCase().replace(/[ßẞﬀ-ﬆ]/g, (c) => FOLD[c] ?? c);
 
-export function tokenSteps(text) {
+export function tokenSteps(text, p = COPILOT_DEFAULTS) {
   const folded = casefold(text);
   const words = folded.match(/[a-z0-9]+/g) ?? [];
+  const stop = stopSet(p);
   return {
     folded,
     words,
-    kept: words.filter((w) => !STOPWORDS.has(w)),
-    dropped: words.filter((w) => STOPWORDS.has(w)),
+    kept: words.filter((w) => !stop.has(w)),
+    dropped: words.filter((w) => stop.has(w)),
   };
 }
-export const tokens = (text) => tokenSteps(text).kept;
+export const tokens = (text, p = COPILOT_DEFAULTS) => tokenSteps(text, p).kept;
 
 // SHA-256 (FIPS 180-4), synchronous so every frame can show its digest.
 const K = new Uint32Array([
@@ -102,26 +123,28 @@ export function sha256(text) {
   return Array.from(h, (x) => x.toString(16).padStart(8, "0")).join("");
 }
 
-// The first 4 digest bytes as a big-endian integer, modulo 768.
-export function slotOf(token) {
+// The first 4 digest bytes as a big-endian integer, modulo the dimensions (768).
+export function slotOf(token, p = COPILOT_DEFAULTS) {
   const digest = sha256(token);
   const first = parseInt(digest.slice(0, 8), 16);
-  return { digest, first, slot: first % DIMENSIONS };
+  return { digest, first, slot: first % p.dimensions };
 }
 
 // Sparse vector: slot → weight, plus the per-token working.
-export function vectorize(text, title = "") {
+export function vectorize(text, title = "", p = COPILOT_DEFAULTS) {
   const counts = new Map();
-  for (const t of tokens(text)) counts.set(t, (counts.get(t) ?? 0) + 1);
-  const titleTokens = [...new Set(tokens(title))];
-  for (const t of titleTokens) counts.set(t, (counts.get(t) ?? 0) + 2);
-  const rows = [...counts].map(([token, count]) => ({
-    token,
-    count,
-    titleBoost: titleTokens.includes(token),
-    ...slotOf(token),
-    weight: 1 + Math.log(count),
-  }));
+  for (const t of tokens(text, p)) counts.set(t, (counts.get(t) ?? 0) + 1);
+  const titleTokens = [...new Set(tokens(title, p))];
+  for (const t of titleTokens) counts.set(t, (counts.get(t) ?? 0) + p.titleBoost);
+  const rows = [...counts]
+    .filter(([, count]) => count > 0)
+    .map(([token, count]) => ({
+      token,
+      count,
+      titleBoost: titleTokens.includes(token),
+      ...slotOf(token, p),
+      weight: p.logWeight ? 1 + Math.log(count) : count,
+    }));
   const vector = new Map();
   for (const r of rows) vector.set(r.slot, (vector.get(r.slot) ?? 0) + r.weight);
   return { rows, vector };
@@ -168,10 +191,10 @@ export function recordText(record) {
 // Every readable record scored, then the server's filters in order, then the
 // top 5. Records not approved for AI are never indexed on the server, so they
 // are set aside unread.
-export function retrieve(message, records) {
-  const query = message.trim().slice(0, QUERY_CHARS);
-  const q = vectorize(query);
-  const queryTokens = new Set(tokens(query));
+export function retrieve(message, records, p = COPILOT_DEFAULTS) {
+  const query = message.trim().slice(0, p.queryChars);
+  const q = vectorize(query, "", p);
+  const queryTokens = new Set(tokens(query, p));
   const excluded = records.filter((r) => r.approvedForAi === false);
   const readable = records.filter((r) => r.approvedForAi !== false);
   if (!queryTokens.size)
@@ -187,22 +210,22 @@ export function retrieve(message, records) {
   const scored = readable
     .map((record) => {
       const text = recordText(record);
-      const d = vectorize(text, record.title);
+      const d = vectorize(text, record.title, p);
       const cos = cosineDistance(q.vector, d.vector);
-      const shared = [...new Set(tokens(text))].filter((t) => queryTokens.has(t));
+      const shared = [...new Set(tokens(text, p))].filter((t) => queryTokens.has(t));
       return { record, text, d, ...cos, shared };
     })
     .sort((a, b) => a.distance - b.distance || String(a.record.id).localeCompare(String(b.record.id)));
-  const candidates = scored.slice(0, CANDIDATES);
+  const candidates = scored.slice(0, p.candidates);
   const kept = [];
   for (const s of candidates) {
     s.reason =
-      s.distance > MAX_DISTANCE
-        ? `distance ${s.distance.toFixed(3)} > ${MAX_DISTANCE}`
-        : !s.shared.length
+      s.distance > p.maxDistance
+        ? `distance ${s.distance.toFixed(3)} > ${p.maxDistance}`
+        : p.requireShared && !s.shared.length
             ? "no shared word (hash collision)"
-            : kept.length >= RETRIEVAL_LIMIT
-              ? `limit of ${RETRIEVAL_LIMIT} reached`
+            : kept.length >= p.limit
+              ? `limit of ${p.limit} reached`
               : null;
     if (!s.reason) kept.push(s);
   }

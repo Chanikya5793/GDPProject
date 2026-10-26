@@ -1226,6 +1226,10 @@ kbd {
   color: var(--badge-re-fg);
   background: var(--badge-re-bg);
 }
+.badge.is-tuned {
+  color: var(--warn, #f5b14c);
+  background: color-mix(in srgb, var(--warn, #f5b14c) 16%, transparent);
+}
 .badge.is-illustration {
   color: var(--badge-ill);
   background: transparent;

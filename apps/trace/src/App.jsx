@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Database, Moon, PenLine, Square, Sun, Workflow, X } from "lucide-react";
+import { Box, Database, Moon, PenLine, SlidersHorizontal, Square, Sun, Workflow, X } from "lucide-react";
 import TrackView from "./TrackView.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import StepPlayer from "./explain/StepPlayer.jsx";
 import { DataPanel, RequestPanel } from "./Panels.jsx";
 import { analyze, applyProposal, SCENARIOS, SEED_RECORDS } from "./engine/pipeline.js";
-import { microscope } from "./engine/microscope.js";
 import { copilotSteps, stepsFor } from "./steps.js";
-import { sampleCopilot, SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
+import { SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
+import { useParams } from "./tune/useParams.js";
+import { changed } from "./tune/schema.js";
+import { buildCtx } from "./tune/context.js";
+import TunePanel from "./tune/TunePanel.jsx";
 
 const seeds = () => SEED_RECORDS.map((r) => ({ ...r }));
 function useReducedMotion() {
@@ -96,7 +99,13 @@ export default function App() {
   const [records, setRecords] = useState(seeds);
   const [input, setInput] = useState(SCENARIOS[0].prompt);
   const [scenario, setScenario] = useState(SCENARIOS[0].id);
-  const [trace, setTrace] = useState(() => analyze(SCENARIOS[0].prompt));
+  // The request as last run: its text, the records it ran against and the
+  // record the visitor picked. The trace is recomputed from it whenever the
+  // settings change.
+  const [request, setRequest] = useState(() => ({ text: SCENARIOS[0].prompt, records: seeds(), selectedId: null }));
+  const { params, tune, reset: resetParams, set: setParams } = useParams();
+  const [tuneOpen, setTuneOpen] = useState(false);
+  const [tuneFocus, setTuneFocus] = useState(null);
   const [applied, setApplied] = useState(false);
   const [notice, setNotice] = useState("");
   const [generatedTokens, setGeneratedTokens] = useState([]);
@@ -106,21 +115,26 @@ export default function App() {
   // Earlier turns when the visitor answers a question instead of rewriting.
   const [thread, setThread] = useState([]);
 
+  const trace = useMemo(
+    () => analyze(request.text, request.records, request.selectedId, params.planner),
+    [request, params.planner],
+  );
   const steps =
     mode === "copilot"
-      ? copilotSteps({ response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null })
-      : stepsFor(mode);
-  const data = useMemo(() => microscope(trace, generatedTokens), [trace, generatedTokens]);
-  const ctx = useMemo(() => {
-    // The copilot track uses the sample exchange; any other message has no
-    // real reply to show.
-    const copilot = {
-      ...sampleCopilot(),
-      message: trace.original || SAMPLE_MESSAGE,
-      response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null,
-    };
-    return { trace, data, model: data.transformer, records, applied, generatedTokens, copilot };
-  }, [trace, data, records, applied, generatedTokens]);
+      ? copilotSteps({ response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null }, params)
+      : stepsFor(mode, params);
+  const ctx = useMemo(
+    () =>
+      buildCtx({
+        trace,
+        rerun: (planner) => analyze(request.text, request.records, request.selectedId, planner),
+        records,
+        applied,
+        generatedTokens,
+        params,
+      }),
+    [trace, request, records, applied, generatedTokens, params],
+  );
   // Playback halts after Decide while the request still needs an answer.
   const stopAt =
     mode === "planner" && trace.decision.status === "clarify"
@@ -129,9 +143,10 @@ export default function App() {
   const closeDrawer = useCallback(() => setDrawer(null), []);
   useDialog(!!drawer, closeDrawer);
 
+  const data = ctx.data;
   function run(text = input, keepThread = false) {
     if (!keepThread) setThread([]);
-    setTrace(analyze(text, records));
+    setRequest({ text, records, selectedId: null });
     setInput(text);
     setApplied(false);
     setNotice("");
@@ -143,7 +158,7 @@ export default function App() {
     editRequest: () => setDrawer("request"),
     openData: () => setDrawer("data"),
     chooseRecord(id) {
-      setTrace(analyze(trace.original, records, id));
+      setRequest({ text: trace.original, records, selectedId: id });
       setApplied(false);
       setNotice("");
     },
@@ -160,7 +175,7 @@ export default function App() {
     reset() {
       const next = seeds();
       setRecords(next);
-      setTrace(analyze(trace.original, next));
+      setRequest({ text: trace.original, records: next, selectedId: null });
       setApplied(false);
       setNotice("");
     },
@@ -226,6 +241,18 @@ export default function App() {
             <PenLine size={14} />
             <span>{trace.original || "Enter a request"}</span>
           </button>
+          <button
+            className={changed(mode, params[mode]).length ? "is-tuned" : undefined}
+            onClick={() => {
+              setTuneFocus(null);
+              setTuneOpen((v) => !v);
+            }}
+            aria-expanded={tuneOpen}
+            aria-label="Tune the algorithms"
+          >
+            <SlidersHorizontal size={16} />
+            <span>Tune{changed(mode, params[mode]).length ? ` · ${changed(mode, params[mode]).length}` : ""}</span>
+          </button>
           <button onClick={toggleTheme} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}>
             {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
           </button>
@@ -242,6 +269,12 @@ export default function App() {
         steps={steps}
         ctx={ctx}
         theme={theme}
+        params={params}
+        onTune={(path, value) => {
+          if (value !== undefined) tune(path, value);
+          setTuneFocus(path);
+          setTuneOpen(true);
+        }}
         view={view}
         runId={runId}
         reduced={reduced}
@@ -269,6 +302,20 @@ export default function App() {
         }}
       />
       </ErrorBoundary>
+
+      <TunePanel
+        open={tuneOpen}
+        mode={mode}
+        params={params}
+        focus={tuneFocus}
+        onTune={tune}
+        onSet={setParams}
+        onReset={resetParams}
+        onClose={() => setTuneOpen(false)}
+        baseline={ctx.baseline}
+        ctx={ctx}
+        steps={steps}
+      />
 
       {notice && (
         <div className="toast" role="status">
@@ -351,3 +398,4 @@ function TablePlayer({ module, ctx, start }) {
     />
   );
 }
+

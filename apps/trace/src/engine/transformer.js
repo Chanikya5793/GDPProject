@@ -4,6 +4,18 @@ export const D_MODEL = 4;
 export const D_FF = 8;
 export const CONTEXT = 16;
 export const MAX_MERGES = 60;
+// The settings a visitor can tune. Each switch turns one piece of the block
+// off so its effect can be seen; the defaults are the standard design.
+export const TRANSFORMER_DEFAULTS = {
+  merges: MAX_MERGES,
+  context: CONTEXT,
+  positional: true,
+  scaleScores: true,
+  causalMask: true,
+  residual: true,
+  activation: "gelu",
+  temperature: 1,
+};
 
 // Training text for the tokenizer. Word frequency matters: BPE merges the pair
 // that occurs most often across every occurrence of every word.
@@ -85,14 +97,20 @@ export function trainBPE(text = CORPUS, steps = MAX_MERGES) {
 }
 
 export const BPE_MERGES = trainBPE();
+const mergeTables = new Map([[MAX_MERGES, BPE_MERGES]]);
+export function mergesFor(count = MAX_MERGES) {
+  if (!mergeTables.has(count)) mergeTables.set(count, trainBPE(CORPUS, count));
+  return mergeTables.get(count);
+}
 const display = (piece) => piece.replace(END, "▁");
 
 // Applies the learned merges, in training order, to each word of `text`.
-export function inspectBPE(text) {
+export function inspectBPE(text, count = MAX_MERGES) {
+  const merges = mergesFor(count);
   const words = preTokenize(text).map((word) => {
     let pieces = [...word, END];
     const applied = [];
-    BPE_MERGES.forEach(({ pair }, rank) => {
+    merges.forEach(({ pair }, rank) => {
       const next = mergePair(pieces, pair);
       if (next.length !== pieces.length)
         applied.push({ rank, pair, before: pieces, after: next });
@@ -100,13 +118,14 @@ export function inspectBPE(text) {
     });
     return { word, start: [...word, END], applied, pieces };
   });
-  return { words, final: encodeBPE(text) };
+  return { words, final: encodeBPE(text, count) };
 }
 
-export function encodeBPE(text) {
+export function encodeBPE(text, count = MAX_MERGES) {
+  const merges = mergesFor(count);
   return preTokenize(text).flatMap((word) => {
     let pieces = [...word, END];
-    BPE_MERGES.forEach(({ pair }) => {
+    merges.forEach(({ pair }) => {
       pieces = mergePair(pieces, pair);
     });
     return pieces.filter((p) => p !== END).map(display);
@@ -114,6 +133,11 @@ export function encodeBPE(text) {
 }
 
 export const VOCABULARY = [...new Set(encodeBPE(CORPUS))];
+const vocabularies = new Map([[MAX_MERGES, VOCABULARY]]);
+export function vocabularyFor(count = MAX_MERGES) {
+  if (!vocabularies.has(count)) vocabularies.set(count, [...new Set(encodeBPE(CORPUS, count))]);
+  return vocabularies.get(count);
+}
 
 // The "table lookup" for embeddings and the vocabulary head is a formula of
 // the token's characters, so any subword has a row, seen in training or not.
@@ -172,9 +196,9 @@ export const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
 export const vecMat = (x, W, bias) =>
   W[0].map((_, j) => x.reduce((sum, v, d) => sum + v * W[d][j], bias ? bias[j] : 0));
 
-export function softmaxSteps(scores) {
+export function softmaxSteps(scores, temperature = 1) {
   const max = Math.max(...scores);
-  const shifted = scores.map((x) => x - max);
+  const shifted = scores.map((x) => (x - max) / temperature);
   const exps = shifted.map(Math.exp);
   const sum = exps.reduce((a, b) => a + b, 0);
   return { max, shifted, exps, sum, probs: exps.map((x) => x / sum) };
@@ -194,44 +218,49 @@ export const layerNorm = (row) => layerNormSteps(row).out;
 
 export const GELU_C = Math.sqrt(2 / Math.PI);
 export const gelu = (x) => 0.5 * x * (1 + Math.tanh(GELU_C * (x + 0.044715 * x ** 3)));
+export const relu = (x) => Math.max(0, x);
+export const ACTIVATIONS = { gelu, relu };
 
 export function attention(text, options = {}) {
+  const p = options.params ?? TRANSFORMER_DEFAULTS;
   const tokens = options.tokenWindow
-    ? options.tokenWindow.slice(-CONTEXT)
-    : encodeBPE(text).slice(0, CONTEXT);
+    ? options.tokenWindow.slice(-p.context)
+    : encodeBPE(text, p.merges).slice(0, p.context);
   const embeddings = tokens.map(embeddingRow);
-  const positional = tokens.map((_, pos) => positionRow(pos));
+  const positional = tokens.map((_, pos) => (p.positional ? positionRow(pos) : Array(D_MODEL).fill(0)));
   const positions = embeddings.map((row, pos) =>
     row.map((v, i) => v + positional[pos][i]),
   );
   const query = positions.map((x) => vecMat(x, W_Q));
   const key = positions.map((x) => vecMat(x, W_K));
   const value = positions.map((x) => vecMat(x, W_V));
-  const scores = query.map((q) => key.map((k) => dot(q, k) / SCALE));
+  const scale = p.scaleScores ? SCALE : 1;
+  const scores = query.map((q) => key.map((k) => dot(q, k) / scale));
   const masked = scores.map((row, i) =>
-    row.map((v, j) => (j > i ? -Infinity : v)),
+    row.map((v, j) => (p.causalMask && j > i ? -Infinity : v)),
   );
-  const softmaxRows = masked.map(softmaxSteps);
+  const softmaxRows = masked.map((row) => softmaxSteps(row));
   const weights = softmaxRows.map((s) => s.probs);
   const output = weights.map((row) =>
     Array.from({ length: D_MODEL }, (_, d) =>
       row.reduce((sum, w, j) => sum + w * value[j][d], 0),
     ),
   );
-  const residual = output.map((row, i) => row.map((v, d) => v + positions[i][d]));
+  const residual = output.map((row, i) => row.map((v, d) => v + (p.residual ? positions[i][d] : 0)));
   const norm1Steps = residual.map(layerNormSteps);
   const norm1 = norm1Steps.map((s) => s.out);
   const hidden = norm1.map((x) => vecMat(x, W_1, B_1));
-  const activated = hidden.map((row) => row.map(gelu));
+  const activate = ACTIVATIONS[p.activation] ?? gelu;
+  const activated = hidden.map((row) => row.map(activate));
   const feedforward = activated.map((h) => vecMat(h, W_2));
-  const residual2 = feedforward.map((row, i) => row.map((v, d) => v + norm1[i][d]));
+  const residual2 = feedforward.map((row, i) => row.map((v, d) => v + (p.residual ? norm1[i][d] : 0)));
   const norm2Steps = residual2.map(layerNormSteps);
   const norm2 = norm2Steps.map((s) => s.out);
-  const vocabulary = VOCABULARY;
+  const vocabulary = vocabularyFor(p.merges);
   const unembedding = vocabulary.map(unembedRow);
   const last = norm2.at(-1) || Array(D_MODEL).fill(0);
   const logits = unembedding.map((row) => dot(last, row));
-  const vocabSoftmax = softmaxSteps(logits);
+  const vocabSoftmax = softmaxSteps(logits, p.temperature);
   const probabilities = vocabSoftmax.probs;
   const ranked = vocabulary
     .map((token, i) => ({
@@ -270,5 +299,6 @@ export function attention(text, options = {}) {
     probabilities,
     ranked,
     nextToken: ranked[0]?.token,
+    params: p,
   };
 }
