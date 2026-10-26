@@ -243,56 +243,12 @@ class Citation(StrictModel):
     excerpt: str
 
 
-class CandidateOutcome(str, Enum):
-    kept = "kept"
-    too_far = "too_far"
-    type_not_indexed = "type_not_indexed"
-    type_filtered = "type_filtered"
-    missing = "missing"
-    not_approved = "not_approved"
-    stale_revision = "stale_revision"
-    no_shared_word = "no_shared_word"
-    limit_reached = "limit_reached"
-
-
-class RetrievalCandidate(StrictModel):
-    """One nearest-neighbour hit and what the filters did with it.
-
-    Only ever the caller's own records. A hit dropped because its record is
-    not approved, its type is not indexed or it no longer exists carries no
-    record_id: the outcome and distance describe the search without pointing
-    at a record the assistant was not allowed to use.
-    """
-
-    rank: int
-    distance: float
-    outcome: CandidateOutcome
-    entity_type: EntityType
-    record_id: Optional[str] = None
-    citation_id: Optional[str] = None
-
-
-class RetrievalSearch(StrictModel):
-    """One planner search in a turn: the opening search or a lookup."""
-
-    query: str
-    entity_type: Optional[EntityType] = None
-    requested: int
-    limit: int
-    max_distance: float
-    candidates: List[RetrievalCandidate] = Field(default_factory=list)
-    skipped: Optional[str] = None
-
-
 class RetrievalDisclosure(StrictModel):
     attempted: bool
     result_count: int
     entity_types: List[EntityType]
     abstained: bool
     reason: Optional[str] = None
-    # Every search the turn ran, with each candidate's distance and outcome,
-    # so the client's trace view can show the real ranking.
-    searches: List[RetrievalSearch] = Field(default_factory=list, max_length=8)
 
 
 class ProposalOperation(str, Enum):

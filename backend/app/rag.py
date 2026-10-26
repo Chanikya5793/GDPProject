@@ -20,15 +20,12 @@ from .audit import AuditLogger
 from .injection import safe_excerpt
 from .local_embeddings import has_lexical_overlap
 from .models import (
-    CandidateOutcome,
     ChatTurn,
     Citation,
     EntityType,
     FocusRecordRef,
     PlannerRecord,
-    RetrievalCandidate,
     RetrievalDisclosure,
-    RetrievalSearch,
 )
 from .planner import PlannerEngine
 from .repository import NotFound, PlannerRepository
@@ -251,13 +248,6 @@ class RetrievalService:
     def retrieve(
         self, uid: str, query: str, entity_type: Optional[EntityType] = None,
     ) -> Tuple[List[PlannerRecord], List[Citation]]:
-        records, citations, _ = self.search(uid, query, entity_type)
-        return records, citations
-
-    def search(
-        self, uid: str, query: str, entity_type: Optional[EntityType] = None,
-    ) -> Tuple[List[PlannerRecord], List[Citation], RetrievalSearch]:
-        """retrieve(), plus what happened to every candidate on the way."""
         settings = self.repository.get_privacy(uid)
         if not settings.ai_enabled:
             self.audit.record(uid, "retrieval", "denied", {"reason": "opt_out"})
@@ -265,10 +255,6 @@ class RetrievalService:
         # Entity type and real word overlap are checked after vector search,
         # so request enough candidates to still fill the answer after filtering.
         wanted = self.limit * KIND_OVERFETCH
-        trace = RetrievalSearch(
-            query=query[:500], entity_type=entity_type, requested=wanted,
-            limit=self.limit, max_distance=self.max_distance,
-        )
         try:
             query_vector = self.embeddings.embed_query(query)
             hits = self.vector_store.search(uid, query_vector, wanted) if any(query_vector) else []
@@ -277,58 +263,36 @@ class RetrievalService:
                 "stage": "retrieval", "error_type": type(exc).__name__,
             })
             raise
-        if not any(query_vector):
-            trace.skipped = "Every word in the query is a stopword."
         records: List[PlannerRecord] = []
         citations: List[Citation] = []
         for index, hit in enumerate(hits, start=1):
-            outcome = None
-            record = None
             if len(records) >= self.limit:
-                outcome = CandidateOutcome.limit_reached
-            elif hit.distance > self.max_distance:
-                outcome = CandidateOutcome.too_far
-            elif hit.entity_type not in settings.indexed_entity_types:
-                outcome = CandidateOutcome.type_not_indexed
-            elif entity_type and hit.entity_type != entity_type:
-                outcome = CandidateOutcome.type_filtered
-            else:
-                try:
-                    record = self.repository.get_record(uid, hit.entity_type, hit.record_id)
-                except NotFound:
-                    outcome = CandidateOutcome.missing
-            if record is not None and outcome is None:
-                if not record.approved_for_ai:
-                    outcome = CandidateOutcome.not_approved
-                elif record.revision != hit.revision:
-                    outcome = CandidateOutcome.stale_revision
-                else:
-                    text = record_text(record, include_attachments=settings.index_attachments)
-                    if not has_lexical_overlap(query, text):
-                        outcome = CandidateOutcome.no_shared_word
-                    else:
-                        outcome = CandidateOutcome.kept
-                        records.append(record)
-                        citations.append(Citation(
-                            citation_id=f"S{index}", entity_type=hit.entity_type,
-                            record_id=record.record_id, revision=record.revision,
-                            title=record.content.title, excerpt=safe_excerpt(text),
-                        ))
-            trace.candidates.append(RetrievalCandidate(
-                rank=index, distance=round(hit.distance, 6), outcome=outcome,
-                entity_type=hit.entity_type,
-                record_id=None if outcome in _UNNAMED_OUTCOMES else hit.record_id,
+                break
+            if hit.distance > self.max_distance:
+                continue
+            if hit.entity_type not in settings.indexed_entity_types:
+                continue
+            if entity_type and hit.entity_type != entity_type:
+                continue
+            try:
+                record = self.repository.get_record(uid, hit.entity_type, hit.record_id)
+            except NotFound:
+                continue
+            if not record.approved_for_ai or record.revision != hit.revision:
+                continue
+            text = record_text(record, include_attachments=settings.index_attachments)
+            if not has_lexical_overlap(query, text):
+                continue
+            records.append(record)
+            citations.append(Citation(
+                citation_id=f"S{index}", entity_type=hit.entity_type,
+                record_id=record.record_id, revision=record.revision,
+                title=record.content.title, excerpt=safe_excerpt(text),
             ))
         self.audit.record(uid, "retrieval", "success" if citations else "abstained", {
             "result_count": len(citations), "requested_k": self.limit,
         })
-        return records, citations, trace
-
-
-# A candidate dropped for one of these reasons is reported without its id.
-_UNNAMED_OUTCOMES = frozenset({
-    CandidateOutcome.not_approved, CandidateOutcome.type_not_indexed, CandidateOutcome.missing,
-})
+        return records, citations
 
 
 def _turn_for_prompt(turn: ChatTurn) -> Dict[str, Any]:
@@ -498,7 +462,6 @@ class CopilotService:
                 entity_types=sorted({c.entity_type for c in citations}, key=lambda item: item.value),
                 abstained=True,
                 reason="The answer pointed at a source that was never retrieved.",
-                searches=session.searches,
             )
             return refusal, [], disclosure
         self.audit.record(uid, "generation", metadata={
@@ -516,7 +479,6 @@ class CopilotService:
             # Say so when the reply rests on no planner records, so the student
             # can tell a grounded answer from a general one.
             reason=None if citations else "No planner records matched; answered without sources.",
-            searches=session.searches,
         )
         return answer, used, disclosure
 
