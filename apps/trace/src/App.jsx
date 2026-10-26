@@ -142,6 +142,13 @@ export default function App() {
       : null;
   const closeDrawer = useCallback(() => setDrawer(null), []);
   useDialog(!!drawer, closeDrawer);
+  // Esc closes the Tune panel, unless a drawer above it takes the key first.
+  useEffect(() => {
+    if (!tuneOpen || drawer) return;
+    const key = (e) => e.key === "Escape" && !e.defaultPrevented && setTuneOpen(false);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [tuneOpen, drawer]);
 
   const data = ctx.data;
   function run(text = input, keepThread = false) {
@@ -270,6 +277,7 @@ export default function App() {
         ctx={ctx}
         theme={theme}
         params={params}
+        tuneOpen={tuneOpen}
         onTune={(path, value) => {
           if (value !== undefined) tune(path, value);
           setTuneFocus(path);
@@ -299,6 +307,7 @@ export default function App() {
           nextToken: data.transformer.nextToken,
           thread,
           actions,
+          params,
         }}
       />
       </ErrorBoundary>

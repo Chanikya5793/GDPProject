@@ -1,7 +1,7 @@
 import { Panel, Table } from "../../kit.jsx";
 import { MESSAGE_CHARS, QUERY_CHARS } from "../../../engine/copilot.js";
 import { all, charGrid, charsBlock, row, tableBlock } from "../../../map/blocks.js";
-import { MESSAGE_ROW, messageOf, num, plural, sampleNote, short } from "./util.js";
+import { MESSAGE_ROW, messageOf, num, paramsOf, plural, sampleNote, short } from "./util.js";
 
 const QUERY_COLS = 25;
 const MAX_TURNS = 20;
@@ -15,9 +15,43 @@ const fieldRows = (ctx) => {
     ["history turns", String(m.history.length), "≤ 20 × 4,000"],
     ["focus", m.focus ? `“${m.focus.title}”` : "none", "optional"],
     ["timezone", ctx.copilot.timezone ?? "—", ctx.copilot.today ? `today ${ctx.copilot.today}` : ""],
-    ["query", `${num(m.query.length)} chars`, "first 500"],
+    ["query", `${num(m.query.length)} chars`, `first ${num(paramsOf(ctx).queryChars)}`],
   ];
 };
+
+// The cut is the server's 500 unless the query length setting is tuned.
+const cutNote = (ctx) => {
+  const n = paramsOf(ctx).queryChars;
+  return n === QUERY_CHARS ? "" : ` What-if: you set the query length to ${num(n)}; the server cuts at ${QUERY_CHARS}.`;
+};
+
+const FIELD_HELP = [
+  {
+    meaning: "How long your message is after trimming spaces at both ends.",
+    formula: "1 ≤ message.trim().length ≤ 8000",
+    worked: (m) => `${num(m.trimmed.length)} ${m.trimmed.length >= 1 && m.trimmed.length <= MESSAGE_CHARS ? "is" : "is not"} between 1 and 8,000`,
+  },
+  {
+    meaning: "Earlier turns of this conversation sent along with the message.",
+    formula: "history.length ≤ 20, each turn ≤ 4000 characters",
+    worked: (m) => `${m.history.length} ≤ 20`,
+  },
+  {
+    meaning: "A record you attached, so the copilot knows what “it” means.",
+    formula: "focus = request.focus ?? null",
+    worked: (m) => (m.focus ? `focus = “${m.focus.title}”` : "focus = null"),
+  },
+  {
+    meaning: "Your timezone, used to work out what “today” and “Friday” mean.",
+    formula: "today = date in your timezone",
+    worked: (m, ctx) => `${ctx.copilot.timezone ?? "unknown"} → today ${ctx.copilot.today ?? "unknown"}`,
+  },
+  {
+    meaning: "The part of your message that is searched. The rest still reaches the LLM as your question.",
+    formula: "query = message.trim().slice(0, queryChars)",
+    worked: (m, ctx) => `min(${num(m.trimmed.length)}, ${num(paramsOf(ctx).queryChars)}) = ${num(m.query.length)} characters`,
+  },
+];
 
 export default {
   id: "message",
@@ -31,7 +65,7 @@ export default {
     "if (body.history.length > 20 || body.history.some((t) => t.text.length > 4000)) reject(422)",
     "const focus = body.focus ?? null",
     "checkRateLimit(user, 20 per hour); replayIfSeen(body.request_id)",
-    "const query = message.slice(0, 500)",
+    "const query = message.slice(0, p.queryChars)",
   ],
   frames(ctx) {
     const m = messageOf(ctx);
@@ -97,14 +131,15 @@ export default {
       row: MESSAGE_ROW.timezone,
       filled: 4,
     });
+    const cut = paramsOf(ctx).queryChars;
     frames.push({
       phase: "Query",
       line: 5,
       say:
-        len > QUERY_CHARS
-          ? `The search query is the first 500 characters of the message; the other ${num(len - QUERY_CHARS)} still reach the model as your question.`
-          : `The message is ${num(len)} characters, under 500, so the whole of it becomes the search query.`,
-      vars: { "query.length": m.query.length, QUERY_CHARS },
+        (len > cut
+          ? `The search query is the first ${num(cut)} characters of the message; the other ${num(len - cut)} still reach the model as your question.`
+          : `The message is ${num(len)} characters, not more than ${num(cut)}, so the whole of it becomes the search query.`) + cutNote(ctx),
+      vars: { "query.length": m.query.length, "p.queryChars": cut },
       row: MESSAGE_ROW.query,
       filled: 5,
       cut: true,
@@ -124,13 +159,29 @@ export default {
           { text: v, tone: r === MESSAGE_ROW.query ? "keyword" : undefined, full: r === MESSAGE_ROW.focus ? v : undefined },
           { text: rule, tone: rule === "rejected" ? "warn" : "muted" },
         ]),
+        explain: (r, c) => {
+          const h = FIELD_HELP[r];
+          if (!h) return null;
+          const head = ["field", "value", "rule"][c];
+          return { meaning: `${head === "rule" ? "The rule for: " : ""}${h.meaning}`, formula: h.formula, worked: h.worked(m, ctx) };
+        },
       }),
       charsBlock({
         id: "cquery",
-        title: "query = message.trim().slice(0, 500)",
+        title: `query = message.trim().slice(0, ${paramsOf(ctx).queryChars})`,
         text: m.query || " ",
         cols: QUERY_COLS,
         tone: "keyword",
+        explain: (r, c) => {
+          const grid = charGrid(m.query || " ", QUERY_COLS);
+          const item = grid.chars[r * grid.cols + c];
+          if (!item || !m.query) return null;
+          return {
+            meaning: `One character of the search query, at offset ${item.offset}. Only these characters are turned into search words.`,
+            formula: "query = message.trim().slice(0, queryChars)",
+            worked: `offset ${item.offset} < ${num(paramsOf(ctx).queryChars)}, so “${item.ch}” is part of the query`,
+          };
+        },
       }),
     ];
   },
@@ -151,7 +202,7 @@ export default {
     if (frame.check)
       return [{ label: "1 ≤ length ≤ 8000", terms: [String(m.trimmed.length)], op: "", result: String(m.trimmed.length >= 1 && m.trimmed.length <= MESSAGE_CHARS) }];
     if (frame.cut)
-      return [{ label: "query", terms: [`message.slice(0, ${QUERY_CHARS})`], op: "", result: `${m.query.length} chars` }];
+      return [{ label: "query", terms: [`message.slice(0, ${paramsOf(ctx).queryChars})`], op: "", result: `${m.query.length} chars` }];
     return [];
   },
   Stage({ ctx, frame }) {
@@ -166,7 +217,7 @@ export default {
           />
         </Panel>
         {frame.cut && (
-          <Panel title="Search query" note={`${m.query.length} of at most 500 characters.`}>
+          <Panel title="Search query" note={`${m.query.length} of at most ${num(paramsOf(ctx).queryChars)} characters.${cutNote(ctx)}`}>
             <code>{m.query}</code>
           </Panel>
         )}

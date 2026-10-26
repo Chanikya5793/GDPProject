@@ -12,6 +12,7 @@ import {
   showWs,
   trimHunks,
   unitsOf,
+  uPlus,
   visible,
   edgeWs,
   indexed,
@@ -536,6 +537,77 @@ function cellsOf(frame, { trace }) {
   };
 }
 
+// ---- Explain a cell ----
+
+const charAt = (grid, r, col) => grid.chars[r * grid.cols + col] ?? null;
+const describe = (ch) => `“${visible(ch)}” (${uPlus(ch.codePointAt(0))}, ${charClass(ch)})`;
+
+function explainOriginal(c, r, col) {
+  const item = charAt(c.gOrig, r, col);
+  if (!item) return null;
+  const before = c.gOrig.chars.slice(0, r * c.gOrig.cols + col);
+  const lengths = before.map((x) => x.ch.length);
+  return {
+    meaning: `The character ${describe(item.ch)} as you typed it. ${
+      item.ch.length === 2 ? "It is above U+FFFF, so it takes two UTF-16 code units (a surrogate pair)." : "It takes one UTF-16 code unit."
+    }`,
+    formula: "offset = the code units of every character before it, added up",
+    worked: lengths.length
+      ? lengths.length > 12
+        ? `${lengths.length} characters before it, ${lengths.filter((n) => n === 2).length} of them two units wide → ${item.offset}`
+        : `${lengths.join(" + ")} = ${item.offset}`
+      : "it is the first character → 0",
+  };
+}
+
+function explainNormStep(c, r, col) {
+  const sub = SUB[r];
+  if (!sub) return null;
+  const before = c.strings[r];
+  const after = c.strings[r + 1];
+  const hunks = c.hunks[r];
+  switch (col) {
+    case 0:
+      return { meaning: sub.what, formula: `${sub.key} = ${sub.expr}` };
+    case 1:
+      return {
+        meaning: `The text after the ${sub.name.toLowerCase()} step.`,
+        formula: `${sub.key} = ${sub.expr}`,
+        worked: `“${showWs(before)}” → “${showWs(after)}”`,
+      };
+    case 2:
+      return {
+        meaning: `The length of ${sub.key} in UTF-16 code units.`,
+        formula: `${sub.key}.length`,
+        worked: `${sub.from}.length ${before.length} → ${sub.key}.length ${after.length}`,
+      };
+    case 3:
+      return {
+        meaning: hunks.length ? `How many places this step changed.` : "This step changed nothing for this text.",
+        formula: "count of changed runs between the step's input and output",
+        worked: hunks.length
+          ? hunks
+              .slice(0, 4)
+              .map((h) => `“${showWs(h.from)}” → “${showWs(h.to)}”`)
+              .join(", ") + (hunks.length > 4 ? `, and ${hunks.length - 4} more` : "")
+          : `${sub.key} === ${sub.from}`,
+      };
+    default:
+      return null;
+  }
+}
+
+function explainNormalized(c, changed, r, col) {
+  const item = charAt(c.gNorm, r, col);
+  if (!item) return null;
+  const h = c.overall.find((x) => item.offset >= x.aStart && item.offset < x.aEnd);
+  return {
+    meaning: `${describe(item.ch)} in the normalized copy, at offset ${item.offset}. The extraction rules read this copy.`,
+    formula: "normalized = trim(collapseSpaces(lowercase(NFKC(text))))",
+    worked: changed.has(item.offset) && h ? `“${showWs(h.from)}” in the original became “${showWs(h.to)}”` : "unchanged from the original",
+  };
+}
+
 Object.assign(mod, {
   blocks({ trace }) {
     const c = chain(trace);
@@ -546,6 +618,7 @@ Object.assign(mod, {
         title: "original text · UTF-16 offsets",
         text: trace.original,
         tone: (item) => (item.ch.length === 2 ? "warn" : item.ch.codePointAt(0) > 0x7f ? "number" : undefined),
+        explain: (r, col) => explainOriginal(c, r, col),
       }),
       tableBlock({
         id: "normsteps",
@@ -558,12 +631,14 @@ Object.assign(mod, {
           { text: String(c.strings[s + 1].length) },
           c.hunks[s].length ? { text: String(c.hunks[s].length), tone: "accent" } : { text: "none", tone: "muted" },
         ]),
+        explain: (r, col) => explainNormStep(c, r, col),
       }),
       charsBlock({
         id: "normalized",
         title: "normalized copy · rules match this",
         text: c.steps.trimmed,
         tone: (item) => (changed.has(item.offset) ? "accent" : undefined),
+        explain: (r, col) => explainNormalized(c, changed, r, col),
       }),
     ];
   },

@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cellAt, COLORS, paintBlock } from "./paint.js";
+import HoverCard, { freeBox, hoverable, placeCard, sameHover } from "./HoverCard.jsx";
 import { approach, ease, framing, overview } from "./camera.js";
 import { cellsBox, focusOf, glideOf } from "./track.js";
 
@@ -29,6 +30,8 @@ function curve(ctx, a, b) {
 export default function Map2D({ track, scene, insets, follow, overviewing, onUserMove, onCell, reduced }) {
   const canvasRef = useRef(null);
   const tipRef = useRef(null);
+  const [hover, setHover] = useState(null);
+  const showHover = useRef(setHover);
   const live = useRef({
     cam: null,
     target: null,
@@ -137,6 +140,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       const W = canvas.clientWidth;
       const H = canvas.clientHeight;
       const z = s.cam.z;
+      updateHover(scene, W, H);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = COLORS.bg;
       ctx.fillRect(0, 0, W, H);
@@ -199,12 +203,15 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       // Step names above their columns.
       track.columns.forEach((col, i) => {
         const p = toScreen(col.box.x, col.box.y - 0.9);
-        const size = Math.max(11, Math.min(20, z * 0.55));
+        const size = Math.max(12.5, Math.min(20, z * 0.55));
         ctx.font = `600 ${size}px Manrope, system-ui, sans-serif`;
         ctx.textBaseline = "alphabetic";
         ctx.textAlign = "left";
-        ctx.fillStyle = i === si ? accent : i < si ? COLORS.label : COLORS.faint;
+        // Steps not reached yet stay readable, only quieter.
+        ctx.fillStyle = i === si ? accent : COLORS.label;
+        ctx.globalAlpha = i > si ? 0.6 : 1;
         ctx.fillText(`${String(i + 1).padStart(2, "0")}  ${col.step.name}`, p.x, p.y);
+        ctx.globalAlpha = 1;
       });
 
       // Blocks, from cached bitmaps at a zoom bucket close to the screen scale.
@@ -310,6 +317,16 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         ctx.roundRect(q.x, q.y, (box.w + 0.16) * z, (box.h + 0.16) * z, 0.16 * z);
         ctx.stroke();
       }
+      // The cell the hover card describes.
+      if (s.hover) {
+        const { block, r, c } = s.hover;
+        cellPath(block, r, c, -0.04);
+        ctx.fillStyle = `${COLORS.text}14`;
+        ctx.fill();
+        ctx.strokeStyle = COLORS.text;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
     raf = requestAnimationFrame(draw);
 
@@ -330,11 +347,14 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       props.current.onUserMove?.();
     }
     function down(e) {
+      pause();
       canvas.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
       dragged = false;
     }
     function move(e) {
+      // No button held: hovering, even if a release was missed.
+      if (!e.buttons) pointers.clear();
       const prev = pointers.get(e.pointerId);
       if (!prev) return hover(e);
       const next = { x: e.offsetX, y: e.offsetY };
@@ -357,6 +377,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
     }
     function up(e) {
       pointers.delete(e.pointerId);
+      if (!pointers.size) hover(e);
       if (!dragged && !pointers.size) {
         const h = hit(e.offsetX, e.offsetY);
         if (h?.cell) props.current.onCell?.(h.block.id, ...h.cell);
@@ -372,6 +393,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
     }
     function wheel(e) {
       e.preventDefault();
+      pause();
       if (e.ctrlKey || Math.abs(e.deltaY) > Math.abs(e.deltaX))
         zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018)));
       else {
@@ -379,40 +401,49 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         takeOver();
       }
     }
-    function hover(e) {
-      const tip = tipRef.current;
-      const h = hit(e.offsetX, e.offsetY);
-      canvas.style.cursor = h?.cell ? "pointer" : "grab";
-      if (!h?.cell) {
-        tip.hidden = true;
-        return;
-      }
-      const [r, c] = h.cell;
-      const cell = h.block.cell(r, c);
-      const view = props.current.scene.views.get(h.block.id);
-      if (!cell || view?.mode === "ghost" || (view?.done && !view.done(r, c))) {
-        tip.hidden = true;
-        return;
-      }
-      const where = [h.block.rowLabels?.[r], h.block.colLabels?.[c]].filter((v) => v !== undefined).join(" · ");
-      const value =
-        typeof cell.value === "number"
-          ? Number.isFinite(cell.value)
-            ? cell.value.toFixed(6)
-            : "−∞"
-          : cell.full ?? cell.text;
-      tip.innerHTML = "";
-      const title = document.createElement("b");
-      title.textContent = h.block.title ?? h.block.id;
-      const sub = document.createElement("span");
-      sub.textContent = where || `row ${r}, column ${c}`;
-      const val = document.createElement("code");
-      val.textContent = value;
-      tip.append(title, sub, val);
-      tip.hidden = false;
-      tip.style.transform = `translate(${Math.min(e.offsetX + 14, canvas.clientWidth - 220)}px, ${e.offsetY + 16}px)`;
+    // Hover: the card always describes the cell under the pointer now. The
+    // pointer's last position is kept, and the cell is looked up again when
+    // the camera moves or the frame changes under a still mouse.
+    let seenCam = "";
+    let seenScene = null;
+    function setHoverTo(next) {
+      if (sameHover(next, s.hover)) return;
+      s.hover = next;
+      showHover.current(next);
     }
-    const leave = () => (tipRef.current.hidden = true);
+    function clearHover() {
+      s.pointer = null;
+      setHoverTo(null);
+    }
+    function updateHover(scene, W, H) {
+      const p = s.pointer;
+      if (!p || p.paused) return;
+      const cam = `${s.cam.x.toFixed(4)},${s.cam.y.toFixed(4)},${s.cam.z.toFixed(4)}`;
+      if (p.dirty || cam !== seenCam || scene !== seenScene) {
+        p.dirty = false;
+        seenCam = cam;
+        seenScene = scene;
+        // A panel or overlay may now cover the canvas under a still pointer.
+        const root = canvas.getRootNode();
+        const top = root.elementFromPoint?.(p.cx, p.cy);
+        if (top && top !== canvas) return setHoverTo(null);
+        const h = hit(p.x, p.y);
+        canvas.style.cursor = h?.cell ? "pointer" : "grab";
+        setHoverTo(hoverable(h, scene));
+      }
+      if (s.hover) placeCard(tipRef.current, p.x, p.y, freeBox(W, H, props.current.insets));
+    }
+    function hover(e) {
+      s.pointer = { x: e.offsetX, y: e.offsetY, cx: e.clientX, cy: e.clientY, dirty: true };
+    }
+    const leave = () => clearHover();
+    const pause = () => {
+      if (s.pointer) s.pointer.paused = true;
+      setHoverTo(null);
+    };
+    const hidden = () => document.hidden && clearHover();
+    window.addEventListener("blur", clearHover);
+    document.addEventListener("visibilitychange", hidden);
     canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerup", up);
@@ -428,6 +459,8 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       canvas.removeEventListener("pointercancel", up);
       canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("wheel", wheel);
+      window.removeEventListener("blur", clearHover);
+      document.removeEventListener("visibilitychange", hidden);
     };
   }, []);
 
@@ -439,7 +472,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
   return (
     <div className="map">
       <canvas ref={canvasRef} className="map-canvas" aria-hidden="true" />
-      <div ref={tipRef} className="map-tip" hidden />
+      <HoverCard hover={hover} cardRef={tipRef} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 // One-line "went in / came out" summaries per step, from the real results,
 // for the Flow view. Kept short: details live in the 2D and 3D maps.
 import { friendlyDate, friendlyTime } from "./engine/pipeline.js";
-import { MODEL, promptSections, QUERY_CHARS, retrieve, tokenSteps, vectorize } from "./engine/copilot.js";
+import { COPILOT_DEFAULTS, MODEL, promptSections, retrieve, tokenSteps, vectorize } from "./engine/copilot.js";
+import { changed } from "./tune/schema.js";
 
 const q = (s) => `“${s}”`;
 const list = (items, max = 6) =>
@@ -9,23 +10,46 @@ const list = (items, max = 6) =>
 const pct = (p) => `${(p * 100).toFixed(1)}%`;
 const vec = (row) => `[${row.map((v) => v.toFixed(2)).join(", ")}]`;
 
-function summarizeCopilot(id, c) {
-  const query = c.message.trim().slice(0, QUERY_CHARS);
+// Copilot search is recomputed with `p`. Tuned settings make it a what-if, and
+// the server's own numbers (always on the defaults) are shown only untuned.
+const runs = new WeakMap();
+function retrieval(c, p) {
+  let byParams = runs.get(c);
+  if (!byParams) runs.set(c, (byParams = new WeakMap()));
+  if (!byParams.has(p)) byParams.set(p, retrieve(c.message, c.records ?? [], p));
+  return byParams.get(p);
+}
+
+function summarizeCopilot(id, c, p) {
+  const query = c.message.trim().slice(0, p.queryChars);
+  const tuned = changed("copilot", p).length > 0;
   const r = c.response;
   switch (id) {
     case "message":
-      return { in: q(c.message.trim()), out: `${c.message.trim().length} chars · ${c.history.length} earlier turns${c.focus ? ` · about “${c.focus.title}”` : ""}` };
+      return {
+        in: q(c.message.trim()),
+        out: `${c.message.trim().length} chars · query ${query.length} · ${(c.history ?? []).length} earlier turns${c.focus ? ` · about “${c.focus.title}”` : ""}`,
+      };
     case "searchwords": {
-      const s = tokenSteps(query);
-      return { in: `${s.words.length} words`, out: s.kept.length ? list(s.kept) : "only stopwords: search skipped" };
+      const s = tokenSteps(query, p);
+      return {
+        in: `${s.words.length} words${s.dropped.length ? `, ${s.dropped.length} stopwords` : ""}`,
+        out: s.kept.length ? list(s.kept) : "only stopwords: search skipped",
+      };
     }
     case "hashvector": {
-      const v = vectorize(query);
-      return { in: `${v.rows.length} search words`, out: v.rows.length ? list(v.rows.map((x) => `${x.token}→${x.slot}`), 5) : "empty vector" };
+      const v = vectorize(query, "", p);
+      const used = new Set(v.rows.map((x) => x.slot)).size;
+      return {
+        in: `${v.rows.length} search words → ${p.dimensions} slots`,
+        out: v.rows.length
+          ? `${list(v.rows.map((x) => `${x.token}→${x.slot}`), 5)}${used < v.rows.length ? ` · ${v.rows.length - used} collision${v.rows.length - used === 1 ? "" : "s"}` : ""}`
+          : "empty vector",
+      };
     }
     case "retrieval": {
       const server = r?.retrieval?.searches?.[0];
-      if (server) {
+      if (server && !tuned) {
         const titles = new Map(c.records.map((x) => [String(x.id), x.title]));
         const kept = server.candidates.filter((x) => x.outcome === "kept");
         return {
@@ -35,25 +59,35 @@ function summarizeCopilot(id, c) {
             : "nothing kept",
         };
       }
-      const run = retrieve(c.message, c.records);
-      if (run.skipped) return { in: `${c.records.length} records`, out: "search skipped" };
+      const run = retrieval(c, p);
+      const records = (c.records ?? []).length;
+      const whatIf = tuned ? " (what-if: your settings)" : "";
+      if (run.skipped) return { in: `${records} records${whatIf}`, out: "search skipped" };
       return {
-        in: `${c.records.length} records in this browser`,
-        out: run.kept.length ? run.kept.map((k) => `${k.record.title} (${k.distance.toFixed(2)})`).join(" · ") : "no record close enough",
+        in: `${records} records in this browser, top ${p.candidates}, cutoff ${p.maxDistance}${whatIf}`,
+        out: run.kept.length
+          ? run.kept.map((k) => `${k.record.title} (${k.distance.toFixed(2)})`).join(" · ")
+          : run.candidates.length
+            ? "no record passes the filters"
+            : "no record close enough",
       };
     }
     case "prompt": {
-      const kept = retrieve(c.message, c.records).kept ?? [];
-      const sections = promptSections({ message: c.message, history: c.history, focus: c.focus, hits: kept, today: c.today });
-      return { in: "sources, conversation, question", out: `${sections.length} labelled sections → ${MODEL.name}` };
+      const kept = retrieval(c, p).kept ?? [];
+      const sections = promptSections({ message: c.message, history: c.history ?? [], focus: c.focus, hits: kept, today: c.today });
+      return {
+        in: `${kept.length} source${kept.length === 1 ? "" : "s"}${tuned ? " (what-if)" : ""}, conversation, question`,
+        out: `${sections.length} labelled sections → ${MODEL.name}`,
+      };
     }
     case "memory": {
       const earlier = c.earlier ?? [];
+      const history = c.history ?? [];
       return {
-        in: `${c.history.length} earlier turn${c.history.length === 1 ? "" : "s"}`,
+        in: `${history.length} earlier turn${history.length === 1 ? "" : "s"}`,
         out: earlier.length
           ? `remembers ${earlier.map((e) => `${e.citation_id} “${e.title}”`).join(", ")}`
-          : c.history.length
+          : history.length
             ? "remembers the earlier turns"
             : "nothing earlier to remember",
       };
@@ -74,14 +108,15 @@ function summarizeCopilot(id, c) {
 
 export function summarize(id, ctx) {
   if (ctx.copilot) {
-    const c = summarizeCopilot(id, ctx.copilot);
+    const c = summarizeCopilot(id, ctx.copilot, ctx.params?.copilot ?? COPILOT_DEFAULTS);
     if (c) return c;
   }
   return summarizeTrack(id, ctx);
 }
 
-function summarizeTrack(id, { trace, data, records, applied, generatedTokens }) {
+function summarizeTrack(id, { trace, data, records, applied, generatedTokens, params }) {
   const m = data.transformer;
+  const tp = params?.transformer ?? {};
   const e = trace.entities;
   const last = m.tokens.length - 1;
   switch (id) {
@@ -152,9 +187,9 @@ function summarizeTrack(id, { trace, data, records, applied, generatedTokens }) 
     case "output":
       return { in: "percentages + chunk numbers", out: m.tokens.length ? `blended: ${vec(m.output[last])}` : "—" };
     case "residual":
-      return { in: "blend + original", out: m.tokens.length ? `normalized: ${vec(m.norm1[last])}` : "—" };
+      return { in: tp.residual === false ? "blend only (no residual)" : "blend + original", out: m.tokens.length ? `normalized: ${vec(m.norm1[last])}` : "—" };
     case "feedforward":
-      return { in: "4 numbers per chunk", out: m.tokens.length ? `4 → 8 → 4: ${vec(m.norm2[last])}` : "—" };
+      return { in: "4 numbers per chunk", out: m.tokens.length ? `4 → 8 → 4${tp.activation ? ` (${tp.activation.toUpperCase()})` : ""}: ${vec(m.norm2[last])}` : "—" };
     case "logits":
       return {
         in: `last chunk vs. ${m.vocabulary.length} known chunks`,

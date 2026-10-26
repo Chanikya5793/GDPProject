@@ -67,7 +67,7 @@ export const PLANNER_STEPS = [
     color: "#91ead3",
     summary:
       "Every distinct term becomes one dimension. A term's weight is how often it occurs (tf) times how rare it is across the record titles (idf).",
-    formula: "weight = tf × (ln((N + 1) / (df + 1)) + 1)",
+    formula: "weight = tf × (ln((N + 1) / (df + 1)) + 1) with the default settings",
     io: ["query terms + record titles", "one vector per text"],
     limit: "Lexical vectors: two different spellings never match.",
   },
@@ -83,7 +83,7 @@ export const PLANNER_STEPS = [
     formula: "cos(q, d) = (q · d) / (‖q‖ × ‖d‖)",
     io: ["query vector + record vectors", "ranked scores"],
     limit:
-      "A similarity, not a probability. A record is a candidate only above 0.08.",
+      "A similarity, not a probability. A record is a candidate only above the match threshold (0.08 by default).",
   },
   {
     id: "decide",

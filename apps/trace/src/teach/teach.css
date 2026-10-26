@@ -1,1 +1,218 @@
 /* Lessons (what / why / try it) and glossary terms. */
+.gloss {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+  cursor: help;
+  border-radius: 2px;
+}
+.gloss:hover,
+.gloss:focus-visible {
+  text-decoration-color: var(--accent);
+}
+.gloss:focus-visible {
+  outline-offset: 1px;
+}
+.gloss.is-static {
+  cursor: inherit;
+}
+.gloss-pop {
+  position: fixed;
+  z-index: 2147483000;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px var(--shadow);
+  font: 400 12.5px/1.45 var(--sans);
+  color: var(--soft);
+  pointer-events: none;
+  text-align: left;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.gloss-pop b {
+  font-weight: 600;
+  color: var(--text);
+}
+.gloss-note {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.gloss-note b {
+  font-weight: 600;
+  color: var(--soft);
+}
+
+/* A step's lesson in the guide */
+.lesson {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--edge);
+}
+.lesson-row h3 {
+  margin: 0 0 3px;
+  font: 600 11px var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.lesson-row p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--soft);
+}
+.lesson-row.is-example p {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--well);
+  font-size: 13.5px;
+  color: var(--text);
+}
+.lesson-row.is-try ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.lesson-row.is-try li p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.try-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: left;
+}
+.try-btn span {
+  overflow-wrap: anywhere;
+}
+.try-btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.try-btn.is-applied {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
+}
+.try-btn.is-compact {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.tuned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font: 600 11px var(--sans);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  text-align: left;
+}
+button.tuned-chip:hover {
+  background: color-mix(in srgb, var(--warn) 24%, transparent);
+}
+.g-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.g-badges .g-algo {
+  margin-top: 0;
+}
+.g-badges .badge {
+  margin-left: 0;
+}
+.g-compare h3 {
+  margin: 0 0 6px;
+  font: 600 11px var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+/* Flow cards: the what line, try it, compare */
+.flow-what {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--soft);
+}
+.flow-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The map's hover card */
+.map-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  gap: 3px;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+  font-size: 12.5px;
+  line-height: 1.45;
+  box-shadow: 0 10px 28px var(--shadow);
+}
+.map-tip[hidden] {
+  display: none;
+}
+.map-tip b {
+  font-weight: 600;
+  color: var(--text);
+}
+.map-tip .tip-where {
+  color: var(--muted);
+}
+.map-tip .tip-value {
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.map-tip .tip-explain {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--edge);
+  color: var(--soft);
+}
+.map-tip .tip-formula,
+.map-tip .tip-worked {
+  display: block;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--well);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.map-tip .tip-worked {
+  color: var(--hi-write-text);
+}

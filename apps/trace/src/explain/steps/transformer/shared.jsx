@@ -1,9 +1,32 @@
 // Small helpers shared by the transformer-track steps.
 import { Expr, fixed } from "../../kit.jsx";
-import { END } from "../../../engine/transformer.js";
+import { END, TRANSFORMER_DEFAULTS } from "../../../engine/transformer.js";
 import { matrixBlock } from "../../../map/blocks.js";
 
 export const DIMS = ["d0", "d1", "d2", "d3"];
+
+// The transformer settings this ctx was computed with. Contexts built without
+// tuning (tests, older callers) fall back to what the engine recorded.
+export const paramsOf = (ctx) =>
+  ctx?.params?.transformer ?? ctx?.model?.params ?? ctx?.data?.transformer?.params ?? TRANSFORMER_DEFAULTS;
+export const isDefault = (p, key) => p[key] === TRANSFORMER_DEFAULTS[key];
+const TUNED = {
+  merges: (v) => `${v} BPE merges instead of ${TRANSFORMER_DEFAULTS.merges}`,
+  context: (v) => `a ${v}-token window instead of ${TRANSFORMER_DEFAULTS.context}`,
+  positional: () => "positional encoding is off",
+  scaleScores: () => "scores are not divided by √4",
+  causalMask: () => "the causal mask is off",
+  residual: () => "residual connections are off",
+  activation: (v) => `${v === "relu" ? "ReLU" : v} instead of GELU`,
+  temperature: (v) => `temperature ${v} instead of ${TRANSFORMER_DEFAULTS.temperature}`,
+};
+// A short note for frame text naming the settings in `keys` that differ from the default.
+export function tunedSay(p, keys) {
+  const parts = keys.filter((k) => !isDefault(p, k)).map((k) => TUNED[k](p[k]));
+  return parts.length ? ` Your settings: ${parts.join("; ")}.` : "";
+}
+// Explain-a-cell results: null for cells outside the data.
+export const within = (data, r, c) => data?.[r]?.[c] !== undefined;
 export const quote = (t) => `“${t}”`;
 export const labelsOf = (tokens) => tokens.map((t, i) => `${i} ${t}`);
 export const list = (values, digits = 3) => values.map((v) => fixed(v, digits)).join(", ");

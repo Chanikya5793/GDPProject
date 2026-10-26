@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Expr, Matrix, Panel, fixed } from "../../kit.jsx";
 import { B_1, D_FF, D_MODEL, GELU_C, W_1, W_2 } from "../../../engine/transformer.js";
-import { DIMS, NormExprs, cells, labelsOf, list, mat, operand, quote, range, vec } from "./shared.jsx";
+import { DIMS, NormExprs, cells, labelsOf, list, mat, operand, paramsOf, quote, range, tunedSay, vec } from "./shared.jsx";
 
 const HIDDEN = Array.from({ length: D_FF }, (_, k) => `k${k}`);
 const HIDDEN_LABELS = Array.from({ length: D_FF }, (_, k) => `h${k}`);
@@ -16,11 +16,29 @@ function geluParts(x) {
   const t = Math.tanh(u);
   return { x3, inner, u, t, a: 0.5 * x * (1 + t) };
 }
+// One activation value, in words and as math terms, for GELU or ReLU.
+function actLine(relu, h, k) {
+  if (relu) {
+    const a = Math.max(0, h);
+    return {
+      say: `ReLU of h[${k}] = ${fixed(h, 4)}: a[${k}] = max(0, ${fixed(h, 4)}) = ${fixed(a, 4)}.${h < 0 ? " A negative input is cut to exactly 0." : " A positive input passes through unchanged."}`,
+      worked: `a[${k}] = max(0, ${fixed(h, 4)}) = ${fixed(a, 4)}`,
+    };
+  }
+  const g = geluParts(h);
+  return {
+    say: `GELU of x = h[${k}] = ${fixed(h, 4)}: x³ = ${fixed(g.x3, 4)}; u = 0.7979 × (x + 0.044715·x³) = 0.7979 × ${operand(g.inner, 4)} = ${fixed(g.u, 4)}; tanh(u) = ${fixed(g.t, 4)}; a[${k}] = 0.5 × x × (1 + tanh(u)) = 0.5 × ${operand(h, 4)} × ${fixed(1 + g.t, 4)} = ${fixed(g.a, 4)}.`,
+    worked: `a[${k}] = 0.5 × ${operand(h, 4)} × (1 + tanh(0.7979 × (${fixed(h, 4)} + 0.044715 × ${operand(g.x3, 4)}))) = 0.5 × ${operand(h, 4)} × ${fixed(1 + g.t, 4)} = ${fixed(g.a, 4)}`,
+  };
+}
 const expandTerms = (x, k) => [fixed(B_1[k], 4), ...x.map((v, d) => `${fixed(v)}×${fixed(W_1[d][k])}`)];
 const projectTerms = (a, d) => a.map((v, k) => `${fixed(v)}×${fixed(W_2[k][d])}`);
 
-function rowOf(m, r) {
+function rowOf(m, r, p) {
   return {
+    relu: p?.activation === "relu",
+    on: p?.residual ?? true,
+    add: p?.residual === false ? Array(D_MODEL).fill(0) : m.norm1[r],
     x: m.norm1[r],
     h: m.hidden[r],
     a: m.activated[r],
@@ -48,16 +66,18 @@ export default {
     "W_2[k][d] = cos((k + 1)(d + 2) · 0.43) · 0.3  // 8 × 4",
     "for (const x of H1) {  // each row on its own",
     "  h = vecMat(x, W_1, b_1)  // h[k] = b_1[k] + Σ_d x[d]·W_1[d][k]  (4 → 8)",
-    "  a = h.map(gelu)  // 0.5·h·(1 + tanh(√(2/π)·(h + 0.044715·h³)))",
+    "  a = h.map(activate)  // gelu: 0.5·h·(1 + tanh(√(2/π)·(h + 0.044715·h³))); relu: max(0, h)",
     "  f = vecMat(a, W_2)  // f[d] = Σ_k a[k]·W_2[k][d]  (8 → 4)",
-    "  r = f.map((v, d) => v + x[d])  // residual",
+    "  r = f.map((v, d) => v + (residual ? x[d] : 0))  // residual",
     "  H2.push(layerNorm(r))  // mean 0, variance 1, as in Add & norm",
     "}",
   ],
-  frames({ data }) {
-    const m = data.transformer;
+  frames(ctx) {
+    const m = ctx.data.transformer;
+    const p = paramsOf(ctx);
     const n = m.tokens.length;
     const L = n - 1;
+    const actName = p.activation === "relu" ? "ReLU" : "GELU";
     const frames = [];
     if (!n) {
       frames.push({
@@ -72,12 +92,12 @@ export default {
       frames.push({ phase: "Done", line: 9, say: "H₂ is empty: 0 × 4.", vars: { "H2.shape": "0 × 4" }, row: -1, stage: COMPLETE, k: -1 });
       return frames;
     }
-    const R = rowOf(m, L);
+    const R = rowOf(m, L, p);
     const t = quote(m.tokens[L]);
     frames.push({
       phase: "Weights",
       line: [0, 1, 2],
-      say: `The feed-forward layer works on one row at a time; rows do not mix here. W₁ (4 × 8), b₁ (8 values) and W₂ (8 × 4) are fixed sin and cos formulas, not learned. The last row, ${L} ${t}, is worked through in full first.`,
+      say: `The feed-forward layer works on one row at a time; rows do not mix here. W₁ (4 × 8), b₁ (8 values) and W₂ (8 × 4) are fixed sin and cos formulas, not learned. The last row, ${L} ${t}, is worked through in full first.${tunedSay(p, ["activation", "residual", "merges", "context", "positional", "scaleScores", "causalMask"])}`,
       vars: { n, "x = H1[last]": R.x },
       row: L,
       stage: 0,
@@ -97,10 +117,10 @@ export default {
     for (let k = 0; k < D_FF; k++) {
       const g = geluParts(R.h[k]);
       frames.push({
-        phase: "GELU",
+        phase: actName,
         line: 5,
-        say: `GELU of x = h[${k}] = ${fixed(R.h[k], 4)}: x³ = ${fixed(g.x3, 4)}; u = 0.7979 × (x + 0.044715·x³) = 0.7979 × ${operand(g.inner, 4)} = ${fixed(g.u, 4)}; tanh(u) = ${fixed(g.t, 4)}; a[${k}] = 0.5 × x × (1 + tanh(u)) = 0.5 × ${operand(R.h[k], 4)} × ${fixed(1 + g.t, 4)} = ${fixed(g.a, 4)}.${k === 0 ? " GELU leaves large positive values almost unchanged and pulls negative values toward 0." : ""}`,
-        vars: { k, [`h[${k}]`]: R.h[k], u: g.u, "tanh(u)": g.t, [`a[${k}]`]: g.a },
+        say: `${actLine(R.relu, R.h[k], k).say}${k === 0 ? (R.relu ? " ReLU keeps positive values and turns every negative one into 0." : " GELU leaves large positive values almost unchanged and pulls negative values toward 0.") : ""}`,
+        vars: R.relu ? { k, [`h[${k}]`]: R.h[k], [`a[${k}]`]: R.a[k] } : { k, [`h[${k}]`]: R.h[k], u: g.u, "tanh(u)": g.t, [`a[${k}]`]: g.a },
         row: L,
         stage: 2,
         k,
@@ -121,7 +141,9 @@ export default {
     frames.push({
       phase: "Add & norm",
       line: 7,
-      say: `Residual again: r = f + x, one addition per column: ${R.f.map((v, d) => `${fixed(v)} + ${operand(R.x[d])} = ${fixed(R.res[d])}`).join("; ")}.`,
+      say: R.on
+        ? `Residual again: r = f + x, one addition per column: ${R.f.map((v, d) => `${fixed(v)} + ${operand(R.x[d])} = ${fixed(R.res[d])}`).join("; ")}.`
+        : `Residual connections are off, so x is not added back: r = f = [${list(R.res)}].`,
       vars: { f: R.f, x: R.x, r: R.res },
       row: L,
       stage: 4,
@@ -147,11 +169,11 @@ export default {
       }),
     );
     for (let i = 0; i < n; i++) {
-      const Ri = rowOf(m, i);
+      const Ri = rowOf(m, i, p);
       frames.push({
         phase: "Every row",
         line: [3, 4, 5, 6, 7, 8],
-        say: `Row ${i}, ${quote(m.tokens[i])}: x = [${list(Ri.x)}] → h = x·W₁ + b₁ (8 values) → a = GELU(h) → f = a·W₂ = [${list(Ri.f)}] → r = f + x → H₂[${i}] = [${list(Ri.out)}].`,
+        say: `Row ${i}, ${quote(m.tokens[i])}: x = [${list(Ri.x)}] → h = x·W₁ + b₁ (8 values) → a = ${actName}(h) → f = a·W₂ = [${list(Ri.f)}] → ${Ri.on ? "r = f + x" : "r = f"} → H₂[${i}] = [${list(Ri.out)}].`,
         vars: { i, [`H1[${i}]`]: Ri.x, [`H2[${i}]`]: Ri.out },
         row: i,
         stage: COMPLETE,
@@ -170,16 +192,115 @@ export default {
     });
     return frames;
   },
-  blocks({ data }) {
-    const m = data.transformer;
+  blocks(ctx) {
+    const m = ctx.data.transformer;
+    const p = paramsOf(ctx);
+    const relu = p.activation === "relu";
+    const actName = relu ? "ReLU" : "GELU";
     const labels = labelsOf(m.tokens);
+    const tok = (r) => quote(m.tokens[r]);
     return [
-      mat({ id: "Hid", title: "h = H₁·W₁ + b₁  (4 → 8)", data: m.hidden, rowLabels: labels, colLabels: HIDDEN_LABELS, cellW: 1.15 }),
-      mat({ id: "Act", title: "a = GELU(h)", data: m.activated, colLabels: HIDDEN_LABELS, cellW: 1.15, beside: true }),
-      mat({ id: "F", title: "f = a·W₂  (8 → 4)", data: m.feedforward, colLabels: DIMS, cellW: 1.3, beside: true }),
-      mat({ id: "H2", title: "H₂ = LN(f + H₁)", data: m.norm2, rowLabels: labels, colLabels: DIMS, beside: true }),
-      mat({ id: "W1", title: "W₁ (4 × 8) and b₁", data: [...W_1, B_1], rowLabels: [...DIMS, "b₁"], colLabels: HIDDEN_LABELS, cellW: 1.15 }),
-      mat({ id: "W2", title: "W₂ (8 × 4)", data: W_2, rowLabels: HIDDEN_LABELS, colLabels: DIMS, cellW: 1.3, beside: true }),
+      mat({
+        id: "Hid",
+        title: "h = H₁·W₁ + b₁  (4 → 8)",
+        data: m.hidden,
+        rowLabels: labels,
+        colLabels: HIDDEN_LABELS,
+        cellW: 1.15,
+        explain: (r, c) =>
+          m.hidden[r]?.[c] === undefined
+            ? null
+            : {
+                meaning: `Hidden unit ${c} for ${tok(r)}: one of 8 mixes of its 4 numbers, before the bend.`,
+                formula: "h[k] = b₁[k] + Σ_d x[d] × W₁[d][k]",
+                worked: `h[${c}] = ${[operand(B_1[c], 4), ...m.norm1[r].map((v, d) => `${operand(v)}×${operand(W_1[d][c])}`)].join(" + ")} = ${fixed(m.hidden[r][c], 4)}`,
+              },
+      }),
+      mat({
+        id: "Act",
+        title: `a = ${actName}(h)`,
+        data: m.activated,
+        colLabels: HIDDEN_LABELS,
+        cellW: 1.15,
+        beside: true,
+        explain: (r, c) =>
+          m.activated[r]?.[c] === undefined
+            ? null
+            : {
+                meaning: `Hidden unit ${c} for ${tok(r)} after the ${actName} bend.`,
+                formula: relu ? "a = max(0, h)" : "a = 0.5·h·(1 + tanh(√(2/π)·(h + 0.044715·h³)))",
+                worked: actLine(relu, m.hidden[r][c], c).worked,
+              },
+      }),
+      mat({
+        id: "F",
+        title: "f = a·W₂  (8 → 4)",
+        data: m.feedforward,
+        colLabels: DIMS,
+        cellW: 1.3,
+        beside: true,
+        explain: (r, c) =>
+          m.feedforward[r]?.[c] === undefined
+            ? null
+            : {
+                meaning: `Dimension ${c} of what the feed-forward layer adds for ${tok(r)}: the 8 hidden units squeezed back to 4.`,
+                formula: "f[d] = Σ_k a[k] × W₂[k][d]",
+                worked: `f[${c}] = ${m.activated[r].map((v, k) => `${operand(v)}×${operand(W_2[k][c])}`).join(" + ")} = ${fixed(m.feedforward[r][c], 4)}`,
+              },
+      }),
+      mat({
+        id: "H2",
+        title: p.residual ? "H₂ = LN(f + H₁)" : "H₂ = LN(f)  (residual off)",
+        data: m.norm2,
+        rowLabels: labels,
+        colLabels: DIMS,
+        beside: true,
+        explain: (r, c) => {
+          const ln = m.norm2Steps[r];
+          if (!ln || ln.out[c] === undefined) return null;
+          const res = m.residual2[r][c];
+          return {
+            meaning: `Dimension ${c} of ${tok(r)} at the end of the block${r === m.tokens.length - 1 ? "; this last row predicts the next token" : ""}.`,
+            formula: p.residual ? "r = f + H₁; H₂ = (r − μ) / std" : "r = f (residual off); H₂ = (r − μ) / std",
+            worked: `r[${c}] = ${fixed(m.feedforward[r][c], 4)}${p.residual ? ` + ${operand(m.norm1[r][c], 4)}` : ""} = ${fixed(res, 4)}; H₂[${r}][${c}] = (${fixed(res, 4)} − ${operand(ln.mean, 4)}) / ${fixed(ln.std, 4)} = ${fixed(ln.out[c])}`,
+          };
+        },
+      }),
+      mat({
+        id: "W1",
+        title: "W₁ (4 × 8) and b₁",
+        data: [...W_1, B_1],
+        rowLabels: [...DIMS, "b₁"],
+        colLabels: HIDDEN_LABELS,
+        cellW: 1.15,
+        explain: (r, c) =>
+          r > 4 || c >= D_FF
+            ? null
+            : r === 4
+              ? { meaning: `The bias added to hidden unit ${c}, whatever the input. Fixed, not learned.`, formula: "b₁[k] = sin(k) × 0.05", worked: `b₁[${c}] = sin(${c}) × 0.05 = ${fixed(B_1[c], 4)}` }
+              : {
+                  meaning: `How much input dimension ${r} feeds hidden unit ${c}. Fixed, not learned.`,
+                  formula: "W₁[d][k] = sin((d + 1)(k + 1) × 0.79) × 0.4",
+                  worked: `W₁[${r}][${c}] = sin(${r + 1} × ${c + 1} × 0.79) × 0.4 = ${fixed(W_1[r][c], 4)}`,
+                },
+      }),
+      mat({
+        id: "W2",
+        title: "W₂ (8 × 4)",
+        data: W_2,
+        rowLabels: HIDDEN_LABELS,
+        colLabels: DIMS,
+        cellW: 1.3,
+        beside: true,
+        explain: (r, c) =>
+          W_2[r]?.[c] === undefined
+            ? null
+            : {
+                meaning: `How much hidden unit ${r} feeds output dimension ${c}. Fixed, not learned.`,
+                formula: "W₂[k][d] = cos((k + 1)(d + 2) × 0.43) × 0.3",
+                worked: `W₂[${r}][${c}] = cos(${r + 1} × ${c + 2} × 0.43) × 0.3 = ${fixed(W_2[r][c], 4)}`,
+              },
+      }),
     ];
   },
   output: "H2",
@@ -221,14 +342,15 @@ export default {
       H2: { done: filled(5, () => k >= 4), active: active.H2 ?? [] },
     };
   },
-  math(frame, { data }) {
-    const m = data.transformer;
+  math(frame, ctx) {
+    const m = ctx.data.transformer;
     const r = frame.row;
     if (r < 0 || r >= m.tokens.length) return [];
-    const R = rowOf(m, r);
+    const R = rowOf(m, r, paramsOf(ctx));
     const { stage, k } = frame;
     if (stage === 0) return [{ label: `x = H₁[${r}]`, terms: [vec(R.x)] }];
     if (stage === 1) return [{ label: `h[${k}]`, terms: expandTerms(R.x, k), result: fixed(R.h[k], 4) }];
+    if (stage === 2 && R.relu) return [{ label: `a[${k}]`, terms: [`max(0, ${fixed(R.h[k], 4)})`], result: fixed(R.a[k], 4) }];
     if (stage === 2) {
       const g = geluParts(R.h[k]);
       return [
@@ -240,7 +362,7 @@ export default {
     }
     if (stage === 3) return [{ label: `f[${k}]`, terms: projectTerms(R.a, k), result: fixed(R.f[k], 4) }];
     if (stage === 4)
-      return DIMS.map((_, d) => ({ label: `r[${d}]`, terms: [fixed(R.f[d], 4), fixed(R.x[d], 4)], result: fixed(R.res[d], 4) }));
+      return DIMS.map((_, d) => ({ label: `r[${d}]`, terms: [fixed(R.f[d], 4), fixed(R.add[d], 4)], result: fixed(R.res[d], 4) }));
     const ln = R.ln;
     if (stage === 5)
       return [
@@ -253,9 +375,9 @@ export default {
     return [
       { label: `x = H₁[${r}]`, terms: [vec(R.x)] },
       { label: "h = x·W₁ + b₁", terms: [vec(R.h)] },
-      { label: "a = GELU(h)", terms: [vec(R.a)] },
+      { label: R.relu ? "a = ReLU(h)" : "a = GELU(h)", terms: [vec(R.a)] },
       { label: "f = a·W₂", terms: [vec(R.f)] },
-      { label: "r = f + x", terms: [vec(R.res)] },
+      { label: R.on ? "r = f + x" : "r = f", terms: [vec(R.res)] },
       { label: `H₂[${r}] = LN(r)`, terms: [vec(R.out)] },
     ];
   },
@@ -270,7 +392,7 @@ export default {
       complete && picked !== null && picked < n && (picked <= frame.row || picked === L) ? picked : frame.row;
     const stage = row === frame.row ? frame.stage : COMPLETE;
     const k = row === frame.row ? frame.k : -1;
-    const R = row >= 0 && row < n ? rowOf(m, row) : null;
+    const R = row >= 0 && row < n ? rowOf(m, row, paramsOf(ctx)) : null;
     const at = (st) => (c) => (stage > st ? "done" : stage < st ? "pending" : c < k ? "done" : c === k ? "active" : "pending");
     const whole = (st, ready = true) => () => (stage > st ? "done" : stage === st && ready ? "active" : "pending");
     const onCell = (r) => {
@@ -292,9 +414,9 @@ export default {
             <div className="x-row-wrap">
               {vector(`x = H₁[${row}]`, R.x, DIMS, () => "done")}
               {vector("h = x·W₁ + b₁", R.h, HIDDEN, at(1))}
-              {vector("a = GELU(h)", R.a, HIDDEN, at(2))}
+              {vector(R.relu ? "a = ReLU(h)" : "a = GELU(h)", R.a, HIDDEN, at(2))}
               {vector("f = a·W₂", R.f, DIMS, at(3))}
-              {vector("r = f + x", R.res, DIMS, whole(4))}
+              {vector(R.on ? "r = f + x" : "r = f", R.res, DIMS, whole(4))}
               {vector(`H₂[${row}] = LN(r)`, R.out, DIMS, whole(5, stage > 5 || k >= 4))}
             </div>
             <Detail R={R} row={row} token={m.tokens[row]} stage={stage} k={k} />
@@ -350,7 +472,7 @@ function Detail({ R, row, token, stage, k }) {
   // While stepping, only the current stage's lines; every line once complete.
   const upto = (st) => (stage >= COMPLETE ? Infinity : stage === st ? k : -1);
   const show = (st) => stage >= COMPLETE || stage === st;
-  const g = stage === 2 && k >= 0 ? geluParts(R.h[k]) : null;
+  const g = stage === 2 && k >= 0 && !R.relu ? geluParts(R.h[k]) : null;
   if (stage === 0)
     return (
       <Panel title={`Row ${row}, ${quote(token)}`} note="Next: eight sums of four products plus a bias, one per hidden unit.">
@@ -372,7 +494,10 @@ function Detail({ R, row, token, stage, k }) {
       )}
       {R.a.map(
         (v, j) =>
-          j <= upto(2) && (
+          j <= upto(2) &&
+          (R.relu ? (
+            <Expr key={`a${j}`} label={`a[${j}]`} terms={[`max(0, ${fixed(R.h[j], 4)})`]} result={fixed(v, 4)} />
+          ) : (
             <Expr
               key={`a${j}`}
               label={`a[${j}]`}
@@ -380,14 +505,14 @@ function Detail({ R, row, token, stage, k }) {
               terms={["0.5", fixed(R.h[j], 4), `(1 + ${fixed(geluParts(R.h[j]).t, 4)})`]}
               result={fixed(v, 4)}
             />
-          ),
+          )),
       )}
       {R.f.map(
         (v, d) => d <= upto(3) && <Expr key={`f${d}`} label={`f[${d}]`} terms={projectTerms(R.a, d)} result={fixed(v, 4)} />,
       )}
       {show(4) &&
         R.res.map((v, d) => (
-          <Expr key={`r${d}`} label={`r[${d}]`} terms={[fixed(R.f[d], 4), fixed(R.x[d], 4)]} result={fixed(v, 4)} />
+          <Expr key={`r${d}`} label={`r[${d}]`} terms={[fixed(R.f[d], 4), fixed(R.add[d], 4)]} result={fixed(v, 4)} />
         ))}
       {show(5) && <NormExprs input={R.res} steps={R.ln} upto={stage > 5 ? 4 : k} inName="r" outName="H₂" />}
     </Panel>

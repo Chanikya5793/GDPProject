@@ -86,6 +86,16 @@ export default {
         head: ["limit", "max", "this reply"],
         widths: [1.4, 0.9, 1.6],
         rows: loopRows(ctx).map(([a, b, c]) => [{ text: a, align: "left", dim: true }, { text: b, tone: "number" }, { text: c, tone: c === "—" || c === "not returned" ? "muted" : undefined }]),
+        explain: (r, c) => {
+          const x = loopRows(ctx)[r];
+          if (!x) return null;
+          const info = [
+            { meaning: "Each generation is one full pass of the LLM over the prompt. More rounds mean more lookups, but also more time.", formula: `rounds < ${MODEL.maxRounds}` },
+            { meaning: "Lookups the LLM may ask for in total, across all rounds.", formula: `calls ≤ ${MODEL.maxToolCalls}` },
+            { meaning: "The whole reply must finish within this time, or the loop stops.", formula: `Date.now() < sent + ${MODEL.deadlineSeconds} s` },
+          ][r];
+          return { ...info, worked: c === 2 ? `this reply: ${x[2]}` : `${x[0]}: ${x[1]}` };
+        },
       }),
       tableBlock({
         id: "clookups",
@@ -95,6 +105,15 @@ export default {
         rows: steps.length
           ? steps.map((s, i) => [{ text: String(i + 1), dim: true }, { text: s.tool, tone: "keyword" }, { text: s.label, align: "left", full: s.label }])
           : [["", { text: res ? "none" : "no reply", tone: "muted" }, { text: res ? "answered from the first prompt" : "nothing was generated", dim: true, align: "left" }]],
+        explain: (r) => {
+          const s = steps[r];
+          if (!s) return null;
+          return {
+            meaning: "A lookup the LLM asked for. It ran on the server and its results were added to TOOL_RESULTS before the next generation.",
+            formula: "prompt.TOOL_RESULTS.push(runTool(request))",
+            worked: `lookup ${r + 1} of at most ${MODEL.maxToolCalls}: ${s.tool}, ${s.label}`,
+          };
+        },
       }),
     ];
   },

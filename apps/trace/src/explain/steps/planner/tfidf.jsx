@@ -1,5 +1,6 @@
 import { Expr, Matrix, Panel, Table, Tag, fixed } from "../../kit.jsx";
-import { analyzedRecords, indexed, plural, revealState } from "./util.js";
+import { termSteps } from "../../../engine/pipeline.js";
+import { analyzedRecords, idfRule, indexed, isDefault, paramsOf, plural, revealState } from "./util.js";
 import { matrixBlock, row, tableBlock } from "../../../map/blocks.js";
 
 const MAX_TERM_FRAMES = 40; // per phase; larger vocabularies are grouped
@@ -23,15 +24,23 @@ function model(ctx) {
   const union = [...new Set([...docs.flat(), ...queryTerms])];
   const holders = dims.map((d) => recs.filter((_, i) => docs[i].includes(d.term)).map((r) => r.id));
   const tfq = dims.map((d) => queryTerms.filter((t) => t === d.term).length);
-  const out = { records: ctx.records, recs, docs, dims, query, queryTerms, vectors, union, holders, tfq, N: docs.length };
+  const p = paramsOf(ctx);
+  const N = docs.length;
+  const rule = (df) => idfRule(p, N, df);
+  const out = { records: ctx.records, recs, docs, dims, query, queryTerms, vectors, union, holders, tfq, N, p, rule };
   cache.set(key, out);
   return out;
 }
 
-const idfExpr = (N, df) => ({
-  ratio: (N + 1) / (df + 1),
-  ln: Math.log((N + 1) / (df + 1)),
-});
+// Which IDF rule the settings chose, said plainly, with "(your setting…)" when tuned.
+function idfSetting(p) {
+  const tuned = !isDefault(p, "useIdf") || !isDefault(p, "smoothIdf");
+  const mark = tuned ? " (your setting; the default is smoothed IDF)" : "";
+  if (!p.useIdf) return `IDF is off${mark}: every term gets idf = 1, so a common word weighs as much as a rare one.`;
+  if (!p.smoothIdf)
+    return `Unsmoothed IDF${mark}: idf = ln(N / df) + 1, with df = 0 treated as 1. A term in every record gets ln(1) + 1 = 1.`;
+  return `${tuned ? `Smoothed IDF${mark}. ` : ""}The +1 inside keeps df = 0 from dividing by zero; the +1 outside keeps a term found in every record above 0.`;
+}
 
 const mod = {
   id: "vectorize",
@@ -45,7 +54,7 @@ const mod = {
     "const vocabulary = [...new Set([...documents.flat(), ...queryTerms])].sort()",
     "const dimensions = vocabulary.map(term => {",
     "  const df = documents.filter(doc => doc.includes(term)).length",
-    "  const idf = Math.log((N + 1) / (df + 1)) + 1",
+    "  const idf = useIdf ? (smoothIdf ? Math.log((N + 1) / (df + 1)) : Math.log(N / Math.max(df, 1))) + 1 : 1",
     "  return { term, df, idf }",
     "})",
     "const encode = words => dimensions.map(({ term, idf }) =>",
@@ -55,7 +64,7 @@ const mod = {
   ],
   frames(ctx) {
     const m = model(ctx);
-    const { recs, docs, dims, query, queryTerms, union, holders, tfq, N } = m;
+    const { recs, docs, dims, query, queryTerms, union, holders, tfq, N, p, rule } = m;
     const V = dims.length;
     const frames = [];
     const base = { docs: 0, vocab: 0, df: 0, idf: 0, qDims: [], rows: 0, cur: null };
@@ -155,19 +164,13 @@ const mod = {
           line: 5,
           say:
             js
-              .map((j) => {
-                const { ratio, ln } = idfExpr(N, dims[j].df);
-                return `idf(“${dims[j].term}”) = ln((${N} + 1) / (${dims[j].df} + 1)) + 1 = ln(${fixed(ratio)}) + 1 = ${fixed(ln)} + 1 = ${fixed(dims[j].idf)}.`;
-              })
-              .join(" ") +
-            (k === 0
-              ? " The +1 inside keeps df = 0 from dividing by zero; the +1 outside keeps a term found in every record above 0."
-              : ""),
+              .map((j) => `idf(“${dims[j].term}”) = ${rule(dims[j].df).worked}.`)
+              .join(" ") + (k === 0 ? ` ${idfSetting(p)}` : ""),
           vars: {
             term: dims[js.at(-1)].term,
             N,
             df: dims[js.at(-1)].df,
-            "(N + 1) / (df + 1)": idfExpr(N, dims[js.at(-1)].df).ratio,
+            ...(p.useIdf ? { [p.smoothIdf ? "(N + 1) / (df + 1)" : "N / max(df, 1)"]: rule(dims[js.at(-1)].df).ratio } : {}),
             idf: dims[js.at(-1)].idf,
           },
           col: js.at(-1),
@@ -302,7 +305,7 @@ const mod = {
         {frame.vocab === 2 && (
           <Panel
             title={`Dimensions (${dims.length})`}
-            note="df: how many record titles contain the term. idf = ln((N + 1) / (df + 1)) + 1. Click a row to jump to its IDF frame."
+            note={`df: how many record titles contain the term. ${m.rule(0).formula}. Click a row to jump to its IDF frame.`}
           >
             {dims.length ? (
               <Table className="p-table"
@@ -337,11 +340,12 @@ const mod = {
         {frame.phase === "IDF" && cur.kind === "dim" && (
           <Panel title="Inverse document frequency">
             {cur.list.map((j) => {
-              const { ratio, ln } = idfExpr(N, dims[j].df);
+              const x = m.rule(dims[j].df);
+              if (!m.p.useIdf) return <Expr key={j} label={`idf(${dims[j].term})`} terms={["IDF off"]} result="1" />;
               return (
                 <div key={j}>
-                  <Expr label={`idf(${dims[j].term})`} terms={[`ln((${N} + 1) / (${dims[j].df} + 1))`, "1"]} result={`ln(${fixed(ratio)}) + 1`} />
-                  <Expr label="" terms={[fixed(ln), "1"]} result={fixed(dims[j].idf)} />
+                  <Expr label={`idf(${dims[j].term})`} terms={[x.expr, "1"]} result={`ln(${fixed(x.ratio)}) + 1`} />
+                  <Expr label="" terms={[fixed(x.ln), "1"]} result={fixed(dims[j].idf)} />
                 </div>
               );
             })}
@@ -453,6 +457,68 @@ function cellsOf(frame, ctx) {
   }
 }
 
+// ---- Explain a cell ----
+
+function explainDoc(m, r, c) {
+  const rec = m.recs[r];
+  if (!rec) return null;
+  if (c === 0) return { meaning: `Record ${rec.id}, one of the N = ${m.N} saved reminders. Each one is a document.` };
+  if (c === 1) return { meaning: `The title of record ${rec.id}, exactly as saved.` };
+  if (c !== 2) return null;
+  const steps = termSteps(rec.title, m.p);
+  const dropped = steps.filter((x) => !x.kept);
+  return {
+    meaning: `The search terms of record ${rec.id}'s title. Record titles go through the same filter as your request.`,
+    formula: "terms(title) = keywords of the title, minus stop words and dates, with aliases applied",
+    worked: `terms(“${rec.title}”) = [${m.docs[r].join(", ")}]${
+      dropped.length ? `; dropped ${dropped.map((x) => `“${x.token}” (${x.reason})`).join(", ")}` : ""
+    }`,
+  };
+}
+
+function explainIdf(m, r, c) {
+  const d = m.dims[c];
+  if (!d) return null;
+  const holders = m.holders[c];
+  if (r === 0)
+    return {
+      meaning: `Document frequency of “${d.term}”: how many record titles contain it.`,
+      formula: "df = number of documents that contain the term",
+      worked: holders.length
+        ? `“${d.term}” is in ${holders.join(", ")} → df = ${d.df}`
+        : `no record title contains “${d.term}” (it comes from your request) → df = 0`,
+    };
+  if (r === 1) {
+    const x = m.rule(d.df);
+    return {
+      meaning: m.p.useIdf
+        ? `How rare “${d.term}” is across the ${m.N} titles. Rarer terms get a bigger weight because they say more about which record you mean.`
+        : `IDF is turned off, so “${d.term}” weighs the same as every other term.`,
+      formula: x.formula,
+      worked: `idf(${d.term}) = ${x.worked}`,
+    };
+  }
+  return null;
+}
+
+function explainWeight(m, r, c) {
+  const d = m.dims[c];
+  if (!d) return null;
+  const words = r === 0 ? m.queryTerms : m.docs[r - 1];
+  const rec = r === 0 ? null : m.recs[r - 1];
+  if (!words) return null;
+  const tf = words.filter((t) => t === d.term).length;
+  const v = r === 0 ? m.query[c] : m.vectors[r - 1][c];
+  const who = r === 0 ? "the query" : `record ${rec?.id}`;
+  return {
+    meaning: tf
+      ? `The weight of “${d.term}” in ${who}: how often it appears there, times how rare it is.`
+      : `“${d.term}” does not appear in ${who}, so its weight is 0.`,
+    formula: "weight = tf × idf",
+    worked: `${tf} × ${fixed(d.idf)} = ${fixed(v)}`,
+  };
+}
+
 Object.assign(mod, {
   blocks(ctx) {
     const m = model(ctx);
@@ -469,16 +535,18 @@ Object.assign(mod, {
           { text: r.title, align: "left", dim: true },
           docs[i].length ? { text: docs[i].join(" "), align: "left" } : { text: "(none)", tone: "muted" },
         ]),
+        explain: (r, c) => explainDoc(m, r, c),
       }),
       tableBlock({
         id: "idf",
-        title: "idf = ln((N + 1) / (df + 1)) + 1",
+        title: m.rule(0).formula,
         head: labels,
         rowLabels: ["df", "idf"],
         rows: [
           dims.map((d) => ({ text: String(d.df), tone: d.df === 0 ? "warn" : undefined })),
           dims.map((d) => ({ text: fixed(d.idf, 3), value: d.idf })),
         ],
+        explain: (r, c) => explainIdf(m, r, c),
       }),
       matrixBlock({
         id: "tfidf",
@@ -488,6 +556,7 @@ Object.assign(mod, {
         colLabels: labels,
         heat: "sequential",
         digits: 2,
+        explain: (r, c) => explainWeight(m, r, c),
       }),
     ];
   },
@@ -519,10 +588,11 @@ Object.assign(mod, {
         if (frame.phase === "IDF")
           return js.flatMap((j) => {
             const d = dims[j];
-            const ratio = (N + 1) / (d.df + 1);
+            const x = m.rule(d.df);
+            if (!m.p.useIdf) return [{ label: `idf(${d.term})`, terms: ["IDF off"], result: "1" }];
             return [
-              { label: `idf(${d.term})`, terms: [`ln((${N} + 1) / (${d.df} + 1))`, "1"], result: fixed(d.idf) },
-              { label: "", terms: [`ln(${fixed(ratio)}) = ${fixed(Math.log(ratio))}`, "1"], result: fixed(d.idf) },
+              { label: `idf(${d.term})`, terms: [x.expr, "1"], result: fixed(d.idf) },
+              { label: "", terms: [`ln(${fixed(x.ratio)}) = ${fixed(x.ln)}`, "1"], result: fixed(d.idf) },
             ];
           });
         return js.map((j) => ({ label: `df(${dims[j].term})`, terms: holders[j].length ? holders[j] : ["no record"], op: ",", result: String(dims[j].df) }));

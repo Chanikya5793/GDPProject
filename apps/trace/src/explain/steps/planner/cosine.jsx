@@ -1,6 +1,5 @@
 import { Bars, Expr, Matrix, Panel, Table, Tag, fixed } from "../../kit.jsx";
-import { MATCH_THRESHOLD, TIE_GAP } from "../../../engine/pipeline.js";
-import { COSINE_COLS, analyzedRecords, indexed, revealState } from "./util.js";
+import { analyzedRecords, cosineCols, indexed, paramsOf, revealState, tunedNote } from "./util.js";
 import { column, row, tableBlock } from "../../../map/blocks.js";
 
 const sq = (x) => x * x;
@@ -44,12 +43,14 @@ const mod = {
     "  const score = denominator ? dot(q, d) / denominator : 0",
     "}",
     "results.sort((a, b) => b.score - a.score || a.record.id.localeCompare(b.record.id))",
-    `const candidates = results.filter(r => r.score > MATCH_THRESHOLD)   // ${MATCH_THRESHOLD}`,
+    "const candidates = results.filter(r => r.score > matchThreshold)   // a setting, default 0.08",
     "const gap = candidates.length > 1 ? candidates[0].score - candidates[1].score : null",
-    `// Decide: gap < TIE_GAP (${TIE_GAP}) means the top two are too close to pick one`,
+    "// Decide: gap < tieGap (a setting, default 0.15) means the top two are too close to pick one",
   ],
   frames(ctx) {
     const m = model(ctx);
+    const p = paramsOf(ctx);
+    const { matchThreshold: threshold, tieGap } = p;
     const { trace } = ctx;
     const { rows, q, qMag } = m;
     const results = trace.vectors.results;
@@ -116,7 +117,7 @@ const mod = {
     const n = rows.length;
     const ties = [];
     for (let i = 1; i < results.length; i++)
-      if (results[i].score === results[i - 1].score && results[i].score > MATCH_THRESHOLD)
+      if (results[i].score === results[i - 1].score && results[i].score > threshold)
         ties.push([results[i - 1].record.id, results[i].record.id]);
     frames.push({
       phase: "Ranking",
@@ -134,9 +135,9 @@ const mod = {
       phase: "Ranking",
       line: 8,
       say: cands.length
-        ? `Keep scores above ${MATCH_THRESHOLD}: ${cands.join(", ")} ${cands.length === 1 ? "is a candidate" : "are candidates"} (${cands.length} of ${n}).`
-        : `No score is above ${MATCH_THRESHOLD}, so there are no candidates.`,
-      vars: { MATCH_THRESHOLD, candidates: cands },
+        ? `Keep scores above ${threshold}${tunedNote(p, "matchThreshold")}: ${cands.join(", ")} ${cands.length === 1 ? "is a candidate" : "are candidates"} (${cands.length} of ${n}).`
+        : `No score is above ${threshold}${tunedNote(p, "matchThreshold")}, so there are no candidates.`,
+      vars: { matchThreshold: threshold, candidates: cands },
       at: n,
       rank: 2,
       scored: n,
@@ -153,8 +154,8 @@ const mod = {
             : "No candidates, so gap = null."
           : `gap = ${top[0].record.id} ${fixed(top[0].score)} − ${top[1].record.id} ${fixed(top[1].score)} = ${fixed(gap)}${
               gap === 0 ? " (an exact tie)" : ""
-            }. ${gap < TIE_GAP ? `${fixed(gap)} < ${TIE_GAP}: too close to pick one, so an update or delete must ask which record you mean.` : `${fixed(gap)} ≥ ${TIE_GAP}: ${top[0].record.id} is a clear first choice.`}`,
-      vars: { gap, TIE_GAP, "gap < TIE_GAP": gap !== null && gap < TIE_GAP },
+            }. ${gap < tieGap ? `${fixed(gap)} < ${tieGap}${tunedNote(p, "tieGap")}: too close to pick one, so an update or delete must ask which record you mean.` : `${fixed(gap)} ≥ ${tieGap}${tunedNote(p, "tieGap")}: ${top[0].record.id} is a clear first choice.`}`,
+      vars: { gap, tieGap, "gap < tieGap": gap !== null && gap < tieGap },
       at: n,
       rank: 3,
       scored: n,
@@ -163,6 +164,9 @@ const mod = {
   },
   Stage({ ctx, frame, frames, at, seek }) {
     const m = model(ctx);
+    const p = paramsOf(ctx);
+    const { matchThreshold: threshold, tieGap } = p;
+    const thresholdNote = tunedNote(p, "matchThreshold");
     const { trace } = ctx;
     const { rows, dims, q, qMag } = m;
     const goTo = (id) => {
@@ -179,12 +183,12 @@ const mod = {
             key: x.record.id,
             label: `${i + 1}. ${x.record.id} ${x.record.title}`,
             value: x.score,
-            marker: MATCH_THRESHOLD,
+            marker: threshold,
             active: frame.rank >= 2 && isCand,
             dim: frame.rank >= 2 && !isCand,
             note:
               frame.rank >= 3 && isCand && cands.length > 1 && x.record.id === cands[1]
-                ? `gap to ${cands[0]}: ${fixed(trace.gap)}${trace.gap < TIE_GAP ? ` < ${TIE_GAP}` : ` ≥ ${TIE_GAP}`}`
+                ? `gap to ${cands[0]}: ${fixed(trace.gap)}${trace.gap < tieGap ? ` < ${tieGap}` : ` ≥ ${tieGap}`}`
                 : undefined,
             onClick: () => goTo(x.record.id),
           };
@@ -195,7 +199,7 @@ const mod = {
             key: x.record.id,
             label: `${x.record.id} ${x.record.title}`,
             value: x.score,
-            marker: MATCH_THRESHOLD,
+            marker: threshold,
             active: r && x.record.id === r.record.id,
             onClick: () => goTo(x.record.id),
           }));
@@ -241,7 +245,7 @@ const mod = {
         {bars.length > 0 && (
           <Panel
             title={ranking ? "Ranking (sorted by score, then id)" : `Scores so far (${bars.length} of ${rows.length})`}
-            note={`The orange tick marks MATCH_THRESHOLD = ${MATCH_THRESHOLD}; a record must score above it to be a candidate. Click a bar to see that record's arithmetic.`}
+            note={`The orange tick marks matchThreshold = ${threshold}${thresholdNote}; a record must score above it to be a candidate. Click a bar to see that record's arithmetic.`}
           >
             <Bars items={bars} max={1} />
           </Panel>
@@ -262,7 +266,7 @@ const mod = {
                   ])}
               />
             ) : (
-              <p className="p-empty">No record scored above {MATCH_THRESHOLD}.</p>
+              <p className="p-empty">No record scored above {threshold}.</p>
             )}
             {frame.rank >= 3 && (
               <p className="x-note">
@@ -270,7 +274,7 @@ const mod = {
                   "gap = null (fewer than two candidates)."
                 ) : (
                   <>
-                    gap = {fixed(trace.gap)} {trace.gap < TIE_GAP ? <Tag kind="fail">&lt; {TIE_GAP}: too close</Tag> : <Tag kind="pass">≥ {TIE_GAP}: clear</Tag>}
+                    gap = {fixed(trace.gap)} {trace.gap < tieGap ? <Tag kind="fail">&lt; {tieGap}: too close</Tag> : <Tag kind="pass">≥ {tieGap}: clear</Tag>}
                   </>
                 )}
               </p>
@@ -320,9 +324,132 @@ function cellsOf(frame, ctx) {
   };
 }
 
+// ---- Explain a cell ----
+
+const sumOf = (xs) => (xs.length ? xs.join(" + ") : "0");
+
+function explainQnorm(m, c) {
+  const { q, qMag, dims } = m;
+  const parts = q.map((x, j) => ({ x, j })).filter((p) => p.x);
+  if (c === 0)
+    return {
+      meaning: "The sum of the squares of the query's weights: one weight per term of your request.",
+      formula: "Σ q² = q₀² + q₁² + …",
+      worked: parts.length
+        ? `${parts.map((p) => `${fixed(p.x)}² (${dims[p.j].term})`).join(" + ")} = ${fixed(qMag * qMag)}`
+        : "every query weight is 0, so Σ q² = 0",
+    };
+  if (c === 1)
+    return {
+      meaning: "The length of the query vector. Every score below divides by it.",
+      formula: "‖q‖ = √(Σ q²)",
+      worked: `√${fixed(qMag * qMag)} = ${fixed(qMag)}`,
+    };
+  return null;
+}
+
+function explainCosine(ctx, m, p, r, c) {
+  const row = m.rows[r];
+  if (!row) return null;
+  const { q, qMag, dims } = m;
+  const id = row.record.id;
+  const shared = row.products.map((x, j) => ({ x, j })).filter((s) => s.x);
+  const cands = ctx.trace.candidates;
+  switch (c) {
+    case 0:
+      return {
+        meaning: `Record ${id}, “${row.record.title}”. Its title terms are compared with the request's terms.`,
+      };
+    case 1:
+      return {
+        meaning: shared.length
+          ? `The dot product of the query and record ${id}: only terms both share add to it.`
+          : `Record ${id} shares no term with the query, so the dot product is 0.`,
+        formula: "q·d = Σ q[j] × d[j]",
+        worked: shared.length
+          ? `${shared.map((s) => `${fixed(q[s.j])} × ${fixed(row.d[s.j])} (${dims[s.j].term})`).join(" + ")} = ${fixed(row.dot)}`
+          : "every product has a 0 factor, so q·d = 0",
+      };
+    case 2:
+      return {
+        meaning: `The length of record ${id}'s vector.`,
+        formula: "‖d‖ = √(Σ d²)",
+        worked: `√(${sumOf(squares(row.d))}) = ${fixed(row.dMag)}`,
+      };
+    case 3:
+      return {
+        meaning: `How closely record ${id} points the same way as the query: 1 is the same direction, 0 means no shared term.`,
+        formula: "cos = q·d / (‖q‖ × ‖d‖), or 0 when the bottom is 0",
+        worked:
+          qMag * row.dMag
+            ? `${fixed(row.dot)} / (${fixed(qMag)} × ${fixed(row.dMag)}) = ${fixed(row.dot)} / ${fixed(qMag * row.dMag)} = ${fixed(row.score)}`
+            : `‖q‖ × ‖d‖ = ${fixed(qMag)} × ${fixed(row.dMag)} = 0, so cos = 0`,
+      };
+    case 4: {
+      const order = ctx.trace.vectors.results;
+      const at = order.findIndex((x) => x.record.id === id);
+      return {
+        meaning: `Record ${id}'s place after sorting by score, highest first.`,
+        formula: "sort by score descending, then by id",
+        worked: `${order.map((x) => `${x.record.id} ${fixed(x.score)}`).join(", ")} → ${id} is number ${at + 1}`,
+      };
+    }
+    case 5:
+      return {
+        meaning: cands.includes(id)
+          ? `Record ${id} is a candidate: its score is above the match threshold.`
+          : `Record ${id} is not a candidate: its score is not above the match threshold.`,
+        formula: "candidate if cos > matchThreshold",
+        worked: `${fixed(row.score)} ${row.score > p.matchThreshold ? ">" : "≤"} ${p.matchThreshold}${tunedNote(p, "matchThreshold")} → ${cands.includes(id) ? "yes" : "no"}`,
+      };
+    default:
+      return null;
+  }
+}
+
+function explainGap(ctx, p, top, c) {
+  const gap = ctx.trace.gap;
+  const note = tunedNote(p, "tieGap");
+  if (c === 0 || c === 1) {
+    const x = top[c];
+    if (!x) return null;
+    return {
+      meaning: `The ${c === 0 ? "highest" : "second highest"} scoring candidate: record ${x.record.id}, “${x.record.title}”.`,
+      formula: `top${c === 0 ? "₁" : "₂"} = candidates[${c}]`,
+      worked: `${x.record.id} scores ${fixed(x.score)}`,
+    };
+  }
+  if (gap === null)
+    return c === 2 || c === 3
+      ? {
+          meaning: "With fewer than two candidates there is no second score, so there is no gap to check.",
+          formula: "gap = null when candidates.length < 2",
+          worked: `${top.length} candidate${top.length === 1 ? "" : "s"} → gap = null`,
+        }
+      : null;
+  if (c === 2)
+    return {
+      meaning: "How far ahead the top candidate is of the second one.",
+      formula: "gap = top₁ − top₂",
+      worked: `${fixed(top[0].score)} − ${fixed(top[1].score)} = ${fixed(gap)}`,
+    };
+  if (c === 3)
+    return {
+      meaning:
+        gap < p.tieGap
+          ? "The top two are too close to pick one, so an update or delete has to ask which record you meant."
+          : "The top candidate is clearly ahead, so it can be picked.",
+      formula: "a tie if gap < tieGap",
+      worked: `${fixed(gap)} ${gap < p.tieGap ? "<" : "≥"} ${p.tieGap}${note} → ${gap < p.tieGap ? "tie" : "clear"}`,
+    };
+  return null;
+}
+
 Object.assign(mod, {
   blocks(ctx) {
     const m = model(ctx);
+    const p = paramsOf(ctx);
+    const { tieGap } = p;
     const { rows, qMag } = m;
     const cands = ctx.trace.candidates;
     const rk = rank(ctx);
@@ -335,11 +462,12 @@ Object.assign(mod, {
         head: ["Σ q²", "‖q‖"],
         widths: [1.2, 1.2],
         rows: [[{ text: fixed(qMag * qMag), value: qMag * qMag }, { text: fixed(qMag), value: qMag, bold: true }]],
+        explain: (r, c) => explainQnorm(m, c),
       }),
       tableBlock({
         id: "cosine",
         title: "cos = q·d / (‖q‖ × ‖d‖)",
-        head: COSINE_COLS,
+        head: cosineCols(p),
         rowLabels: rows.map((r) => r.record.id),
         widths: [2.6, 0.95, 0.95, 0.95, 0.65, 0.85],
         rows: rows.map((r) => {
@@ -353,10 +481,11 @@ Object.assign(mod, {
             cand ? { text: "yes", tone: "good" } : { text: "no", tone: "muted" },
           ];
         }),
+        explain: (r, c) => explainCosine(ctx, m, p, r, c),
       }),
       tableBlock({
         id: "gap",
-        title: `gap = top₁ − top₂ · a tie if < ${TIE_GAP}`,
+        title: `gap = top₁ − top₂ · a tie if < ${tieGap}`,
         head: ["top₁", "top₂", "gap", "verdict"],
         widths: [1.3, 1.3, 0.9, 1.6],
         rows: [
@@ -371,9 +500,10 @@ Object.assign(mod, {
                 `${top[0].record.id} ${fixed(top[0].score)}`,
                 `${top[1].record.id} ${fixed(top[1].score)}`,
                 { text: fixed(gap), bold: true },
-                gap < TIE_GAP ? { text: gap === 0 ? "exact tie" : "too close", tone: "warn", bold: true } : { text: "clear", tone: "good" },
+                gap < tieGap ? { text: gap === 0 ? "exact tie" : "too close", tone: "warn", bold: true } : { text: "clear", tone: "good" },
               ],
         ],
+        explain: (r, c) => explainGap(ctx, p, top, c),
       }),
     ];
   },
@@ -387,6 +517,7 @@ Object.assign(mod, {
   },
   math(frame, ctx) {
     const m = model(ctx);
+    const { matchThreshold: threshold, tieGap } = paramsOf(ctx);
     const { rows, q, qMag, dims } = m;
     if (frame.at < 0)
       return [
@@ -398,7 +529,7 @@ Object.assign(mod, {
       return [{ label: "sorted", terms: results.slice(0, 8).map((r) => `${r.record.id} ${fixed(r.score)}`), op: "≥" }];
     if (frame.rank === 2) {
       const c = ctx.trace.candidates;
-      return [{ label: `cos > ${MATCH_THRESHOLD}`, terms: c.length ? c : ["none"], op: ",", result: `${c.length} candidate${c.length === 1 ? "" : "s"}` }];
+      return [{ label: `cos > ${threshold}`, terms: c.length ? c : ["none"], op: ",", result: `${c.length} candidate${c.length === 1 ? "" : "s"}` }];
     }
     if (frame.rank === 3) {
       const gap = ctx.trace.gap;
@@ -406,7 +537,7 @@ Object.assign(mod, {
       const top = results.filter((r) => ctx.trace.candidates.includes(r.record.id));
       return [
         { label: "gap", terms: [fixed(top[0].score), fixed(top[1].score)], op: "−", result: fixed(gap) },
-        { label: `gap < ${TIE_GAP}`, terms: [fixed(gap)], result: String(gap < TIE_GAP) },
+        { label: `gap < ${tieGap}`, terms: [fixed(gap)], result: String(gap < tieGap) },
       ];
     }
     const r = rows[frame.at];

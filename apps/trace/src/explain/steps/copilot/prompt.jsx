@@ -1,7 +1,7 @@
 import { Panel, Table } from "../../kit.jsx";
 import { promptSections } from "../../../engine/copilot.js";
 import { row, tableBlock } from "../../../map/blocks.js";
-import { MESSAGE_ROW, messageOf, num, plural, retrievalOf } from "./util.js";
+import { isWhatIf, MESSAGE_ROW, messageOf, num, plural, retrievalOf, whatIfNote } from "./util.js";
 
 const NOT_KNOWN = "size not known in the browser";
 
@@ -29,10 +29,13 @@ function narrate(s, ctx) {
       return `TODAY: ${c.today ?? "the date"} in ${c.timezone ?? "your timezone"}, about ${s.chars} characters, so “Friday” and “tomorrow” can be resolved.`;
     case "PLANNER_BRIEFING":
       return `A briefing of your planner built the same way every time: overdue, today and this week, at most 40 records. It is assembled on the server; ${NOT_KNOWN}.`;
-    case "UNTRUSTED_SOURCES":
-      return r.kept.length
-        ? `The ${plural(r.kept.length, "search hit")}, each cut to 2,000 characters and wrapped as untrusted: text inside is checked for injected instructions and treated as data. About ${num(s.chars)} characters, estimated from this browser's recomputed hits${typeof c.response?.retrieval?.result_count === "number" && c.response.retrieval.result_count !== r.kept.length ? `; the server reported ${c.response.retrieval.result_count}` : ""}.`
-        : "No search hits, so this section is empty.";
+    case "UNTRUSTED_SOURCES": {
+      const count = c.response?.retrieval?.result_count;
+      const server = typeof count === "number" && (count !== r.kept.length || isWhatIf(ctx)) ? `; the server, on its default settings, reported ${plural(count, "hit")}` : "";
+      return (r.kept.length
+        ? `The ${plural(r.kept.length, "search hit")}, each cut to 2,000 characters and wrapped as untrusted: text inside is checked for injected instructions and treated as data. About ${num(s.chars)} characters, estimated from this browser's recomputed hits${server}.`
+        : `No search hits, so this section is empty${server}.`) + whatIfNote(ctx, "prompt");
+    }
     case "TOOL_RESULTS":
       return `Empty in the first prompt. If the model asks for lookups, their results go here and the prompt is sent again; ${NOT_KNOWN}.`;
     case "CONVERSATION":
@@ -101,18 +104,37 @@ export default {
     return frames;
   },
   blocks(ctx) {
+    const sections = sectionsOf(ctx);
     return [
       tableBlock({
         id: "cprompt",
         title: "prompt sections, in order",
         head: ["section", "contents", "chars", "known?"],
         widths: [2.2, 3.4, 0.9, 0.9],
-        rows: sectionsOf(ctx).map((s) => [
+        rows: sections.map((s) => [
           { text: s.name, tone: s.real ? "keyword" : "context", align: "left" },
           { text: s.what, align: "left", full: s.what, dim: !s.real },
           s.chars === null ? { text: "?", tone: "muted" } : { text: num(s.chars), tone: "number" },
           { text: s.known, tone: s.known === "yes" ? "good" : s.known === "no" ? "muted" : "warn" },
         ]),
+        explain: (i, col) => {
+          const s = sections[i];
+          if (!s) return null;
+          if (col === 2 || col === 3) {
+            if (s.chars === null)
+              return { meaning: "This section exists, but the browser cannot see it, so its size is not known.", formula: "not known in the browser", worked: `${s.name}: ?` };
+            if (s.name === "UNTRUSTED_SOURCES") {
+              const hits = retrievalOf(ctx).kept;
+              return {
+                meaning: `An estimate: each kept hit's text, cut to 2,000 characters, plus about 120 for its label.${isWhatIf(ctx) ? " What-if: the hits are the ones your settings keep." : ""}`,
+                formula: "Σ min(2000, hit.text.length) + 120",
+                worked: hits.length ? `${hits.map((h) => `min(2000, ${h.text.length}) + 120`).join(" + ")} = ${num(s.chars)}` : "no hits = 0",
+              };
+            }
+            return { meaning: `The size of ${s.name}, in characters. Limits are character caps, not token counts.`, formula: "chars = section text length (capped)", worked: `${num(s.chars)} characters` };
+          }
+          return { meaning: col === 0 ? `Section ${i + 1} of ${sections.length}, in the fixed order the server writes them.` : s.what, formula: "prompt = sections.join(\"\\n\\n\")", worked: `${s.name}: ${s.what}` };
+        },
       }),
     ];
   },

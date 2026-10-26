@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Expr, Matrix, Panel, fixed } from "../../kit.jsx";
-import { DIMS, NormExprs, cells, labelsOf, list, mat, moments, operand, quote } from "./shared.jsx";
+import { DIMS, NormExprs, cells, labelsOf, list, mat, moments, operand, paramsOf, quote, tunedSay } from "./shared.jsx";
 
 const DETAIL = 2; // rows 0..DETAIL-1 get one frame per sub-step
 // Sub-steps of one row: 0 add, 1 mean, 2 deviations, 3 variance, 4 std, 5 divide.
 const SUB_LINE = [1, 2, 3, 4, 5, 6];
+// What the residual adds to O: X, or zeros when residual connections are off.
+const addend = (ctx, m, i, d) => (paramsOf(ctx).residual ? m.positions[i][d] : 0);
 
 export default {
   id: "residual",
@@ -15,7 +17,7 @@ export default {
   ],
   code: [
     "for (let i = 0; i < n; i++) {",
-    "  r = O[i].map((v, d) => v + X[i][d])  // residual: add the input back",
+    "  r = O[i].map((v, d) => v + (residual ? X[i][d] : 0))  // residual: add the input back",
     "  mean = (r[0] + r[1] + r[2] + r[3]) / 4",
     "  dev = r.map(v => v - mean)",
     "  variance = (dev[0]² + dev[1]² + dev[2]² + dev[3]²) / 4",
@@ -23,16 +25,22 @@ export default {
     "  H1[i] = dev.map(v => v / std)",
     "}",
   ],
-  frames({ data }) {
-    const m = data.transformer;
+  frames(ctx) {
+    const m = ctx.data.transformer;
     const n = m.tokens.length;
+    const p = paramsOf(ctx);
+    const on = p.residual;
     const frames = [
       {
         phase: "Setup",
         line: 0,
-        say: n
-          ? "Two things happen to every row. First the block's input X is added back to the attention output O (a residual connection), so the token's own information is kept. Then the row is normalized: shifted to mean 0 and scaled to variance 1."
-          : "There are no tokens, so there are no rows to add or normalize.",
+        say: `${
+          !n
+            ? "There are no tokens, so there are no rows to add or normalize."
+            : on
+              ? "Two things happen to every row. First the block's input X is added back to the attention output O (a residual connection), so the token's own information is kept. Then the row is normalized: shifted to mean 0 and scaled to variance 1."
+              : "Normally the block's input X is added back to the attention output O here (a residual connection). Residual connections are off, so R is just O: the token's own information survives only through attention. Then the row is normalized: shifted to mean 0 and scaled to variance 1."
+        }${tunedSay(p, ["merges", "context", "positional", "scaleScores", "causalMask"])}`,
         vars: { n },
         i: -1,
         sub: -1,
@@ -45,10 +53,15 @@ export default {
       const s = m.norm1Steps[i];
       const t = quote(m.tokens[i]);
       const check = moments(s.out);
-      const adds = o.map((v, d) => `${fixed(v)} + ${operand(x[d])} = ${fixed(r[d])}`).join("; ");
+      const adds = on
+        ? o.map((v, d) => `${fixed(v)} + ${operand(x[d])} = ${fixed(r[d])}`).join("; ")
+        : `nothing is added, so R[${i}] = O[${i}] = [${list(r)}]`;
+      const rowZero = on && p.causalMask && i === 0;
       if (i < DETAIL) {
         const say = [
-          `Row ${i}, ${t}: R[${i}] = O[${i}] + X[${i}], one addition per column: ${adds}.${i === 0 ? " Row 0 attends only to itself, so O[0] = X[0] and R[0] is twice X[0]." : ""}`,
+          on
+            ? `Row ${i}, ${t}: R[${i}] = O[${i}] + X[${i}], one addition per column: ${adds}.${rowZero ? " Row 0 attends only to itself, so O[0] = X[0] and R[0] is twice X[0]." : ""}`
+            : `Row ${i}, ${t}: residual connections are off, so ${adds}.`,
           `The mean of the row: μ = (${r.map((v, d) => (d ? operand(v, 4) : fixed(v, 4))).join(" + ")}) / 4 = ${fixed(s.mean, 4)}.`,
           `Subtract μ from each entry: deviations [${list(s.deviations, 4)}]. They always add up to 0.`,
           `The variance is the mean of the squared deviations: σ² = (${s.deviations.map((v) => fixed(v * v, 4)).join(" + ")}) / 4 = ${fixed(s.variance, 4)}.`,
@@ -77,7 +90,7 @@ export default {
         frames.push({
           phase: "Every row",
           line: 1,
-          say: `Row ${i}, ${t}: R[${i}] = O[${i}] + X[${i}] = [${list(r)}].`,
+          say: on ? `Row ${i}, ${t}: R[${i}] = O[${i}] + X[${i}] = [${list(r)}].` : `Row ${i}, ${t}: residual off, so R[${i}] = O[${i}] = [${list(r)}].`,
           vars: { i, [`R[${i}]`]: r },
           i,
           sub: 0,
@@ -107,11 +120,30 @@ export default {
     });
     return frames;
   },
-  blocks({ data }) {
-    const m = data.transformer;
+  blocks(ctx) {
+    const m = ctx.data.transformer;
+    const on = paramsOf(ctx).residual;
     const labels = labelsOf(m.tokens);
     return [
-      mat({ id: "R", title: "R = O + X", data: m.residual, rowLabels: labels, colLabels: DIMS }),
+      mat({
+        id: "R",
+        title: on ? "R = O + X" : "R = O (residual off)",
+        data: m.residual,
+        rowLabels: labels,
+        colLabels: DIMS,
+        explain: (r, c) => {
+          if (m.residual[r]?.[c] === undefined) return null;
+          return {
+            meaning: on
+              ? `Dimension ${c} of ${quote(m.tokens[r])} after attention, with the block's input added back so the token keeps its own information.`
+              : `Dimension ${c} of ${quote(m.tokens[r])} after attention. Residual connections are off, so the input is not added back.`,
+            formula: on ? "R[i][d] = O[i][d] + X[i][d]" : "R[i][d] = O[i][d] (residual off)",
+            worked: on
+              ? `R[${r}][${c}] = ${fixed(m.output[r][c])} + ${operand(m.positions[r][c])} = ${fixed(m.residual[r][c])}`
+              : `R[${r}][${c}] = ${fixed(m.output[r][c])} + 0 = ${fixed(m.residual[r][c])}`,
+          };
+        },
+      }),
       mat({
         id: "LN1",
         title: "row stats",
@@ -121,8 +153,46 @@ export default {
         digits: 3,
         cellW: 1.25,
         beside: true,
+        explain: (r, c) => {
+          const s = m.norm1Steps[r];
+          if (!s || c > 2) return null;
+          const row = m.residual[r];
+          return [
+            {
+              meaning: `The mean of row ${r} of R (${quote(m.tokens[r])}).`,
+              formula: "μ = (r0 + r1 + r2 + r3) / 4",
+              worked: `μ = (${row.map((v, d) => (d ? operand(v, 4) : fixed(v, 4))).join(" + ")}) / 4 = ${fixed(s.mean, 4)}`,
+            },
+            {
+              meaning: `How spread out row ${r} of R is: the mean of the squared distances from μ.`,
+              formula: "σ² = Σ (r_d − μ)² / 4",
+              worked: `σ² = (${s.deviations.map((v) => fixed(v * v, 4)).join(" + ")}) / 4 = ${fixed(s.variance, 4)}`,
+            },
+            {
+              meaning: `The standard deviation of row ${r}; each entry is divided by it.`,
+              formula: "std = √(σ² + 0.00001)",
+              worked: `std = √(${fixed(s.variance, 4)} + 0.00001) = ${fixed(s.std, 4)}`,
+            },
+          ][c];
+        },
       }),
-      mat({ id: "H1", title: "H₁ = (R − μ) / std", data: m.norm1, rowLabels: labels, colLabels: DIMS, beside: true }),
+      mat({
+        id: "H1",
+        title: "H₁ = (R − μ) / std",
+        data: m.norm1,
+        rowLabels: labels,
+        colLabels: DIMS,
+        beside: true,
+        explain: (r, c) => {
+          const s = m.norm1Steps[r];
+          if (!s || s.out[c] === undefined) return null;
+          return {
+            meaning: `Dimension ${c} of ${quote(m.tokens[r])}, rescaled so its row has mean 0 and variance 1.`,
+            formula: "H₁[i][d] = (R[i][d] − μ) / std",
+            worked: `H₁[${r}][${c}] = (${fixed(m.residual[r][c], 4)} − ${operand(s.mean, 4)}) / ${fixed(s.std, 4)} = ${fixed(s.deviations[c], 4)} / ${fixed(s.std, 4)} = ${fixed(s.out[c])}`,
+          };
+        },
+      }),
     ];
   },
   output: "H1",
@@ -162,13 +232,13 @@ export default {
       H1: { done: done(() => 5), active: writes.H1 ?? [] },
     };
   },
-  math(frame, { data }) {
-    const m = data.transformer;
+  math(frame, ctx) {
+    const m = ctx.data.transformer;
     const i = frame.i;
     if (i < 0 || i >= m.tokens.length) return [];
     const r = m.residual[i];
     const s = m.norm1Steps[i];
-    const adds = DIMS.map((_, d) => ({ label: `R[${i}][${d}]`, terms: [fixed(m.output[i][d]), fixed(m.positions[i][d])], result: fixed(r[d]) }));
+    const adds = DIMS.map((_, d) => ({ label: `R[${i}][${d}]`, terms: [fixed(m.output[i][d]), fixed(addend(ctx, m, i, d))], result: fixed(r[d]) }));
     const mean = { label: "μ", terms: [`(${r.map((v) => fixed(v)).join(" + ")})`, "4"], op: "÷", result: fixed(s.mean, 4) };
     const devs = { label: "R − μ", terms: [s.deviations.map((v) => fixed(v, 4)).join(", ")] };
     const variance = { label: "σ²", terms: [`(${s.deviations.map((v) => fixed(v * v, 4)).join(" + ")})`, "4"], op: "÷", result: fixed(s.variance, 4) };
@@ -216,7 +286,7 @@ export default {
               <Expr
                 key={d}
                 label={`R[${row}][${d}]`}
-                terms={[fixed(v, 4), fixed(m.positions[row][d], 4)]}
+                terms={[fixed(v, 4), fixed(addend(ctx, m, row, d), 4)]}
                 result={fixed(m.residual[row][d], 4)}
               />
             ))}
@@ -226,7 +296,7 @@ export default {
         <div className="x-row-wrap">
           <Matrix caption="O (attention output)" data={m.output} rowLabels={labels} colLabels={DIMS} state={inState} onCell={onCell} />
           <Matrix caption="X (block input)" data={m.positions} rowLabels={labels} colLabels={DIMS} state={inState} onCell={onCell} />
-          <Matrix caption="R = O + X" data={m.residual} rowLabels={labels} colLabels={DIMS} state={(r) => rowState(r, 0)} onCell={onCell} />
+          <Matrix caption={paramsOf(ctx).residual ? "R = O + X" : "R = O (residual off)"} data={m.residual} rowLabels={labels} colLabels={DIMS} state={(r) => rowState(r, 0)} onCell={onCell} />
           <Matrix caption="H₁ = LayerNorm(R). Click a row." data={m.norm1} rowLabels={labels} colLabels={DIMS} state={(r) => rowState(r, 5)} onCell={onCell} />
         </div>
       </div>

@@ -10,8 +10,10 @@
 // `setting` paths are `track.key` from src/tune/schema.js. Prose stays plain
 // English for a first-year student; glossary words are linked automatically.
 import planner from "./planner.js";
-import copilot from "./copilot.js";
+import copilot, { COPILOT_MODEL_LESSONS } from "./copilot.js";
 import transformer from "./transformer.js";
 
 export const LESSONS = { ...planner, ...transformer, ...copilot };
-export const lessonFor = (stepId) => LESSONS[stepId] ?? null;
+// The copilot's model steps reuse the transformer's ids but have their own lessons.
+export const lessonFor = (stepId, mode) =>
+  (mode === "copilot" && COPILOT_MODEL_LESSONS?.[stepId]) || LESSONS[stepId] || null;

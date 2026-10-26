@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Bars, Expr, Matrix, Panel, Table, fixed } from "../../kit.jsx";
-import { D_MODEL, VOCABULARY, tokenCode } from "../../../engine/transformer.js";
+import { D_MODEL, tokenCode } from "../../../engine/transformer.js";
 import { tableBlock } from "../../../map/blocks.js";
-import { DIMS, cells, charTerms, list, operand, quote, range } from "./shared.jsx";
+import { DIMS, cells, charTerms, codeSum, list, operand, paramsOf, quote, range, tunedSay } from "./shared.jsx";
 
 const FULL = 10; // tokens shown in full, in order of their final rank
 const BARS = 15;
@@ -13,6 +13,10 @@ const SHOWN = 15;
 const P_COL = 7;
 const n0 = (m) => m.tokens.length === 0;
 const tableRows = (V) => Math.min(SHOWN, V) + (V > SHOWN ? 1 : 0);
+const tempOf = (ctx) => paramsOf(ctx).temperature;
+// "(z − max)" or "(z − max) / T", for the temperature in force.
+const shiftText = (z, max, T, digits = 4) =>
+  T === 1 ? `${fixed(z, digits)} − ${fixed(max, digits)}` : `(${fixed(z, digits)} − ${fixed(max, digits)}) / ${T}`;
 
 export default {
   id: "logits",
@@ -30,12 +34,13 @@ export default {
     "  logit[t] = dot(h, U_t)  // h0·U0 + h1·U1 + h2·U2 + h3·U3",
     "}",
     "max = Math.max(...logits)",
-    "exps = logits.map(z => Math.exp(z - max))",
+    "exps = logits.map(z => Math.exp((z - max) / temperature))  // temperature 1 by default",
     "sum = exps.reduce((a, b) => a + b, 0)",
     "p = exps.map(e => e / sum)  // probabilities, sum to 1",
   ],
-  frames({ data }) {
-    const m = data.transformer;
+  frames(ctx) {
+    const m = ctx.data.transformer;
+    const T = tempOf(ctx);
     const n = m.tokens.length;
     const V = m.vocabulary.length;
     const h = hLast(m);
@@ -47,8 +52,8 @@ export default {
         phase: "Setup",
         line: 0,
         say: n
-          ? `Only the last position predicts the next token. Its row of H₂ is h = [${list(h)}] (position ${n - 1}, ${quote(m.tokens[n - 1])}). Each of the ${V} vocabulary tokens gets a score: logit = h · U_t.`
-          : `There are no tokens, so the engine uses h = [0, 0, 0, 0]. Every logit will be 0 and every token will get the same probability, 1/${V}.`,
+          ? `Only the last position predicts the next token. Its row of H₂ is h = [${list(h)}] (position ${n - 1}, ${quote(m.tokens[n - 1])}). Each of the ${V} vocabulary tokens gets a score: logit = h · U_t.${tunedSay(paramsOf(ctx), ["temperature", "merges"])}`
+          : `There are no tokens, so the engine uses h = [0, 0, 0, 0]. Every logit will be 0 and every token will get the same probability, 1/${V}.${tunedSay(paramsOf(ctx), ["temperature", "merges"])}`,
         vars: { h, "VOCABULARY.length": V },
         tok: -1,
         done: 0,
@@ -88,7 +93,11 @@ export default {
       {
         phase: "Softmax",
         line: 6,
-        say: `The largest logit is ${fixed(s.max, 4)} (${quote(top.token)}). Subtracting it from every logit makes the largest 0 and the rest negative, so exp cannot overflow.`,
+        say: `The largest logit is ${fixed(s.max, 4)} (${quote(top.token)}). Subtracting it from every logit makes the largest 0 and the rest negative, so exp cannot overflow.${
+          T === 1
+            ? ""
+            : ` Then each is divided by the temperature, ${T}: ${T < 1 ? "below 1 this stretches the gaps, so the top token pulls further ahead" : "above 1 this shrinks the gaps, so the probabilities flatten out"}.`
+        }`,
         vars: { max: s.max },
         tok: -1,
         done: V,
@@ -97,7 +106,7 @@ export default {
       {
         phase: "Softmax",
         line: 7,
-        say: `exp of each shifted logit: ${quote(top.token)} gets exp(0) = 1 and the lowest, ${quote(lo.token)}, gets exp(${fixed(s.shifted[lo.index], 4)}) = ${fixed(s.exps[lo.index], 4)}.`,
+        say: `exp of each shifted logit${T === 1 ? "" : ` (already divided by ${T})`}: ${quote(top.token)} gets exp(0) = 1 and the lowest, ${quote(lo.token)}, gets exp(${fixed(s.shifted[lo.index], 4)}) = ${fixed(s.exps[lo.index], 4)}.`,
         vars: { "exps[top]": s.exps[top.index], "exps[lowest]": s.exps[lo.index] },
         tok: -1,
         done: V,
@@ -134,9 +143,12 @@ export default {
     });
     return frames;
   },
-  blocks({ data }) {
-    const m = data.transformer;
+  blocks(ctx) {
+    const m = ctx.data.transformer;
+    const T = tempOf(ctx);
     const V = m.vocabulary.length;
+    const h = hLast(m);
+    const s = m.vocabSoftmax;
     const top = m.ranked.slice(0, SHOWN);
     const rows = top.map((r, i) => [
       { text: String(r.index), dim: true },
@@ -157,10 +169,48 @@ export default {
       {
         ...tableBlock({
           id: "logits",
-          title: `logit = h·U_t, p = softmax   (top ${Math.min(SHOWN, V)} of ${V} by p)`,
+          title: `logit = h·U_t, p = softmax${T === 1 ? "" : `(logit / ${T})`}   (top ${Math.min(SHOWN, V)} of ${V} by p)`,
           head: ["#", "token", "U0", "U1", "U2", "U3", "logit", "p"],
           widths: [0.45, 1.25, 0.72, 0.72, 0.72, 0.72, 0.85, 0.95],
           rows,
+          explain: (r, c) => {
+            if (!rows[r]?.[c]) return null;
+            const x = top[r];
+            if (!x)
+              return {
+                meaning: `The other ${V - SHOWN} vocabulary tokens, each less likely than the ${SHOWN} shown.`,
+                formula: "the same three lines for every token",
+                worked: `logits from ${fixed(m.ranked.at(-1).logit, 4)} up; p at most ${fixed(m.ranked[SHOWN].probability, 4)}`,
+              };
+            const t = quote(x.token);
+            const code = tokenCode(x.token);
+            const u = m.unembedding[x.index];
+            if (c <= 1)
+              return {
+                meaning: `${t}, vocabulary entry #${x.index}, ranked ${r + 1} of ${V} for the next token.`,
+                formula: "code = Σ codePoint(cᵢ) × (i + 1)",
+                worked: `code(${t}) = ${codeSum(x.token)} = ${code}`,
+              };
+            if (c <= 5) {
+              const d = c - 2;
+              return {
+                meaning: `Dimension ${d} of ${t}'s output row: the pattern h must match for ${t} to score high.`,
+                formula: "U[d] = sin((code + 1) × (d + 1) × 0.013) × 0.5",
+                worked: `U[${d}] = sin(${code + 1} × ${d + 1} × 0.013) × 0.5 = sin(${fixed(angle(code, d))}) × 0.5 = ${fixed(u[d], 4)}`,
+              };
+            }
+            if (c === 6)
+              return {
+                meaning: `How well the last position's vector h matches ${t}. Higher means more likely.`,
+                formula: "logit = h · U_t",
+                worked: `logit = ${h.map((v, d) => `${operand(v)}×${operand(u[d])}`).join(" + ")} = ${fixed(x.logit, 4)}`,
+              };
+            return {
+              meaning: `The probability that ${t} comes next.`,
+              formula: T === 1 ? "p = exp(logit − max) / Σ exp(logit − max)" : `p = exp((logit − max) / ${T}) / Σ exp((logit − max) / ${T})`,
+              worked: `p = exp(${shiftText(x.logit, s.max, T)}) / ${fixed(s.sum, 4)} = ${fixed(s.exps[x.index], 4)} / ${fixed(s.sum, 4)} = ${fixed(x.probability, 4)}`,
+            };
+          },
         }),
         heat: "diverging",
       },
@@ -186,8 +236,9 @@ export default {
       },
     };
   },
-  math(frame, { data }) {
-    const m = data.transformer;
+  math(frame, ctx) {
+    const m = ctx.data.transformer;
+    const T = tempOf(ctx);
     const V = m.vocabulary.length;
     const h = hLast(m);
     const s = m.vocabSoftmax;
@@ -216,7 +267,7 @@ export default {
     if (frame.sub === 1)
       return [top, m.ranked[1], lo].filter(Boolean).map((r) => ({
         label: `exp ${quote(r.token)}`,
-        terms: [`exp(${fixed(r.logit, 4)} − ${fixed(s.max, 4)})`],
+        terms: [`exp(${shiftText(r.logit, s.max, T)})`],
         result: fixed(s.exps[r.index], 4),
       }));
     if (frame.sub === 2)
@@ -234,6 +285,7 @@ export default {
   },
   Stage({ ctx, frame, frames, seek }) {
     const m = ctx.data.transformer;
+    const T = tempOf(ctx);
     const V = m.vocabulary.length;
     const [picked, setPicked] = useState(null);
     const h = hLast(m);
@@ -256,7 +308,7 @@ export default {
             colLabels={DIMS}
           />
         </div>
-        {tok !== null && <TokenDetail m={m} h={h} index={tok} sub={frame.sub} />}
+        {tok !== null && <TokenDetail m={m} h={h} T={T} index={tok} sub={frame.sub} />}
         {frame.sub >= 4 && (
           <Panel title={`The ${Math.min(BARS, V)} most probable tokens`} note="Click a bar to see that token's arithmetic.">
             <Bars
@@ -279,7 +331,7 @@ export default {
         >
           <Table
             className="t-scroll"
-            head={["rank", "#", "token", "code", "U_t", "logit", "z − max", "exp", "p"]}
+            head={["rank", "#", "token", "code", "U_t", "logit", T === 1 ? "z − max" : `(z − max) / ${T}`, "exp", "p"]}
             active={tok === null ? undefined : rankOf.get(tok)}
             onRow={(r) => pick(m.ranked[r].index)}
             rows={m.ranked.map((r, i) => {
@@ -314,8 +366,8 @@ export default {
   },
 };
 
-function TokenDetail({ m, h, index, sub }) {
-  const t = VOCABULARY[index] ?? m.vocabulary[index];
+function TokenDetail({ m, h, T, index, sub }) {
+  const t = m.vocabulary[index];
   const chars = charTerms(t);
   const code = tokenCode(t);
   const u = m.unembedding[index];
@@ -338,7 +390,7 @@ function TokenDetail({ m, h, index, sub }) {
           label="p"
           op="="
           terms={[
-            `exp(${fixed(m.logits[index], 4)} − ${fixed(s.max, 4)}) ÷ ${fixed(s.sum, 4)}`,
+            `exp(${shiftText(m.logits[index], s.max, T)}) ÷ ${fixed(s.sum, 4)}`,
             `${fixed(s.exps[index], 4)} ÷ ${fixed(s.sum, 4)}`,
           ]}
           result={fixed(s.probs[index], 4)}

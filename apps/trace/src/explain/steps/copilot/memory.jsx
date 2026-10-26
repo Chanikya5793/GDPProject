@@ -96,6 +96,30 @@ export default {
               r.chars !== undefined ? String(r.chars) : "",
             ])
           : [[{ text: "nothing yet", tone: "muted" }, { text: "first message", dim: true }, ""]],
+        explain: (r, c) => {
+          const x = m.rows[r];
+          if (!x) return null;
+          const kind = x.kind === "attached record" ? "focus" : x.kind.startsWith("source") ? "source" : "turn";
+          if (c === 2 && x.chars === undefined) return null;
+          const info = {
+            turn: {
+              meaning: "An earlier turn, sent again because the LLM keeps nothing between messages.",
+              formula: "history = turns.slice(-20), each cut to 4000 characters",
+              worked: `min(4000, ${x.text.length}) = ${x.chars} characters`,
+            },
+            source: {
+              meaning: "A record cited earlier in this conversation. It keeps its S-number, so “that one” still points at it.",
+              formula: "sources = reuseCitationIds(conversation.citations)",
+              worked: `${x.id} = “${x.text}”`,
+            },
+            focus: {
+              meaning: "The record you attached. Its full text travels with this message.",
+              formula: "focus = readRecord(request.focus)",
+              worked: `focus = “${x.text}”`,
+            },
+          }[kind];
+          return c === 0 ? { ...info, worked: `${x.kind}: row ${r + 1} of ${m.rows.length}` } : info;
+        },
       }),
     ];
   },

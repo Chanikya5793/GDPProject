@@ -130,6 +130,7 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
         steps={steps}
         ctx={ctx}
         params={params}
+        tuneOpen={tuneOpen}
         onTune={(path, value) => {
           if (value !== undefined) tune(path, value);
           setTuneFocus(path);
@@ -143,7 +144,7 @@ function TraceOverlay({ copilot, onClose, theme, accent }) {
         on3DFail={() => setView("2d")}
         onOpenMap={() => setView("2d")}
         onOpenTable={(module, at) => setTable({ module, at })}
-        actionProps={{ mode: "copilot", trace: ctx.trace, records: [], applied: false, generatedTokens: [], actions: {} }}
+        actionProps={{ mode: "copilot", trace: ctx.trace, records: [], applied: false, generatedTokens: [], actions: {}, params }}
       />
       <TunePanel
         open={tuneOpen}

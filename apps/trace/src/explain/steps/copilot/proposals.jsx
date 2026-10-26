@@ -124,7 +124,27 @@ export default {
     return frames;
   },
   blocks(ctx) {
-    const { rows } = layout(ctx);
+    const { rows, proposals, ranges } = layout(ctx);
+    const explainProposal = (r, c) => {
+      const i = ranges.findIndex((x) => r >= x.start && r <= x.end);
+      if (i < 0) return null;
+      const p = proposals[i];
+      const range = ranges[i];
+      if (r === range.revisionRow)
+        return {
+          meaning: "The revision the proposal was made against. Confirming writes only if the record still has it, then adds 1.",
+          formula: "if record.revision === base_revision: write, revision + 1",
+          worked: typeof p.base_revision === "number" ? `${p.base_revision} → ${p.base_revision + 1} on confirm` : "base + 1 on confirm",
+        };
+      const f = range.fields[r - range.start];
+      const before = value(p.before?.[f]);
+      const after = value(p.after?.[f]);
+      return {
+        meaning: c === 0 ? `Proposal ${i + 1}: ${p.operation} a ${p.entity_type}. ${p.rationale ?? ""}`.trim() : `The field “${f}” ${range.changed.includes(f) ? "changes" : "stays the same"}.`,
+        formula: "before = record now · after = record once you confirm",
+        worked: `${f}: ${before} → ${after}`,
+      };
+    };
     const unavailable = ctx.copilot.response?.unavailable ?? [];
     return [
       tableBlock({
@@ -133,6 +153,7 @@ export default {
         head: ["#", "field", "before", "after"],
         widths: [0.5, 1.4, 2.1, 2.1],
         rows: rows.length ? rows : [["", { text: "no changes suggested", tone: "muted", align: "left" }, "", ""]],
+        explain: explainProposal,
       }),
       tableBlock({
         id: "cunavailable",
@@ -142,6 +163,15 @@ export default {
         rows: unavailable.length
           ? unavailable.map((u, i) => [{ text: String(i + 1), dim: true }, { text: reasonOf(u), tone: "warn", align: "left", full: reasonOf(u) }])
           : [["", { text: "none", tone: "muted", align: "left" }]],
+        explain: (r) => {
+          const u = unavailable[r];
+          if (u === undefined) return null;
+          return {
+            meaning: "A change the LLM suggested that failed validation, so it never became a proposal.",
+            formula: "validate(action, recordType) → proposal | reason",
+            worked: reasonOf(u),
+          };
+        },
       }),
     ];
   },

@@ -1,7 +1,6 @@
 import { Panel, Table, Tag, fixed } from "../../kit.jsx";
-import { CONTEXT } from "../../../engine/transformer.js";
 import { tableBlock } from "../../../map/blocks.js";
-import { Chips, quote, range } from "./shared.jsx";
+import { Chips, isDefault, paramsOf, quote, range, tunedSay } from "./shared.jsx";
 
 const CHUNK = 8; // vocabulary entries compared per scan frame
 const pct = (p) => `${fixed(p * 100, 2)}%`;
@@ -22,30 +21,35 @@ export default {
   id: "decode",
   source: [
     ["transformer", "attention"],
-    ["transformer", "CONTEXT"],
+    ["transformer", "TRANSFORMER_DEFAULTS"],
   ],
   code: [
     "let best = 0",
     "for (let t = 1; t < p.length; t++)",
     "  if (p[t] > p[best]) best = t  // a tie keeps the earlier token",
-    "next = VOCABULARY[best]",
+    "next = vocabulary[best]",
     "sequence = [...window, next]",
-    "window = sequence.slice(-CONTEXT)  // keep the last 16 tokens",
+    "window = sequence.slice(-context)  // keep the last context tokens (default 16)",
     "// then run every step again on the new window",
   ],
-  frames({ data, generatedTokens = [] }) {
+  frames(ctx) {
+    const { data, generatedTokens = [] } = ctx;
+    const p = paramsOf(ctx);
+    const CONTEXT = p.context;
     const m = data.transformer;
-    const p = m.probabilities;
-    const V = p.length;
+    const probs = m.probabilities;
+    const V = probs.length;
     const vocab = m.vocabulary;
-    const total = p.reduce((a, b) => a + b, 0);
-    const steps = scan(p);
+    const total = probs.reduce((a, b) => a + b, 0);
+    const steps = scan(probs);
     const frames = [
       {
         phase: "Setup",
         line: 0,
-        say: `p has ${V} entries, one per vocabulary token, adding up to ${fixed(total, 6)}. Greedy decoding scans them once and keeps the index of the largest. It starts with best = 0 (${quote(vocab[0])}, p = ${fixed(p[0], 4)}).`,
-        vars: { "p.length": V, best: 0, "p[best]": p[0] },
+        say: `p has ${V} entries, one per vocabulary token, adding up to ${fixed(total, 6)}. Greedy decoding scans them once and keeps the index of the largest. It starts with best = 0 (${quote(vocab[0])}, p = ${fixed(probs[0], 4)}).${
+          isDefault(p, "temperature") ? "" : ` Temperature ${p.temperature} changes how sure the model looks, not which token is largest, so greedy decoding picks the same token.`
+        }${tunedSay(p, ["context", "merges"])}`,
+        vars: { "p.length": V, best: 0, "probs[best]": probs[0] },
         to: 0,
         from: 1,
       },
@@ -59,9 +63,9 @@ export default {
         phase: "Scan",
         line: [1, 2],
         say: changes.length
-          ? `t = ${from} to ${to}: ${changes.map((c) => `p[${c.t}] = ${fixed(p[c.t], 4)} (${quote(vocab[c.t])}) beats ${fixed(p[c.before], 4)}`).join("; ")}. best = ${best}.`
-          : `t = ${from} to ${to}: none of these beats p[${best}] = ${fixed(p[best], 4)} (${quote(vocab[best])}), so best stays ${best}.`,
-        vars: { t: to, best, "p[best]": p[best], token: vocab[best] },
+          ? `t = ${from} to ${to}: ${changes.map((c) => `probs[${c.t}] = ${fixed(probs[c.t], 4)} (${quote(vocab[c.t])}) beats ${fixed(probs[c.before], 4)}`).join("; ")}. best = ${best}.`
+          : `t = ${from} to ${to}: none of these beats probs[${best}] = ${fixed(probs[best], 4)} (${quote(vocab[best])}), so best stays ${best}.`,
+        vars: { t: to, best, "probs[best]": probs[best], token: vocab[best] },
         from,
         to,
         hold: 0.7,
@@ -73,8 +77,8 @@ export default {
     frames.push({
       phase: "Choose",
       line: 3,
-      say: `The scan is over. best = ${best}, so the next token is ${quote(next)} with p = ${fixed(p[best], 4)} (${pct(p[best])}).${second ? ` The runner-up, ${quote(second.token)}, has ${fixed(second.probability, 4)}.` : ""}`,
-      vars: { best, next, "p[best]": p[best] },
+      say: `The scan is over. best = ${best}, so the next token is ${quote(next)} with p = ${fixed(probs[best], 4)} (${pct(probs[best])}).${second ? ` The runner-up, ${quote(second.token)}, has ${fixed(second.probability, 4)}.` : ""}`,
+      vars: { best, next, "probs[best]": probs[best] },
       to: V - 1,
       from: V,
       chosen: true,
@@ -111,8 +115,9 @@ export default {
     });
     return frames;
   },
-  blocks({ data }) {
-    const m = data.transformer;
+  blocks(ctx) {
+    const CONTEXT = paramsOf(ctx).context;
+    const m = ctx.data.transformer;
     const win = m.tokens;
     const next = m.nextToken;
     const after = [...win, next].slice(-CONTEXT);
@@ -125,6 +130,14 @@ export default {
         head: ["#", "token", "p"],
         widths: [0.45, 1.3, 0.85],
         rows: [[{ text: String(best.index), dim: true }, { text: next, tone: "good" }, fixed(best.probability, 4)]],
+        explain: (r, c) =>
+          r || c > 2
+            ? null
+            : {
+                meaning: `The token greedy decoding picks: the single most probable one, ${quote(next)}.`,
+                formula: "next = argmax p; a tie keeps the earlier token",
+                worked: `p[${best.index}] = ${fixed(best.probability, 4)}${m.ranked[1] ? ` beats the runner-up ${quote(m.ranked[1].token)} at ${fixed(m.ranked[1].probability, 4)}` : ""}`,
+              },
       }),
       tableBlock({
         id: "window",
@@ -137,13 +150,30 @@ export default {
           { text: t, tone: p === after.length - 1 ? "good" : undefined },
         ]),
         beside: true,
+        explain: (r, c) => {
+          if (c > 1 || after[r] === undefined || (c === 0 && win[r] === undefined)) return null;
+          if (c === 0)
+            return {
+              meaning: `The token at position ${r} of the current window${drop && r === 0 ? "; it falls out when the new token is appended" : ""}.`,
+              formula: `window = the last ${CONTEXT} tokens`,
+              worked: `window[${r}] = ${quote(win[r])}`,
+            };
+          return {
+            meaning: `Position ${r} of the next window, the input of the next run.`,
+            formula: `[...window, next].slice(-${CONTEXT})`,
+            worked: drop
+              ? `${win.length} + 1 = ${win.length + 1} tokens, more than ${CONTEXT}, so everything moves up one: ${quote(after[r])}`
+              : `${win.length} + 1 = ${win.length + 1} tokens fit in ${CONTEXT}: ${quote(after[r])}`,
+          };
+        },
       }),
     ];
   },
   output: "window",
   links: () => [{ from: "next", to: "window" }],
-  state(frame, { data }) {
-    const m = data.transformer;
+  state(frame, ctx) {
+    const CONTEXT = paramsOf(ctx).context;
+    const m = ctx.data.transformer;
     const V = m.vocabulary.length;
     const shown = Math.min(15, V);
     const rankOf = new Map(m.ranked.map((r, i) => [r.index, i]));
@@ -164,8 +194,9 @@ export default {
       },
     };
   },
-  math(frame, { data }) {
-    const m = data.transformer;
+  math(frame, ctx) {
+    const CONTEXT = paramsOf(ctx).context;
+    const m = ctx.data.transformer;
     const p = m.probabilities;
     const vocab = m.vocabulary;
     const steps = scan(p);
@@ -187,6 +218,7 @@ export default {
     return frame.phase === "Run again" ? [] : lines;
   },
   Stage({ ctx, frame }) {
+    const CONTEXT = paramsOf(ctx).context;
     const m = ctx.data.transformer;
     const generated = ctx.generatedTokens ?? [];
     const p = m.probabilities;

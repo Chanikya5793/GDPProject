@@ -1,21 +1,42 @@
 import { Chars, Panel, Table, Tag } from "../../kit.jsx";
-import { ALIASES, DAYS, MONTHS, STOP_WORDS, normalize, termSteps, tokenize } from "../../../engine/pipeline.js";
-import { indexed, plural, revealState, slotRow } from "./util.js";
+import { DAYS, MONTHS, PLANNER_DEFAULTS, normalize, termSteps, tokenize } from "../../../engine/pipeline.js";
+import { indexed, isDefault, paramsOf, plural, revealState, slotRow, tunedNote } from "./util.js";
 import { tableBlock } from "../../../map/blocks.js";
 
 const REASON_LINE = { "stop word": 2, number: 3, punctuation: 4, "month name": 5, "weekday name": 6 };
 const CHECK = {
-  "stop word": "STOP_WORDS.has(token)",
+  "stop word": "stopWords.has(token)",
   number: "starts with a digit",
   punctuation: "starts with neither a letter nor a digit",
-  "month name": "MONTHS.includes(token)",
-  "weekday name": "DAYS.includes(token)",
+  "month name": "dropDates && MONTHS.includes(token)",
+  "weekday name": "dropDates && DAYS.includes(token)",
 };
+
+const words = (n) => plural(n, "word");
+// What differs from the default lists, in one short sentence, or "".
+function settingsSay(p) {
+  const out = [];
+  if (!isDefault(p, "stopWords")) {
+    const def = new Set(PLANNER_DEFAULTS.stopWords);
+    const mine = new Set(p.stopWords);
+    const added = p.stopWords.filter((w) => !def.has(w));
+    const removed = PLANNER_DEFAULTS.stopWords.filter((w) => !mine.has(w));
+    out.push(
+      `Your stop-word list has ${words(p.stopWords.length)}${added.length ? `, adding ${added.slice(0, 4).map((w) => `“${w}”`).join(", ")}` : ""}${
+        removed.length ? `${added.length ? " and" : ","} removing ${removed.slice(0, 4).map((w) => `“${w}”`).join(", ")}` : ""
+      } (the default has ${PLANNER_DEFAULTS.stopWords.length}).`,
+    );
+  }
+  if (!isDefault(p, "aliases"))
+    out.push(`Your aliases: ${Object.entries(p.aliases).map(([a, b]) => `${a} → ${b}`).join(", ") || "none"} (the default is adviser → advisor, phone → call).`);
+  if (!p.dropDates) out.push("Month and weekday names are kept (your setting; the default drops them).");
+  return out.join(" ");
+}
 
 function reasonSay(s) {
   switch (s.reason) {
     case "stop word":
-      return `“${s.token}” is in STOP_WORDS, so the tokenizer already marked it as context. Dropped: it carries no topic.`;
+      return `“${s.token}” is in the stop-word list, so the tokenizer already marked it as context. Dropped: it carries no topic.`;
     case "number":
       return `“${s.token}” starts with a digit, so its kind is number. Dropped: numbers in a title are not matched.`;
     case "punctuation":
@@ -25,8 +46,10 @@ function reasonSay(s) {
     case "weekday name":
       return `“${s.token}” is a keyword, but DAYS includes it. Dropped: dates were already read in Extract.`;
     default:
-      return `“${s.token}”: kind is keyword (starts with a letter, not in STOP_WORDS), not in MONTHS, not in DAYS, so it is kept. ${
-        s.aliased ? `ALIASES maps “${s.token}” → “${s.term}”, so term = “${s.term}”.` : `ALIASES has no entry for it, so term = “${s.term}”.`
+      return `“${s.token}”: kind is keyword (starts with a letter, not a stop word), ${
+        [...MONTHS, ...DAYS].includes(s.token) ? "a date word, but dates are kept by your setting" : "not a month or weekday"
+      }, so it is kept. ${
+        s.aliased ? `The aliases map “${s.token}” → “${s.term}”, so term = “${s.term}”.` : `No alias for it, so term = “${s.term}”.`
       }`;
   }
 }
@@ -36,27 +59,31 @@ const mod = {
   source: [
     ["pipeline", "STOP_WORDS"],
     ["pipeline", "ALIASES"],
+    ["pipeline", "PLANNER_DEFAULTS"],
     ["pipeline", "termSteps"],
     ["pipeline", "terms"],
   ],
   code: [
-    "function termSteps(title) {",
+    "function termSteps(title, { stopWords, aliases, dropDates }) {",
     "  return tokenize(normalize(title)).map(t => {",
-    '    if (t.kind === "context") reason = "stop word"        // STOP_WORDS.has(t.normalized)',
+    '    if (t.kind === "context") reason = "stop word"        // stopWords.has(t.normalized)',
     '    else if (t.kind === "number") reason = "number"',
     '    else if (t.kind === "punctuation") reason = "punctuation"',
-    '    else if (MONTHS.includes(t.normalized)) reason = "month name"',
-    '    else if (DAYS.includes(t.normalized)) reason = "weekday name"',
+    '    else if (dropDates && MONTHS.includes(t.normalized)) reason = "month name"',
+    '    else if (dropDates && DAYS.includes(t.normalized)) reason = "weekday name"',
     "    else reason = null                                     // a keyword: keep it",
-    "    const term = reason ? null : ALIASES[t.normalized] || t.normalized",
+    "    const term = reason ? null : aliases[t.normalized] || t.normalized",
     "    return { token: t.normalized, kept: !reason, reason, term }",
     "  })",
     "}",
     "const terms = termSteps(title).filter(s => s.kept).map(s => s.term)",
   ],
-  frames({ trace }) {
+  frames(ctx) {
+    const { trace } = ctx;
+    const p = paramsOf(ctx);
+    const tuned = settingsSay(p);
     const title = trace.entities.title ?? "";
-    const steps = termSteps(title);
+    const steps = termSteps(title, p);
     const traceTokens = trace.tokens.map((t) => t.normalized);
     if (!steps.length)
       return [
@@ -75,7 +102,7 @@ const mod = {
       {
         phase: "Setup",
         line: [0, 1],
-        say: `The title from Extract is “${title}”. tokenize(normalize(title)) splits it into ${plural(steps.length, "token")}: ${steps.map((s) => `“${s.token}”`).join(", ")}. Each one is checked in the order of the if/else chain.`,
+        say: `The title from Extract is “${title}”. tokenize(normalize(title)) splits it into ${plural(steps.length, "token")}: ${steps.map((s) => `“${s.token}”`).join(", ")}. Each one is checked in the order of the if/else chain.${tuned ? ` ${tuned}` : ""}`,
         vars: { title, "tokens.length": steps.length, terms: [] },
         at: -1,
         traceTokens,
@@ -115,10 +142,11 @@ const mod = {
     return frames;
   },
   Stage({ ctx, frame, frames, seek }) {
+    const p = paramsOf(ctx);
     const title = ctx.trace.entities.title ?? "";
     const text = normalize(title);
-    const steps = termSteps(title);
-    const toks = tokenize(text);
+    const steps = termSteps(title, p);
+    const toks = tokenize(text, p);
     const done = (i) => i < frame.at || (i === frame.at && frame.phase !== "Filter") || frame.phase === "Done";
     const spans = toks
       .map((t, i) => ({
@@ -177,9 +205,9 @@ const mod = {
         <Panel title="Lookup lists" note="The current token is highlighted wherever it appears.">
           <div className="p-lists">
             <div>
-              <span>STOP_WORDS ({STOP_WORDS.size})</span>
+              <span>stop words ({p.stopWords.length}){tunedNote(p, "stopWords", (v) => `${v.length} words`)}</span>
               <div className="p-chips">
-                {[...STOP_WORDS].map((w) => (
+                {p.stopWords.map((w) => (
                   <span key={w} className={`p-chip ${cur?.token === w ? "is-hit" : "is-dim"}`}>
                     {w}
                   </span>
@@ -187,7 +215,7 @@ const mod = {
               </div>
             </div>
             <div>
-              <span>MONTHS</span>
+              <span>MONTHS{p.dropDates ? "" : " (kept: your setting)"}</span>
               <div className="p-chips">
                 {MONTHS.map((w) => (
                   <span key={w} className={`p-chip ${cur?.token === w ? "is-hit" : "is-dim"}`}>
@@ -197,7 +225,7 @@ const mod = {
               </div>
             </div>
             <div>
-              <span>DAYS</span>
+              <span>DAYS{p.dropDates ? "" : " (kept: your setting)"}</span>
               <div className="p-chips">
                 {DAYS.map((w) => (
                   <span key={w} className={`p-chip ${cur?.token === w ? "is-hit" : "is-dim"}`}>
@@ -207,9 +235,9 @@ const mod = {
               </div>
             </div>
             <div>
-              <span>ALIASES</span>
+              <span>aliases{isDefault(p, "aliases") ? "" : " (your setting)"}</span>
               <div className="p-chips">
-                {Object.entries(ALIASES).map(([from, to]) => (
+                {Object.entries(p.aliases).map(([from, to]) => (
                   <span key={from} className={`p-chip ${cur?.token === from ? "is-hit" : "is-dim"}`}>
                     {from} → {to}
                   </span>
@@ -240,7 +268,7 @@ const mod = {
 // ---- Map layer ----
 
 const SHORT_CHECK = {
-  "stop word": "in STOP_WORDS",
+  "stop word": "a stop word",
   number: "starts with a digit",
   punctuation: "not a letter or digit",
   "month name": "in MONTHS",
@@ -252,8 +280,9 @@ const keptIndex = (steps) => {
   return steps.map((x) => (x.kept ? k++ : -1));
 };
 
-function cellsOf(frame, { trace }) {
-  const steps = termSteps(trace.entities.title ?? "");
+function cellsOf(frame, ctx) {
+  const { trace } = ctx;
+  const steps = termSteps(trace.entities.title ?? "", paramsOf(ctx));
   const kept = keptIndex(steps);
   const titleSlot = [[slotRow("title"), 1]];
   if (frame.phase === "Setup") return { slots: { source: titleSlot }, titletokens: { active: steps.map((_, i) => [i, 0]) } };
@@ -271,9 +300,66 @@ function cellsOf(frame, { trace }) {
   };
 }
 
+// ---- Explain a cell ----
+
+const RULE_TEXT = "drop it if it is a stop word, a number, punctuation, or (when dates are dropped) a month or weekday; otherwise keep it";
+
+function checkWorked(x, p) {
+  switch (x.reason) {
+    case "stop word":
+      return `“${x.token}” is one of the ${p.stopWords.length} stop words${tunedNote(p, "stopWords", (v) => `a list of ${v.length}`)} → dropped`;
+    case "number":
+      return `“${x.token}” starts with a digit → dropped`;
+    case "punctuation":
+      return `“${x.token}” starts with neither a letter nor a digit → dropped`;
+    case "month name":
+      return `dropDates is on and “${x.token}” is a month → dropped`;
+    case "weekday name":
+      return `dropDates is on and “${x.token}” is a weekday → dropped`;
+    default:
+      return `“${x.token}” is not a stop word, ${p.dropDates ? "not a month or weekday" : "and dates are kept (your setting)"} → kept`;
+  }
+}
+
+function explainToken(x, p, c) {
+  if (!x) return null;
+  switch (c) {
+    case 0:
+      return { meaning: `A token of the title, “${x.token}”, lowercased. It is checked against each drop rule in turn.` };
+    case 1:
+      return {
+        meaning: `The tokenizer's label for “${x.token}”.`,
+        formula: "number if it starts with a digit; else context if it is a stop word; else keyword if it starts with a letter; else punctuation",
+        worked: `“${x.token}” → ${x.kind}`,
+      };
+    case 2:
+    case 3:
+      return {
+        meaning: x.kept ? `No drop rule applies to “${x.token}”, so it becomes a search term.` : `“${x.token}” is dropped because it is a ${x.reason}.`,
+        formula: RULE_TEXT,
+        worked: checkWorked(x, p),
+      };
+    default:
+      return null;
+  }
+}
+
+function explainTerm(x, k, r, c) {
+  if (!k.length || !x) return null;
+  if (c === 0) return { meaning: `Position ${r} in the list of query terms.` };
+  if (c !== 1) return null;
+  return {
+    meaning: `“${x.term}” is a search term from your request. TF–IDF gives it one dimension.`,
+    formula: "term = aliases[token] || token",
+    worked: x.aliased ? `aliases[“${x.token}”] = “${x.term}”` : `no alias for “${x.token}” → “${x.term}”`,
+  };
+}
+
 Object.assign(mod, {
-  blocks({ trace }) {
-    const steps = termSteps(trace.entities.title ?? "");
+  blocks(ctx) {
+    const { trace } = ctx;
+    const p = paramsOf(ctx);
+    const steps = termSteps(trace.entities.title ?? "", p);
     const k = trace.entities.keywords;
     return [
       tableBlock({
@@ -289,6 +375,7 @@ Object.assign(mod, {
               x.kept ? { text: "kept", tone: "good", bold: true } : { text: x.reason, tone: "warn" },
             ])
           : [[{ text: "(no tokens)", tone: "muted" }, "", "", ""]],
+        explain: (r, c) => explainToken(steps[r], p, c),
       }),
       tableBlock({
         id: "terms",
@@ -302,6 +389,7 @@ Object.assign(mod, {
             })
           : [[{ text: "", dim: true }, { text: "[]", tone: "muted" }]],
         beside: true,
+        explain: (r, c) => explainTerm(steps.filter((x) => x.kept)[r], k, r, c),
       }),
     ];
   },
@@ -309,9 +397,11 @@ Object.assign(mod, {
   state(frame, ctx) {
     return revealState(mod, frame, ctx, cellsOf, { titletokens: () => false, terms: () => false });
   },
-  math(frame, { trace }) {
+  math(frame, ctx) {
+    const { trace } = ctx;
+    const p = paramsOf(ctx);
     const title = trace.entities.title ?? "";
-    const steps = termSteps(title);
+    const steps = termSteps(title, p);
     if (frame.phase === "Setup") return [{ label: "tokenize", terms: [`“${title}”`], result: `${steps.length} token${steps.length === 1 ? "" : "s"}` }];
     if (frame.phase === "Filter") {
       const x = steps[frame.at];
@@ -319,15 +409,15 @@ Object.assign(mod, {
         ["kind = context", x.kind === "context", "stop word"],
         ["kind = number", x.kind === "number", "number"],
         ["kind = punctuation", x.kind === "punctuation", "punctuation"],
-        ["MONTHS.includes", MONTHS.includes(x.token), "month name"],
-        ["DAYS.includes", DAYS.includes(x.token), "weekday name"],
+        [p.dropDates ? "MONTHS.includes" : "dropDates (off)", p.dropDates && MONTHS.includes(x.token), "month name"],
+        [p.dropDates ? "DAYS.includes" : "dropDates (off)", p.dropDates && DAYS.includes(x.token), "weekday name"],
       ];
       const lines = [];
       for (const [label, hit] of checks) {
         lines.push({ label, terms: [`“${x.token}”`], result: String(hit) });
         if (hit) return lines;
       }
-      lines.push({ label: "term", terms: [`ALIASES[“${x.token}”] || “${x.token}”`], result: `“${x.term}”` });
+      lines.push({ label: "term", terms: [`aliases[“${x.token}”] || “${x.token}”`], result: `“${x.term}”` });
       return lines;
     }
     const k = trace.entities.keywords;

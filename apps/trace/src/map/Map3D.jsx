@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { cellAt, COLORS, paintBlock } from "./paint.js";
 import { approach, ease } from "./camera.js";
 import { cellsBox, focusOf, glideOf } from "./track.js";
+import HoverCard, { freeBox, hoverable, placeCard, sameHover } from "./HoverCard.jsx";
 
 // The same blocks as the 2D map, as plates on a floor. x is right, the map's
 // y runs toward the viewer (+z); the camera looks down at an angle.
@@ -37,6 +38,8 @@ function labelTexture(text, color) {
 export default function Map3D({ track, scene, insets, follow, overviewing, onUserMove, onCell, onFail, reduced }) {
   const host = useRef(null);
   const tipRef = useRef(null);
+  const [hover, setHover] = useState(null);
+  const showHover = useRef(setHover);
   const props = useRef({});
   // The render loop reads the latest props from here.
   useLayoutEffect(() => {
@@ -58,6 +61,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     renderer.setClearColor(COLORS.bg);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
+    const el = renderer.domElement;
     renderer.domElement.setAttribute("aria-hidden", "true");
     const maxTexture = Math.min(4096, renderer.capabilities.maxTextureSize);
     const anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -119,6 +123,11 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     );
     world.add(activeFrame);
     activeFrame.visible = false;
+    // Outline of the cell the hover card describes.
+    const hoverMaterial = new THREE.LineBasicMaterial({ color: COLORS.text, transparent: true, opacity: 0.9 });
+    const hoverFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), hoverMaterial);
+    hoverFrame.visible = false;
+    world.add(hoverFrame);
 
     function disposeGroup(group) {
       group.traverse((o) => {
@@ -444,9 +453,8 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       }
       state.labels.children.forEach((label) => {
         const i = label.userData.step;
-        label.material.color.set(
-          i === scene.si ? COLORS.accent : i < scene.si ? COLORS.label : COLORS.faint,
-        );
+        label.material.color.set(i === scene.si ? COLORS.accent : COLORS.label);
+        label.material.opacity = i > scene.si ? 0.6 : 1;
       });
       state.links.children.forEach((line) =>
         line.material.color.set(line.userData.to === scene.si ? COLORS.accent : COLORS.link),
@@ -486,6 +494,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         );
       }
       controls.update();
+      updateHover(scene);
       renderer.render(world, camera);
     }
     raf = requestAnimationFrame(frame);
@@ -494,9 +503,9 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let downAt = null;
-    function pick(e) {
+    function pick(clientX, clientY) {
       const rect = renderer.domElement.getBoundingClientRect();
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointer, camera);
       const plates = [...state.plates.values()];
       const bars = plates.map((p) => p.bars).filter(Boolean);
@@ -513,47 +522,87 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       const cell = cellAt(block, hit.uv.x * block.w, (1 - hit.uv.y) * block.h);
       return cell ? { block, cell } : null;
     }
-    function move(e) {
-      const tip = tipRef.current;
-      const h = pick(e);
-      renderer.domElement.style.cursor = h ? "pointer" : "grab";
-      const view = h && props.current.scene.views.get(h.block.id);
-      if (!h || view?.mode === "ghost" || (view?.done && !view.done(...h.cell))) {
-        tip.hidden = true;
+    // Hover: the card always describes the cell under the pointer now. The
+    // last pointer position is kept and picked again whenever the camera
+    // moves (playback, damping, zoom) or the frame changes under it.
+    let hovered = null;
+    let pointerAt = null;
+    let seenView = "";
+    let seenScene = null;
+    function setHoverTo(next) {
+      if (sameHover(next, hovered)) return;
+      hovered = next;
+      showHover.current(next);
+    }
+    function clearHover() {
+      pointerAt = null;
+      setHoverTo(null);
+    }
+    function updateHover(scene) {
+      const p = pointerAt;
+      if (!p || p.paused) {
+        hoverFrame.visible = false;
         return;
       }
-      const [r, c] = h.cell;
-      const cell = h.block.cell(r, c);
-      if (!cell) return void (tip.hidden = true);
-      tip.innerHTML = "";
-      const title = document.createElement("b");
-      title.textContent = h.block.title ?? h.block.id;
-      const where = document.createElement("span");
-      where.textContent =
-        [h.block.rowLabels?.[r], h.block.colLabels?.[c]].filter((v) => v !== undefined).join(" · ") ||
-        `row ${r}, column ${c}`;
-      const value = document.createElement("code");
-      value.textContent =
-        typeof cell.value === "number" ? (Number.isFinite(cell.value) ? cell.value.toFixed(6) : "−∞") : (cell.full ?? cell.text);
-      tip.append(title, where, value);
-      tip.hidden = false;
-      const rect = renderer.domElement.getBoundingClientRect();
-      tip.style.transform = `translate(${Math.min(e.clientX - rect.left + 14, rect.width - 220)}px, ${e.clientY - rect.top + 16}px)`;
+      const t = controls.target;
+      const view = [camera.position.x, camera.position.y, camera.position.z, t.x, t.y, t.z].map((v) => v.toFixed(3)).join();
+      if (p.dirty || view !== seenView || scene !== seenScene) {
+        p.dirty = false;
+        seenView = view;
+        seenScene = scene;
+        const top = el.getRootNode().elementFromPoint?.(p.cx, p.cy);
+        if (top && top !== el) setHoverTo(null);
+        else {
+          const h = pick(p.cx, p.cy);
+          el.style.cursor = h ? "pointer" : "grab";
+          setHoverTo(hoverable(h, scene));
+        }
+      }
+      hoverFrame.visible = !!hovered;
+      if (!hovered) return;
+      const { block, r, c } = hovered;
+      const plate = state.plates.get(block.id);
+      const lift = plate?.lift ?? 0;
+      const w = block.widths[c];
+      const x = block.x + block.gx + block.offsets[c] + w / 2;
+      const z = block.y + block.gy + r * block.ch + block.ch / 2;
+      const bar = plate?.bars ? plate.bars.userData.height[r * block.cols + c] : 0;
+      const h = Math.max(0.04, bar);
+      hoverFrame.scale.set(w * (bar ? 0.8 : 0.96), h, block.ch * (bar ? 0.8 : 0.96));
+      hoverFrame.position.set(x, 0.16 + lift + h / 2 + 0.005, z);
+      const rect = el.getBoundingClientRect();
+      placeCard(tipRef.current, p.cx - rect.left, p.cy - rect.top, freeBox(rect.width, rect.height, props.current.insets));
     }
-    const down = (e) => (downAt = { x: e.clientX, y: e.clientY });
+    function move(e) {
+      // While a button is held the camera is being dragged: no card.
+      pointerAt = { cx: e.clientX, cy: e.clientY, dirty: true, paused: e.buttons !== 0 };
+      if (e.buttons) setHoverTo(null);
+    }
+    const pause = () => {
+      if (pointerAt) pointerAt.paused = true;
+      setHoverTo(null);
+    };
+    const down = (e) => {
+      downAt = { x: e.clientX, y: e.clientY };
+      pause();
+    };
     function up(e) {
+      pointerAt = { cx: e.clientX, cy: e.clientY, dirty: true };
       if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4) return;
-      const h = pick(e);
+      const h = pick(e.clientX, e.clientY);
       if (h) props.current.onCell?.(h.block.id, ...h.cell);
     }
-    const leave = () => (tipRef.current.hidden = true);
+    const leave = () => clearHover();
+    const hidden = () => document.hidden && clearHover();
     function contextLost(e) {
       e.preventDefault();
       lost = true;
       onFail?.();
     }
-    const el = renderer.domElement;
     el.addEventListener("pointermove", move);
+    el.addEventListener("wheel", pause, { passive: true });
+    window.addEventListener("blur", clearHover);
+    document.addEventListener("visibilitychange", hidden);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointerleave", leave);
@@ -565,7 +614,12 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointerleave", leave);
+      el.removeEventListener("wheel", pause);
+      window.removeEventListener("blur", clearHover);
+      document.removeEventListener("visibilitychange", hidden);
       el.removeEventListener("webglcontextlost", contextLost);
+      hoverFrame.geometry.dispose();
+      hoverMaterial.dispose();
       controls.dispose();
       state.plates.forEach((p) => {
         p.mesh.geometry.dispose();
@@ -599,7 +653,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
 
   return (
     <div className="map" ref={host}>
-      <div ref={tipRef} className="map-tip" hidden />
+      <HoverCard hover={hover} cardRef={tipRef} />
     </div>
   );
 }

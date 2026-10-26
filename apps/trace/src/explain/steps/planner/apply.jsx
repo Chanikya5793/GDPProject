@@ -460,6 +460,80 @@ function cellsOf(frame, ctx) {
   }
 }
 
+// ---- Explain a cell ----
+
+const CHECK_RULE = {
+  "decision.status": "applyProposal runs only when Decide returned a proposal",
+  applyProposal: "no proposal, no write",
+  "valid intent": "intent must be create, update or delete",
+  "title, dates, time present": "a create needs a title, at least one date and a time",
+  "next id = max(N numbers) + 1": "new ids continue after the highest existing N number",
+  "find the target record": "the record named by targetId must still exist",
+  "revision = expectedRevision": "write only if the record has not changed since the preview (compare-and-swap)",
+  "date and time present": "an update needs both a new date and a new time",
+};
+
+function explainCheck(M, r, c) {
+  const x = M.checks[r];
+  if (!x) return null;
+  const rule = CHECK_RULE[x.label];
+  if (c === 0) return { meaning: `A check applyProposal makes before writing: ${rule ?? x.label}.` };
+  return {
+    meaning: c === 1 ? "The value the check looks at in this run." : "The outcome of the check.",
+    formula: rule,
+    worked: `${x.value} → ${x.result?.text ?? x.result}`,
+  };
+}
+
+const FIELD_OF = { 1: "title", 2: "date", 3: "time", 4: "revision" };
+const KIND_MEANING = {
+  same: "unchanged",
+  changed: "changed by this proposal",
+  added: "added by this proposal",
+  deleted: "deleted by this proposal",
+};
+
+function explainRecord(M, ctx, r, c) {
+  const x = M.rows[r];
+  if (!x) return null;
+  const now = x.after ?? x.before;
+  const status = ctx.applied ? "after you confirmed" : M.p && !M.error ? "if you confirm" : "as stored";
+  if (c === 0) return { meaning: `Record ${x.id}, ${KIND_MEANING[x.kind]} (${status}).` };
+  if (c === 5)
+    return {
+      meaning: `What happens to record ${x.id}: ${KIND_MEANING[x.kind]}.`,
+      formula: "compare each record before and after applyProposal",
+      worked:
+        x.kind === "changed"
+          ? Object.values(FIELD_OF)
+              .filter((f) => x.before[f] !== x.after[f])
+              .map((f) => `${f} ${x.before[f]} → ${x.after[f]}`)
+              .join(", ")
+          : x.kind,
+    };
+  const f = FIELD_OF[c];
+  if (!f) return null;
+  if (f === "revision")
+    return {
+      meaning: "A counter that goes up by one on every saved change. Apply uses it to notice edits made after the preview.",
+      formula: "on update: revision = revision + 1; a new record starts at 1",
+      worked:
+        x.kind === "changed" && x.before.revision !== x.after.revision
+          ? `${x.before.revision} + 1 = ${x.after.revision}`
+          : x.kind === "added"
+            ? "new record → 1"
+            : `${now.revision} (unchanged)`,
+    };
+  return {
+    meaning: `The ${f} of record ${x.id}.`,
+    ...(x.kind === "changed" && x.before[f] !== x.after[f]
+      ? { formula: `${f} = proposal.${f}`, worked: `${x.before[f] ?? "unknown"} → ${x.after[f]}` }
+      : x.kind === "added"
+        ? { formula: `${f} = proposal.${f === "date" ? "dates[i]" : f}`, worked: String(now[f]) }
+        : {}),
+  };
+}
+
 const was = (v) => (v === null || v === undefined ? undefined : `was ${v}`);
 
 Object.assign(mod, {
@@ -473,6 +547,7 @@ Object.assign(mod, {
         head: ["check", "value", "result"],
         widths: [3.2, 3, 1.3],
         rows: M.checks.map((c) => [{ text: c.label, align: "left" }, { text: c.value, align: "left" }, c.result]),
+        explain: (r, c) => explainCheck(M, r, c),
       }),
       tableBlock({
         id: "records",
@@ -501,6 +576,7 @@ Object.assign(mod, {
               : { text: r.kind, tone: r.kind === "deleted" ? "warn" : "good", bold: true },
           ];
         }),
+        explain: (r, c) => explainRecord(M, ctx, r, c),
       }),
     ];
   },

@@ -1,5 +1,6 @@
 // Helpers shared by the copilot step modules.
-import { QUERY_CHARS, retrieve } from "../../../engine/copilot.js";
+import { COPILOT_DEFAULTS, retrieve } from "../../../engine/copilot.js";
+import { changed, SETTINGS } from "../../../tune/schema.js";
 
 export const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 export const short = (text, n = 60) => {
@@ -8,13 +9,55 @@ export const short = (text, n = 60) => {
 };
 export const num = (n) => Number(n).toLocaleString("en-US");
 
+// The copilot search settings this ctx runs with. Contexts built without
+// params (tests, older callers) run on the server's defaults.
+export const paramsOf = (ctx) => ctx.params?.copilot ?? COPILOT_DEFAULTS;
+export const DEFAULT_PARAMS = COPILOT_DEFAULTS;
+
+// Changed copilot settings: keys, and their labels for prose.
+export const tunedKeys = (ctx) => changed("copilot", paramsOf(ctx));
+export const isWhatIf = (ctx) => tunedKeys(ctx).length > 0;
+// Labels of the changed settings that reach a step (all of them without one).
+export const tunedLabels = (ctx, stepId) => {
+  const keys = new Set(tunedKeys(ctx));
+  return SETTINGS.copilot
+    .filter((s) => keys.has(s.key) && (!stepId || s.steps.includes(stepId)))
+    .map((s) => s.label.toLowerCase());
+};
+// A sentence for narration when this step is a what-if, else "".
+export const whatIfNote = (ctx, stepId) => {
+  const labels = tunedLabels(ctx, stepId);
+  return labels.length ? ` What-if: these numbers use your settings (${labels.join(", ")}), not the server's.` : "";
+};
+
 // The validated message and the search query cut from it.
 export function messageOf(ctx) {
   const c = ctx.copilot;
   const raw = c.message ?? "";
   const trimmed = raw.trim();
-  return { raw, trimmed, query: trimmed.slice(0, QUERY_CHARS), history: c.history ?? [], focus: c.focus ?? null };
+  const p = paramsOf(ctx);
+  return { raw, trimmed, query: trimmed.slice(0, p.queryChars), history: c.history ?? [], focus: c.focus ?? null };
 }
+
+// The query vector drawn as a grid: about 4 columns for every 3 rows, a
+// multiple of 8 wide, cells shrinking as the grid grows.
+export function gridOf(dimensions) {
+  const cols = Math.min(64, Math.max(8, Math.round(Math.sqrt((dimensions * 4) / 3) / 8) * 8));
+  const rows = Math.ceil(dimensions / cols);
+  const shrink = Math.min(1, 32 / cols);
+  return {
+    cols,
+    rows,
+    cellOf: (slot) => [Math.floor(slot / cols), slot % cols],
+    slotAt: (r, c) => r * cols + c,
+    cellW: 0.62 * Math.max(0.5, shrink),
+    cellH: 0.5 * Math.max(0.5, shrink),
+  };
+}
+
+// Number formats for worked arithmetic.
+export const f3 = (v) => Number(v).toFixed(3);
+export const weightText = (p, count) => (p.logWeight ? `1 + ln(${count})` : `${count}`);
 
 // Rows of the "cmessage" block, read by later steps.
 export const MESSAGE_ROW = { length: 0, history: 1, focus: 2, timezone: 3, query: 4 };
@@ -23,15 +66,20 @@ export const sampleNote = (ctx) => (ctx.copilot.demo ? " This is the sample exch
 
 // The browser's retrieval. Records not approved for AI are left out before
 // scoring: the copilot never reads them, and neither does this page.
+// Cached per exchange and per settings object, so a tuned ctx and its
+// baseline never share a result.
 const cache = new WeakMap();
 export function retrievalOf(ctx) {
   const c = ctx.copilot;
-  let r = cache.get(c);
+  const p = paramsOf(ctx);
+  let byParams = cache.get(c);
+  if (!byParams) cache.set(c, (byParams = new WeakMap()));
+  let r = byParams.get(p);
   if (!r) {
     const records = c.records ?? [];
     const hidden = records.filter((x) => x.approvedForAi === false);
     const readable = records.filter((x) => x.approvedForAi !== false);
-    const result = retrieve(c.message ?? "", records);
+    const result = retrieve(c.message ?? "", records, p);
     const candidates = result.candidates ?? [];
     r = {
       ...result,
@@ -41,7 +89,7 @@ export function retrievalOf(ctx) {
       candidates,
       keptRows: result.kept.map((k) => candidates.indexOf(k)),
     };
-    cache.set(c, r);
+    byParams.set(p, r);
   }
   return r;
 }
@@ -80,13 +128,13 @@ export const serverSearchesOf = (ctx) => ctx.copilot.response?.retrieval?.search
 export const OUTCOME_TEXT = {
   kept: "kept",
   too_far: "too far (distance over the cutoff)",
-  type_not_indexed: "type not indexed in your settings",
+  type_not_indexed: "type not indexed in your planner's AI settings",
   type_filtered: "not the type this lookup asked for",
   missing: "record no longer exists",
   not_approved: "not approved for AI",
   stale_revision: "vector older than the record (stale revision)",
   no_shared_word: "no shared word (hash collision)",
-  limit_reached: "limit of 5 already reached",
+  limit_reached: "the limit of sources was already reached",
 };
 
 // Every server candidate as one row, across all of the turn's searches.
@@ -98,6 +146,8 @@ export function serverRows(ctx) {
       ...c,
       search: si,
       query: search.query,
+      limit: search.limit,
+      maxDistance: search.max_distance,
       title: c.record_id === null || c.record_id === undefined
         ? null
         : titles.get(String(c.record_id)) ?? `record ${c.record_id} (not in this browser)`,

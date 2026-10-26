@@ -20,6 +20,9 @@ import { STEP_MODULES } from "./explain/steps/index.js";
 import { show } from "./explain/kit.jsx";
 import StepActions from "./StepActions.jsx";
 import SourcePanel, { stripComment } from "./explain/SourcePanel.jsx";
+import Glossed from "./teach/Glossed.jsx";
+import { CompareLine, LessonBlock, TunedChip } from "./teach/Lesson.jsx";
+import { compareSteps } from "./tune/compare.js";
 
 const BASE_MS = 1250;
 const INTRO = {
@@ -36,7 +39,8 @@ const SPEEDS = [0.5, 1, 2, 4];
 export const WIDE = 1100;
 const guideWidth = (w) => Math.min(400, w * 0.3);
 const sourceWidth = (w) => Math.min(460, w * 0.32);
-function useInsets(withSource) {
+const TUNE_WIDTH = 380;
+function useInsets(withSource, withTune) {
   const [size, setSize] = useState(() => ({ w: innerWidth, h: innerHeight }));
   useEffect(() => {
     const on = () => setSize({ w: innerWidth, h: innerHeight });
@@ -45,9 +49,11 @@ function useInsets(withSource) {
   }, []);
   return useMemo(() => {
     if (size.w < 900) return { left: 0, right: 0, top: 108, bottom: Math.round(size.h * 0.44) + 64 };
-    const right = withSource && size.w >= WIDE ? sourceWidth(size.w) + 24 : 16;
+    const source = withSource && size.w >= WIDE ? sourceWidth(size.w) + 24 : 16;
+    // The Tune panel sits over the right edge; the map frames content beside it.
+    const right = withTune ? Math.max(source, TUNE_WIDTH + 24) : source;
     return { left: guideWidth(size.w) + 24, right, top: 72, bottom: 96, wide: size.w >= WIDE };
-  }, [size, withSource]);
+  }, [size, withSource, withTune]);
 }
 
 // A paragraph that folds to two lines once playback starts, with a toggle.
@@ -106,6 +112,7 @@ export default function TrackView({
   accent = null,
   params = null,
   onTune = null,
+  tuneOpen = false,
 }) {
   // Canvas colours follow the page theme; renderers are rebuilt on change.
   useMemo(() => setPalette(theme, accent), [theme, accent]);
@@ -127,7 +134,7 @@ export default function TrackView({
   // Once playback has begun, the fixed intro text steps back and the text
   // that changes with each frame takes the focus.
   const [startedRun, setStartedRun] = useState(false);
-  const insets = useInsets(detail && !flow);
+  const insets = useInsets(detail && !flow, tuneOpen);
   const showSource = detail && !flow && insets.wide;
   const setDetailed = (on) => {
     setDetail(on);
@@ -227,7 +234,7 @@ export default function TrackView({
       // Inside a shadow root the window sees the host; the path has the real target.
       const origin = e.composedPath?.()[0] ?? e.target;
       const target = origin instanceof Element ? origin : null;
-      if (target?.closest("input,textarea,select,[contenteditable]")) return;
+      if (target?.closest("input,textarea,select,[contenteditable],.tune")) return;
       const k = e.key;
       if (k === " " && !target?.closest("button,a")) {
         e.preventDefault();
@@ -268,12 +275,16 @@ export default function TrackView({
     setOverviewing(false);
   }, []);
 
+  const compare = useMemo(() => compareSteps(steps, ctx), [steps, ctx]);
+  const stepCompare = compare.get(step.id);
+  // Each glossary term is linked once per guide render.
+  const seen = new Set();
   const vars = Object.entries(frame.vars ?? {});
   const previous = track.frames[at - 1]?.si === scene.si ? track.frames[at - 1].frame.vars ?? {} : {};
   const lines = new Set([].concat(frame.line ?? []));
   const Renderer = view === "3d" ? Map3D : Map2D;
   return (
-    <div className="track" style={accent ? { "--accent": accent } : undefined}>
+    <div className={`track ${tuneOpen ? "has-tune" : ""}`} style={accent ? { "--accent": accent } : undefined}>
       <div className="track-map" data-background>
         {flow ? (
           <FlowView
@@ -288,6 +299,9 @@ export default function TrackView({
             }}
             detail={detail}
             reduced={reduced}
+            compare={compare}
+            params={params}
+            onTune={onTune}
           />
         ) : (
         <Renderer
@@ -340,7 +354,14 @@ export default function TrackView({
                     Now · {step.algorithm}
                     {step.badge && <Badge kind={step.badge} />}
                   </p>
-                  <p className="g-live-text">{step.plain ?? step.summary}</p>
+                  <p className="g-live-text">
+                    <Glossed text={step.plain ?? step.summary} seen={seen} />
+                  </p>
+                  {step.tuned && (
+                    <p className="g-badges">
+                      <TunedChip step={step} mode={mode} onTune={onTune} />
+                    </p>
+                  )}
                 </section>
               ) : (
                 <p className="g-at">
@@ -351,10 +372,11 @@ export default function TrackView({
           ) : (
             <>
               <h1>{step.name}</h1>
-              <p className="g-algo">
-                {step.algorithm}
+              <div className="g-badges">
+                <p className="g-algo">{step.algorithm}</p>
                 {step.badge && <Badge kind={step.badge} />}
-              </p>
+                <TunedChip step={step} mode={mode} onTune={onTune} />
+              </div>
               <Intro text={detail ? step.summary : step.plain} folded={started} />
               {detail && <code className="g-formula">{step.formula}</code>}
             </>
@@ -369,7 +391,7 @@ export default function TrackView({
               </span>
             </p>
             <p className="g-say" key={at}>
-              {frame.say}
+              <Glossed text={frame.say} seen={seen} />
             </p>
             {detail && <MathLines lines={module?.math?.(frame, ctx)} />}
             {showSource && module && (
@@ -379,11 +401,20 @@ export default function TrackView({
             )}
           </section>
         )}
+        {stepCompare && (flow ? started : true) && (
+          <section className="g-compare" aria-label="Default settings compared with yours">
+            <h3>Your settings changed this step</h3>
+            <CompareLine compare={stepCompare} />
+          </section>
+        )}
         <StepActions
           {...actionProps}
           stepId={step.id}
           actions={{ ...actionProps.actions, goTo: (id) => toStep(steps.findIndex((s) => s.id === id)) }}
         />
+        {(!flow || started) && (
+          <LessonBlock key={step.id} stepId={step.id} mode={mode} ctx={ctx} detail={detail} params={params} onTune={onTune} seen={seen} />
+        )}
         {module && detail && !flow && !showSource && (
           <section className="g-tabs">
             <div role="tablist" aria-label="Details">

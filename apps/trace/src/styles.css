@@ -260,6 +260,9 @@ kbd {
   font-size: 13.5px;
   color: var(--soft);
 }
+.topbar-tools > button span {
+  white-space: nowrap;
+}
 .topbar-tools > button:hover {
   background: var(--panel-2);
   color: var(--text);
@@ -409,35 +412,6 @@ kbd {
 .map canvas:active {
   cursor: grabbing;
 }
-.map-tip {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 3;
-  display: grid;
-  gap: 2px;
-  max-width: 260px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--glass);
-  pointer-events: none;
-  font-size: 12.5px;
-  box-shadow: 0 8px 24px var(--shadow);
-}
-.map-tip b {
-  font-weight: 600;
-  color: var(--text);
-}
-.map-tip span {
-  color: var(--muted);
-}
-.map-tip code {
-  color: var(--text);
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-}
-
 .guide {
   position: fixed;
   z-index: 10;
@@ -944,6 +918,11 @@ kbd {
   gap: 26px;
   align-content: start;
   background: radial-gradient(ellipse at 70% 0%, var(--well) 0%, var(--bg) 60%);
+}
+@media (min-width: 901px) {
+  .track.has-tune .flow {
+    padding-right: 416px;
+  }
 }
 .flow-group h3 {
   display: flex;

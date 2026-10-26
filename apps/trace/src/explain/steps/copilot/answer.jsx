@@ -47,6 +47,15 @@ function disclosureRows(v) {
   ];
 }
 
+const DISCLOSE_NOTES = {
+  attempted: "Whether the server searched your planner for this reply.",
+  result_count: "How many records the server's search kept, on its default settings.",
+  entity_types: "Which record types the server's index covers, from your planner's AI settings.",
+  abstained: "True when the server refused to answer from the sources, for example when the answer cited ids it was never given.",
+  "time to first text": "Measured in your browser: from sending the message to the first text arriving.",
+  "total time": "Measured in your browser: from sending the message to the whole reply arriving.",
+};
+
 const FIELD_NOTES = {
   tool_requests: "lookups the model wants before it answers; empty in the final reply.",
   answer: "the text you read.",
@@ -177,6 +186,15 @@ export default {
           { text: rule, dim: true },
           { text: value, tone: value === "—" || value === "not returned" ? "muted" : undefined, full: value },
         ]),
+        explain: (r, c) => {
+          const [field, rule, value] = shapeRows(v)[r] ?? [];
+          if (!field) return null;
+          return {
+            meaning: `${field}: ${FIELD_NOTES[field]}`,
+            formula: c === 1 ? rule : "GeneratedAnswer { tool_requests, answer, citation_ids, needs_clarification, actions }",
+            worked: `${field} = ${value}`,
+          };
+        },
       }),
       tableBlock({
         id: "canswer",
@@ -186,6 +204,15 @@ export default {
         rows: v.lines.length
           ? v.lines.map((l, i) => [{ text: String(i + 1), dim: true }, { text: l, align: "left", full: l }])
           : [["", { text: "nothing was generated", tone: "muted", align: "left" }]],
+        explain: (r) => {
+          const l = v.lines[r];
+          if (l === undefined) return null;
+          return {
+            meaning: `Line ${r + 1} of the answer you read, wrapped at ${WIDTH} characters for the map. The text is the real reply.`,
+            formula: "answer = out.answer.replace(/\\[S\\d+\\]/g, \"\")",
+            worked: `${l.length} characters; the whole answer is ${num(v.res.answer.length)}`,
+          };
+        },
       }),
       tableBlock({
         id: "ccitations",
@@ -201,6 +228,17 @@ export default {
               { text: c.excerpt, align: "left", full: c.excerpt },
             ])
           : [["", "", { text: v.res ? "no citations" : "no reply", tone: "muted" }, "", ""]],
+        explain: (r, c) => {
+          const x = v.cites[r];
+          if (!x) return null;
+          return [
+            { meaning: "The label the source carried in the prompt. The answer used it.", formula: "citations = sources ∩ answer.citation_ids", worked: `${x.citation_id} ∈ citation_ids` },
+            { meaning: "The kind of record cited.", formula: "entity_type", worked: x.entity_type },
+            { meaning: "The cited record's title.", formula: "record.title", worked: `“${x.title}” (id ${x.record_id})` },
+            { meaning: "The record's revision when it was read. A later change gets a new number.", formula: "record.revision", worked: `revision ${x.revision}` },
+            { meaning: "The part of the record shown with the citation.", formula: "excerpt(recordText(record))", worked: short(x.excerpt, 120) },
+          ][c];
+        },
       }),
       tableBlock({
         id: "cdisclose",
@@ -211,6 +249,15 @@ export default {
           { text: f, align: "left", dim: true },
           { text: val, tone: val === "—" || val === "not measured" ? "muted" : "number", full: val },
         ]),
+        explain: (r) => {
+          const [field, val] = disclosureRows(v)[r] ?? [];
+          if (!field) return null;
+          return {
+            meaning: DISCLOSE_NOTES[field],
+            formula: r < 4 ? `response.retrieval.${field}` : "time = event − sent",
+            worked: `${field} = ${val}`,
+          };
+        },
       }),
     ];
   },

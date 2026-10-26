@@ -2,9 +2,13 @@ import { useState } from "react";
 import { Expr, Matrix, Panel, fixed } from "../../kit.jsx";
 import { W_K, W_Q, SCALE } from "../../../engine/transformer.js";
 import { all, matrixBlock, row } from "../../../map/blocks.js";
+import { operand, paramsOf, quote, tunedSay } from "./shared.jsx";
 
 const DIMS = ["d0", "d1", "d2", "d3"];
 const CELL_ROWS = 2; // rows 0..CELL_ROWS-1 get one frame per cell
+// The divisor in force: √4 = 2, or 1 when scaling is off.
+const scaleOf = (ctx) => (paramsOf(ctx).scaleScores ? SCALE : 1);
+const dotTerms = (m, i, j, digits = 3) => m.query[i].map((v, d) => `${operand(v, digits)}×${operand(m.key[j][d], digits)}`);
 
 // q[j] = Σ_d x[d]·W[d][j]; zero weights are left out of the printed sum.
 function projection(x, W, j, name) {
@@ -28,16 +32,20 @@ export default {
     "K = X.map(x => vecMat(x, W_K))",
     "for (let i = 0; i < n; i++)            // query token",
     "  for (let j = 0; j < n; j++)          // key token",
-    "    S[i][j] = dot(Q[i], K[j]) / √4     // √4 = 2",
+    "    S[i][j] = dot(Q[i], K[j]) / scale  // scale = scaleScores ? √4 = 2 : 1",
   ],
-  frames({ data }) {
-    const m = data.transformer;
+  frames(ctx) {
+    const m = ctx.data.transformer;
     const n = m.tokens.length;
+    const p = paramsOf(ctx);
+    const scale = scaleOf(ctx);
     const frames = [
       {
         phase: "Setup",
         line: 0,
-        say: `X has ${n} rows (one per token) and 4 columns. W_Q and W_K are fixed 4 × 4 matrices: each output column mixes two input columns.`,
+        say: `X has ${n} rows (one per token) and 4 columns. W_Q and W_K are fixed 4 × 4 matrices: each output column mixes two input columns.${
+          p.scaleScores ? "" : " Scaling is off, so each score is the raw dot product, not divided by √4 = 2."
+        }${tunedSay(p, ["merges", "context", "positional"])}`,
         vars: { n, d: 4 },
         proj: -1,
         i: -1,
@@ -59,11 +67,11 @@ export default {
     for (let i = 0; i < n; i++) {
       if (i < CELL_ROWS)
         for (let j = 0; j < n; j++) {
-          const raw = m.scores[i][j] * SCALE;
+          const raw = m.scores[i][j] * scale;
           frames.push({
             phase: "Score",
             line: [3, 4, 5],
-            say: `S[${i}][${j}]: dot the query of “${m.tokens[i]}” with the key of “${m.tokens[j]}” (four products, summed) = ${fixed(raw)}, then ÷ 2 = ${fixed(m.scores[i][j])}.`,
+            say: `S[${i}][${j}]: dot the query of “${m.tokens[i]}” with the key of “${m.tokens[j]}” (four products, summed) = ${fixed(raw)}${p.scaleScores ? `, then ÷ 2 = ${fixed(m.scores[i][j])}` : `. Scaling is off, so S[${i}][${j}] = ${fixed(m.scores[i][j])}`}.`,
             vars: { i, j, "dot(Q[i], K[j])": +raw.toFixed(4), "S[i][j]": +m.scores[i][j].toFixed(4) },
             proj: n,
             i,
@@ -86,7 +94,7 @@ export default {
     frames.push({
       phase: "Done",
       line: 5,
-      say: `S is ${n} × ${n}. Row i holds how strongly token i's query lines up with every key. Scores to later tokens exist here; the next step masks them.`,
+      say: `S is ${n} × ${n}. Row i holds how strongly token i's query lines up with every key. Scores to later tokens exist here; ${p.causalMask ? "the next step masks them" : "the causal mask is off, so the next step keeps them"}.`,
       vars: { "S.shape": `${n} × ${n}` },
       proj: n,
       i: n,
@@ -94,22 +102,53 @@ export default {
     });
     return frames;
   },
-  blocks({ data }) {
-    const m = data.transformer;
+  blocks(ctx) {
+    const m = ctx.data.transformer;
+    const on = paramsOf(ctx).scaleScores;
+    const scale = scaleOf(ctx);
     const labels = m.tokens.map((t, i) => `${i} ${t}`);
     const q = ["0", "1", "2", "3"];
+    const weight = (W, name, what) => (r, c) =>
+      W[r]?.[c] === undefined
+        ? null
+        : {
+            meaning: `How much input dimension ${r} feeds column ${c} of each token's ${what}. Fixed, not learned.`,
+            formula: `${what === "query" ? "q" : "k"}[j] = Σ_d x[d] × ${name}[d][j]`,
+            worked: `${name}[${r}][${c}] = ${fixed(W[r][c], 1)}${W[r][c] ? "" : ", so x" + r + " does not reach this column"}`,
+          };
+    const projected = (M, W, name, what) => (r, c) => {
+      if (M[r]?.[c] === undefined) return null;
+      const x = m.positions[r];
+      const terms = x.map((v, d) => (W[d][c] ? `${operand(v)}×${operand(W[d][c], 1)}` : null)).filter(Boolean);
+      return {
+        meaning: `Column ${c} of the ${what} of ${quote(m.tokens[r])}: ${what === "query" ? "what this token is looking for" : "what this token offers to others"}.`,
+        formula: `${name}[j] = Σ_d x[d] × W_${name.toUpperCase()}[d][j]`,
+        worked: `${name}[${c}] = ${terms.join(" + ")} = ${fixed(M[r][c])}`,
+      };
+    };
     return [
-      matrixBlock({ id: "WQ", title: "W_Q (4 × 4)", data: W_Q, rowLabels: DIMS, colLabels: q, digits: 1 }),
-      matrixBlock({ id: "WK", title: "W_K (4 × 4)", data: W_K, rowLabels: DIMS, colLabels: q, digits: 1, beside: true }),
-      matrixBlock({ id: "Q", title: "Q = X · W_Q", data: m.query, rowLabels: labels, colLabels: DIMS }),
-      matrixBlock({ id: "K", title: "K = X · W_K", data: m.key, rowLabels: labels, colLabels: DIMS, beside: true }),
+      matrixBlock({ id: "WQ", title: "W_Q (4 × 4)", data: W_Q, rowLabels: DIMS, colLabels: q, digits: 1, explain: weight(W_Q, "W_Q", "query") }),
+      matrixBlock({ id: "WK", title: "W_K (4 × 4)", data: W_K, rowLabels: DIMS, colLabels: q, digits: 1, beside: true, explain: weight(W_K, "W_K", "key") }),
+      matrixBlock({ id: "Q", title: "Q = X · W_Q", data: m.query, rowLabels: labels, colLabels: DIMS, explain: projected(m.query, W_Q, "q", "query") }),
+      matrixBlock({ id: "K", title: "K = X · W_K", data: m.key, rowLabels: labels, colLabels: DIMS, beside: true, explain: projected(m.key, W_K, "k", "key") }),
       matrixBlock({
         id: "S",
-        title: "S = Q · Kᵀ / √4   (row: query token, column: key token)",
+        title: on ? "S = Q · Kᵀ / √4   (row: query token, column: key token)" : "S = Q · Kᵀ, unscaled   (row: query token, column: key token)",
         data: m.scores,
         rowLabels: labels,
         colLabels: m.tokens.map((_, i) => String(i)),
         cellW: 1.2,
+        explain: (r, c) => {
+          if (m.scores[r]?.[c] === undefined) return null;
+          const raw = m.scores[r][c] * scale;
+          return {
+            meaning: `How strongly ${quote(m.tokens[r])} (query, row ${r}) lines up with ${quote(m.tokens[c])} (key, column ${c}), before softmax.`,
+            formula: on ? "score = q · k / √4" : "score = q · k (scaling off)",
+            worked: on
+              ? `S[${r}][${c}] = (${dotTerms(m, r, c, 2).join(" + ")}) / 2 = ${fixed(raw, 4)} / 2 = ${fixed(m.scores[r][c], 4)}`
+              : `S[${r}][${c}] = ${dotTerms(m, r, c, 2).join(" + ")} = ${fixed(m.scores[r][c], 4)}`,
+          };
+        },
       }),
     ];
   },
@@ -141,9 +180,10 @@ export default {
       },
     };
   },
-  math(frame, { data }) {
-    const m = data.transformer;
+  math(frame, ctx) {
+    const m = ctx.data.transformer;
     const n = m.tokens.length;
+    const scale = scaleOf(ctx);
     if (frame.proj >= 0 && frame.proj < n) {
       const x = m.positions[frame.proj];
       return [0, 1, 2, 3].flatMap((j) => {
@@ -157,19 +197,22 @@ export default {
     }
     if (frame.i < 0 || frame.i >= n) return [];
     const j = frame.i < CELL_ROWS ? frame.j : frame.i;
-    const raw = m.scores[frame.i][j] * SCALE;
+    const raw = m.scores[frame.i][j] * scale;
     return [
       {
         label: `Q[${frame.i}]·K[${j}]`,
         terms: m.query[frame.i].map((v, d) => `${fixed(v, 2)}×${fixed(m.key[j][d], 2)}`),
         result: fixed(raw, 4),
       },
-      { label: `S[${frame.i}][${j}]`, terms: [fixed(raw, 4), "2"], op: "÷", result: fixed(m.scores[frame.i][j], 4) },
+      scale === 1
+        ? { label: `S[${frame.i}][${j}] (not scaled)`, terms: [fixed(raw, 4)], result: fixed(m.scores[frame.i][j], 4) }
+        : { label: `S[${frame.i}][${j}]`, terms: [fixed(raw, 4), "2"], op: "÷", result: fixed(m.scores[frame.i][j], 4) },
     ];
   },
   Stage({ ctx, frame, frames, seek }) {
     const m = ctx.data.transformer;
     const n = m.tokens.length;
+    const scale = scaleOf(ctx);
     const [picked, setPicked] = useState(null);
     const labels = m.tokens.map((t, i) => `${i} ${t}`);
     const p = frame.proj >= 0 && frame.proj < n ? frame.proj : null;
@@ -231,7 +274,7 @@ export default {
           <>
             <Matrix
               className="is-square"
-              caption="S = Q · Kᵀ / √4 (rows: query token, columns: key token). Click a cell."
+              caption={`S = Q · Kᵀ${scale === 1 ? ", unscaled" : " / √4"} (rows: query token, columns: key token). Click a cell.`}
               data={m.scores}
               rowLabels={labels}
               colLabels={m.tokens.map((_, i) => i)}
@@ -249,9 +292,11 @@ export default {
                 <Expr
                   label="Q[i] · K[j]"
                   terms={m.query[cell[0]].map((q, d) => `${fixed(q)}×${fixed(m.key[cell[1]][d])}`)}
-                  result={fixed(m.scores[cell[0]][cell[1]] * SCALE, 4)}
+                  result={fixed(m.scores[cell[0]][cell[1]] * scale, 4)}
                 />
-                <Expr label="÷ √4" terms={[fixed(m.scores[cell[0]][cell[1]] * SCALE, 4), "2"]} op="÷" result={fixed(m.scores[cell[0]][cell[1]], 4)} />
+                {scale !== 1 && (
+                  <Expr label="÷ √4" terms={[fixed(m.scores[cell[0]][cell[1]] * scale, 4), "2"]} op="÷" result={fixed(m.scores[cell[0]][cell[1]], 4)} />
+                )}
               </Panel>
             )}
           </>
