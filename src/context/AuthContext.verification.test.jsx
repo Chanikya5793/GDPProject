@@ -80,6 +80,36 @@ describe('configured verification flow', () => {
     expect(JSON.parse(sessionStorage.getItem('nw_verification_status')).uid).toBe('b')
   })
 
+  it.each(['focus', 'visibilitychange'])('checks after a one-hour wait on %s', async event => {
+    mock.auth.currentUser = recipient()
+    await mount()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60 * 60_000)
+    const visible = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    try {
+      await act(async () => { (event === 'focus' ? window : document).dispatchEvent(new Event(event)) })
+      expect(mock.reload).toHaveBeenCalledTimes(1)
+    } finally {
+      clock.mockRestore()
+      visible.mockRestore()
+    }
+  })
+
+  it('coalesces overlapping foreground verification checks', async () => {
+    mock.auth.currentUser = recipient()
+    await mount()
+    let finish
+    mock.reload.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const visible = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    try {
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(mock.reload).toHaveBeenCalledTimes(1)
+      await act(async () => { finish() })
+    } finally { visible.mockRestore() }
+  })
+
   it('refreshes a stale ID token even when the restored profile already says verified', async () => {
     mock.auth.currentUser = { ...recipient(), emailVerified: true }
     await mount()

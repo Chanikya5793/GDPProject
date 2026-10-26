@@ -39,20 +39,32 @@ export default function VerifyEmailBanner() {
   useEffect(() => {
     if (!unverified) return undefined
     let cancelled = false
+    let checking = false
     const tick = async () => {
-      if (document.visibilityState === 'hidden') return
+      if (cancelled || checking || document.visibilityState === 'hidden') return
       if (Date.now() - mountedAt.current > POLL_FOR_MS) return
+      checking = true
       try {
         const refreshed = await refreshUser()
         if (!cancelled && refreshed?.emailVerified) window.location.reload()
       } catch { /* try again next tick */ }
+      finally { checking = false }
+    }
+    // Mail can arrive after the polling budget expires. Returning from the
+    // mail client must always check again and start a fresh bounded window.
+    const resume = () => {
+      if (document.visibilityState === 'hidden') return
+      mountedAt.current = Date.now()
+      void tick()
     }
     const timer = setInterval(tick, POLL_MS)
-    document.addEventListener('visibilitychange', tick)
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('focus', resume)
     return () => {
       cancelled = true
       clearInterval(timer)
-      document.removeEventListener('visibilitychange', tick)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('focus', resume)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unverified])

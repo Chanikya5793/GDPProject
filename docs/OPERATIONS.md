@@ -86,6 +86,16 @@ records. It supplies the Google quota-project header required by this project.
 `dnsInfo.customDomain` is the applied verified domain; `customDomainState` describes
 a pending verification. `NOT_STARTED` alone does not mean an applied domain is broken.
 
+The requester reports messages reaching Junk after approximately one hour. This
+establishes the observed symptom, not whether Firebase's queue, SMTP deferral, or
+Microsoft processing caused the delay. Collect `Date`, all `Received` lines,
+`Authentication-Results`, and `X-Forefront-Antispam-Report` from an existing message,
+plus the original request time/timezone. In Outlook web: open the message → More
+options → View → View message details. Omit the body and verification URL. The
+`Received` chain and Microsoft trace establish where the delay occurred; filtering
+headers help explain the Junk verdict. No SMTP service or credential was found in
+this project's source, Secret Manager names, or repository secret/variable names.
+
 For a missing message, distinguish these cases:
 
 1. A rejected send: use the banner's network, rate limit, quota, or expired-session
@@ -100,6 +110,11 @@ For a missing message, distinguish these cases:
 4. Verified profile, API still refuses: the clients force a fresh ID token on
    every successful verified-profile check, including sessions restored with the
    verified flag already true. Late checks are discarded after an account switch.
+   Returning to the tab/app restarts the bounded polling window even after a long
+   wait: the old 20-minute deadline previously suppressed foreground checks after
+   an hour-delayed message. Web focus and visibility changes share one in-flight
+   check; mobile app foregrounding also restarts checks. This fixes recognition of
+   a late verification; it does not accelerate mail transport.
 
 The web app has a button-confirmed action handler (`src/pages/AuthAction.jsx`). It
 is present in the public Pages build, but Firebase still uses its default hosted

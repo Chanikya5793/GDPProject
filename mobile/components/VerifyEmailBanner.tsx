@@ -46,15 +46,23 @@ export default function VerifyEmailBanner() {
   useEffect(() => {
     if (!unverified) return undefined;
     let cancelled = false;
+    let checking = false;
     const tick = async () => {
-      if (AppState.currentState !== 'active') return;
+      if (cancelled || checking || AppState.currentState !== 'active') return;
       if (Date.now() - (mountedAt.current ?? 0) > POLL_FOR_MS) return;
+      checking = true;
       try {
-        if (!cancelled) await refreshUser();
+        await refreshUser();
       } catch { /* try again next tick */ }
+      finally { checking = false; }
     };
     const timer = setInterval(tick, POLL_MS);
-    const subscription = AppState.addEventListener('change', state => { if (state === 'active') void tick(); });
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      // A delayed email may arrive long after the original polling window.
+      mountedAt.current = Date.now();
+      void tick();
+    });
     return () => {
       cancelled = true;
       clearInterval(timer);
