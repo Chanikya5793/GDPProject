@@ -3,14 +3,8 @@
   "private": true,
   "version": "1.1.0",
   "type": "module",
-  "workspaces": [
-    "apps/*"
-  ],
   "scripts": {
     "dev": "vite",
-    "dev:trace": "npm run dev --workspace @gdp/trace",
-    "build:trace": "npm run build --workspace @gdp/trace",
-    "test:trace": "npm run test --workspace @gdp/trace",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -18,7 +12,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@gdp/trace": "*",
     "dayjs": "^1.11.20",
     "firebase": "^12.19.0",
     "lucide-react": "^1.16.0",

@@ -90,16 +90,6 @@ async function cached(entityType) {
   return getSecureItem(currentUid(), ENTITY_TO_CACHE[entityType], [])
 }
 
-// What this device already holds, decrypted, with no network request. The
-// trace view recomputes copilot search over these.
-export async function cachedRecords(entityType) {
-  try {
-    return await cached(entityType)
-  } catch {
-    return []
-  }
-}
-
 // Every write to a collection goes through here. The collection is stored
 // whole, so it has to be re-read under the lock: a batch of updates used to
 // read one snapshot each and write it back each, keeping only the last.
