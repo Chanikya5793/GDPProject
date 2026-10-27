@@ -109,6 +109,10 @@ export function createStage(renderer, world) {
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
+  // Out of the depth buffer and drawn first: the light pool and contact
+  // shadows just above it can't z-fight it into stripes at a distance.
+  floor.material.depthWrite = false;
+  floor.renderOrder = -3;
   world.add(floor);
 
   // A pool of light on the floor under the step being computed.
