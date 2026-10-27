@@ -10,6 +10,7 @@ import { getNotes, updateNote, getTags } from "../api/notes"
 import { Check, Bell, X, GripVertical, RotateCcw, Bot, Send, Trash2, PanelRightOpen, StickyNote, ChevronDown, PinIcon, ChevronsUpDown, ChevronsDownUp } from "lucide-react"
 import { getEffectivePriority } from "../utils/priority"
 import LoadFailed from "../components/LoadFailed"
+import TraceButton from "../components/TraceButton"
 import SubmitButton, { SubmitError, useSubmit } from "../components/SubmitButton"
 import "../css/Dashboard.css"
 
@@ -602,6 +603,9 @@ function AiChatPanel() {
               <ProposalList proposals={msg.proposals}
                 onConfirm={confirmProposal} onReject={rejectProposal}
                 onConfirmAll={confirmProposals} onRejectAll={rejectProposals} />
+              {msg.role === 'bot' && !msg.streaming && (
+                <TraceButton messages={messages} botId={msg.id} />
+              )}
             </div>
           </div>
         ))}

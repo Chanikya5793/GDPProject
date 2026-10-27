@@ -184,6 +184,9 @@ export function AiProvider({ children }) {
         // Proposals are not carried: they expire, so one offered from history
         // could never be confirmed and would only look like a failed change.
         proposals: [],
+        // What a turn proposed, by record, as the server replays it into the
+        // next prompt; kept for the trace view only.
+        proposed: message.proposed || [],
         steps: [],
       }))])
       setConversationId(id)
@@ -261,6 +264,15 @@ export function AiProvider({ children }) {
     const botId = crypto.randomUUID()
     let streamed = ''
     let steps = []
+    // Kept with the reply so the trace view can show what was asked, about
+    // which record, and how long the reply took. Times are this device's clock.
+    const traceMeta = {
+      question: trimmed,
+      focusId: attachmentRef.current ? String(attachmentRef.current.id) : null,
+      focusType: attachmentRef.current?.kind || null,
+      sent: Date.now(),
+      firstText: null,
+    }
     let settled = false
     let streamFailure = null
     // Creates the reply on the first delta and patches it in place afterwards,
@@ -300,6 +312,7 @@ export function AiProvider({ children }) {
       }, ({ event, data }) => {
         if (data?.conversation_id) conversationIdRef.current = data.conversation_id
         if (event === 'delta') {
+          traceMeta.firstText ??= Date.now()
           streamed += data.text || ''
           upsertReply({ text: streamed, streaming: true })
         } else if (event === 'step') {
@@ -320,7 +333,9 @@ export function AiProvider({ children }) {
             citations: data.citations || [],
             retrieval: data.retrieval,
             proposals: data.proposals || [],
+            unavailable: data.unavailable || [],
             steps,
+            trace: { ...traceMeta, final: Date.now() },
             streaming: false,
           })
         } else if (event === 'error') {

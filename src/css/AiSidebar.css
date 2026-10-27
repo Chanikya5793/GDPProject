@@ -841,3 +841,31 @@
 .ai-change-from { color: var(--muted); text-decoration: line-through; }
 .ai-change-arrow { color: var(--green); }
 .ai-change-to { font-weight: 600; }
+
+/* Trace: opens the step-by-step view of how a reply was made */
+.ai-trace-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.ai-trace-btn:hover:not(:disabled) {
+  color: var(--green-dk);
+  border-color: var(--green);
+}
+.ai-trace-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.ai-trace-demo {
+  display: flex;
+  margin-top: 10px;
+}

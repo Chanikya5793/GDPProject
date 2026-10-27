@@ -40,6 +40,11 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
 
+      # The standalone TRACE site, served from /GDPProject/trace/ in the same
+      # artifact. The planner build above already inlines the embed.
+      - run: npm run test:trace
+      - run: npm run build:pages --workspace @gdp/trace
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

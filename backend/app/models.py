@@ -243,12 +243,109 @@ class Citation(StrictModel):
     excerpt: str
 
 
+class CandidateOutcome(str, Enum):
+    kept = "kept"
+    too_far = "too_far"
+    type_not_indexed = "type_not_indexed"
+    type_filtered = "type_filtered"
+    missing = "missing"
+    not_approved = "not_approved"
+    stale_revision = "stale_revision"
+    no_shared_word = "no_shared_word"
+    limit_reached = "limit_reached"
+
+
+class RetrievalCandidate(StrictModel):
+    """One nearest-neighbour hit and what the filters did with it.
+
+    Only ever the caller's own records. A hit dropped because its record is
+    not approved, its type is not indexed or it no longer exists carries no
+    record_id: the outcome and distance describe the search without pointing
+    at a record the assistant was not allowed to use.
+    """
+
+    rank: int
+    distance: float
+    outcome: CandidateOutcome
+    entity_type: EntityType
+    record_id: Optional[str] = None
+    citation_id: Optional[str] = None
+
+
+class RetrievalSearch(StrictModel):
+    """One planner search in a turn: the opening search or a lookup."""
+
+    query: str
+    entity_type: Optional[EntityType] = None
+    requested: int
+    limit: int
+    max_distance: float
+    candidates: List[RetrievalCandidate] = Field(default_factory=list)
+    skipped: Optional[str] = None
+
+
+class PromptSection(StrictModel):
+    """One labelled block of a prompt, by size only. Never its text."""
+
+    name: str
+    chars: int
+    items: Optional[int] = None
+
+
+class PromptRound(StrictModel):
+    """One generation of a turn: what the prompt held and what came back."""
+
+    sections: List[PromptSection] = Field(default_factory=list, max_length=16)
+    chars: int
+    tools_available: bool
+    tool_requests: int = 0
+    tool_calls: int = 0
+
+
+class IssuedCitation(StrictModel):
+    """A citation id the turn handed the model, and how the record got there."""
+
+    citation_id: str
+    entity_type: EntityType
+    record_id: str
+    via: Literal["focus", "briefing", "search", "lookup"]
+
+
+class TurnDisclosure(StrictModel):
+    """How the turn was put together, for the client's trace view.
+
+    Sizes, counts and the student's own settings and ids only: no record text
+    and nothing of the instructions beyond their length. Everything is optional
+    to older clients, which never read it.
+    """
+
+    today: date
+    reply_style: str
+    daily_capacity_minutes: int
+    indexed_entity_types: List[EntityType]
+    index_attachments: bool
+    history_turns: int
+    briefing_items: int
+    briefing_truncated: bool
+    focus: Literal["none", "included", "excluded", "missing"] = "none"
+    focus_from_reference: bool = False
+    system_chars: int
+    rounds: List[PromptRound] = Field(default_factory=list, max_length=8)
+    tool_calls: int = 0
+    deadline_reached: bool = False
+    issued: List[IssuedCitation] = Field(default_factory=list, max_length=400)
+
+
 class RetrievalDisclosure(StrictModel):
     attempted: bool
     result_count: int
     entity_types: List[EntityType]
     abstained: bool
     reason: Optional[str] = None
+    # Every search the turn ran, with each candidate's distance and outcome,
+    # so the client's trace view can show the real ranking.
+    searches: List[RetrievalSearch] = Field(default_factory=list, max_length=8)
+    turn: Optional[TurnDisclosure] = None
 
 
 class ProposalOperation(str, Enum):
