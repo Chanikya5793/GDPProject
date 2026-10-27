@@ -1,5 +1,9 @@
 // Builders for the blocks step modules put on the map, and small helpers for
 // naming cells in state(). Cell coordinates are [row, column].
+//
+// Every builder takes an optional `explain(r, c)` for the map's hover card:
+//   → { meaning: what this value is, formula?: the rule that made it,
+//       worked?: the rule with this run's numbers plugged in } | null
 import { fixed } from "../explain/kit.jsx";
 
 export function matrixBlock({
@@ -14,10 +18,12 @@ export function matrixBlock({
   scale,
   masked,
   beside,
+  explain,
 }) {
   return {
     id,
     title,
+    explain,
     rows: data.length,
     cols: data[0]?.length ?? 0,
     rowLabels: data.length ? rowLabels : undefined,
@@ -35,10 +41,11 @@ export function matrixBlock({
 }
 
 // A table whose cells are strings, numbers or { text, tone, value, sub }.
-export function tableBlock({ id, title, head, rows, widths, rowLabels, beside, cellW, cellH, heat, scale }) {
+export function tableBlock({ id, title, head, rows, widths, rowLabels, beside, cellW, cellH, heat, scale, explain }) {
   return {
     id,
     title,
+    explain,
     rows: rows.length,
     cols: head?.length ?? rows[0]?.length ?? 0,
     colLabels: head,
@@ -82,11 +89,12 @@ export function charGrid(text, cols = 18) {
   };
 }
 
-export function charsBlock({ id, title, text, cols = 18, tone, beside }) {
+export function charsBlock({ id, title, text, cols = 18, tone, beside, explain }) {
   const grid = charGrid(text, cols);
   return {
     id,
     title,
+    explain,
     rows: grid.rows,
     cols: grid.cols,
     cellW: 0.78,

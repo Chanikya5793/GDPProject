@@ -1,5 +1,43 @@
 // Helpers shared by the planner step modules. Pure functions only.
-import { terms } from "../../../engine/pipeline.js";
+import { PLANNER_DEFAULTS, terms } from "../../../engine/pipeline.js";
+import { fixed } from "../../kit.jsx";
+
+// The planner settings this trace was built with.
+export const paramsOf = (ctx) => ctx?.trace?.params ?? ctx?.params?.planner ?? PLANNER_DEFAULTS;
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+export const isDefault = (p, key) => same(p?.[key] ?? PLANNER_DEFAULTS[key], PLANNER_DEFAULTS[key]);
+// " (your setting; the default is 0.08)" when a setting differs, else "".
+export const tunedNote = (p, key, show = String) =>
+  isDefault(p, key) ? "" : ` (your setting; the default is ${show(PLANNER_DEFAULTS[key])})`;
+
+// The IDF rule the settings select, and the same rule with numbers plugged in.
+export function idfRule(p, N, df) {
+  if (!p.useIdf)
+    return { formula: "idf = 1 (IDF is off: every term weighs the same)", short: "idf = 1", value: 1, worked: "1 (IDF is off)" };
+  if (p.smoothIdf) {
+    const ratio = (N + 1) / (df + 1);
+    return {
+      formula: "idf = ln((N + 1) / (df + 1)) + 1",
+      short: "ln((N + 1) / (df + 1)) + 1",
+      ratio,
+      ln: Math.log(ratio),
+      value: Math.log(ratio) + 1,
+      expr: `ln((${N} + 1) / (${df} + 1))`,
+      worked: `ln((${N} + 1) / (${df} + 1)) + 1 = ln(${fixed(ratio)}) + 1 = ${fixed(Math.log(ratio) + 1)}`,
+    };
+  }
+  const ratio = N / Math.max(df, 1);
+  return {
+    formula: "idf = ln(N / max(df, 1)) + 1",
+    short: "ln(N / max(df, 1)) + 1",
+    ratio,
+    ln: Math.log(ratio),
+    value: Math.log(ratio) + 1,
+    expr: `ln(${N} / max(${df}, 1))`,
+    worked: `ln(${N} / ${Math.max(df, 1)}) + 1 = ln(${fixed(ratio)}) + 1 = ${fixed(Math.log(ratio) + 1)}`,
+  };
+}
 
 export const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
@@ -130,6 +168,7 @@ export function hunkSpans(hunks, side, active = -1, cls = side === "before" ? "r
 // order is recovered from ctx.records and each record's title terms.
 export function analyzedRecords(ctx) {
   const { trace } = ctx;
+  const p = paramsOf(ctx);
   const records = ctx.records ?? [];
   const docs = trace.vectors.documents;
   const rank = (r) => {
@@ -143,7 +182,7 @@ export function analyzedRecords(ctx) {
   return docs.map((doc) => {
     const key = doc.join(" ");
     const hit =
-      pool.find((r) => !used.has(r) && terms(r.title).join(" ") === key) ??
+      pool.find((r) => !used.has(r) && terms(r.title, p).join(" ") === key) ??
       pool.find((r) => !used.has(r));
     used.add(hit);
     return hit;
@@ -164,7 +203,8 @@ export const SLOT_ROWS = ["intent", "date", "time", "recurring", "weeks", "title
 export const slotRow = (key) => SLOT_ROWS.indexOf(key);
 
 // Columns of the Cosine "cosine" block.
-export const COSINE_COLS = ["title", "q·d", "‖d‖", "cos", "rank", "> 0.08"];
+export const cosineCols = (p = PLANNER_DEFAULTS) => ["title", "q·d", "‖d‖", "cos", "rank", `> ${p.matchThreshold}`];
+export const COSINE_COLS = cosineCols();
 
 // Cells of the Tokenize "tokens" block (text column) whose normalized text
 // spells `text`, as a contiguous run.

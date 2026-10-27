@@ -1,21 +1,22 @@
 import { Panel, Table, Tag, fixed } from "../../kit.jsx";
-import { MATCH_THRESHOLD, TIE_GAP } from "../../../engine/pipeline.js";
-import { analyzedRecords, decisionRows, indexed, revealState, slotRow } from "./util.js";
+import { PLANNER_DEFAULTS } from "../../../engine/pipeline.js";
+import { analyzedRecords, decisionRows, indexed, paramsOf, revealState, slotRow, tunedNote } from "./util.js";
 import { column, tableBlock } from "../../../map/blocks.js";
 
 // The rule list inside analyze(), in order. The trace keeps only the rules
 // that were evaluated, so the rest are listed here to show them as skipped.
-const RULES = [
+const rulesFor = (p) => [
   { id: "empty", test: "the request is empty" },
   { id: "validation", test: "extraction reported a problem" },
   { id: "title", test: "no title words were found" },
   { id: "search", test: "the command is a search" },
-  { id: "no-match", test: `update/delete, and no record scores above ${MATCH_THRESHOLD}` },
+  { id: "no-match", test: `update/delete, and no record scores above ${p.matchThreshold}` },
   { id: "selection", test: "a chosen record is not one of the candidates" },
-  { id: "duplicate", test: `update/delete, nothing chosen, top two scores differ by < ${TIE_GAP}` },
+  { id: "duplicate", test: `update/delete, nothing chosen, top two scores differ by < ${p.tieGap}` },
   { id: "missing-fields", test: "not a delete, and the date or time is missing" },
   { id: "ready", test: "otherwise" },
 ];
+const RULES = rulesFor(PLANNER_DEFAULTS);
 const RULE_LINE = Object.fromEntries(RULES.map((r, i) => [r.id, 2 + i]));
 
 const q = (v) => (v === null || v === undefined ? "null" : typeof v === "string" ? `“${v}”` : String(v));
@@ -23,6 +24,7 @@ const q = (v) => (v === null || v === undefined ? "null" : typeof v === "string"
 // The values each rule's test looks at, and how they combine.
 function evaluate(trace, id) {
   const e = trace.entities;
+  const p = trace.params ?? PLANNER_DEFAULTS;
   const edits = ["update", "delete"].includes(e.intent);
   const scoreOf = (cid) => trace.vectors.results.find((r) => r.record.id === cid)?.score;
   const cands = trace.candidates;
@@ -43,7 +45,7 @@ function evaluate(trace, id) {
       return `intent = ${q(e.intent)} → ${e.intent === "search"}`;
     case "no-match":
       return edits
-        ? `candidates: ${candText} (${cands.length}) → ${!cands.length}`
+        ? `candidates above ${p.matchThreshold}${tunedNote(p, "matchThreshold")}: ${candText} (${cands.length}) → ${!cands.length}`
         : `${notEdit} → false`;
     case "selection":
       if (!edits) return `${notEdit} → false`;
@@ -57,7 +59,7 @@ function evaluate(trace, id) {
       if (trace.gap === null) return `candidates: ${candText}; fewer than two, gap = null → false`;
       const [a, b] = cands;
       return `candidates: ${a} ${fixed(scoreOf(a))}, ${b} ${fixed(scoreOf(b))}; gap ${fixed(trace.gap)} ${
-        trace.gap < TIE_GAP ? `< ${TIE_GAP} → true` : `≥ ${TIE_GAP} → false`
+        trace.gap < p.tieGap ? `< ${p.tieGap}${tunedNote(p, "tieGap")} → true` : `≥ ${p.tieGap}${tunedNote(p, "tieGap")} → false`
       }`;
     }
     case "missing-fields":
@@ -107,7 +109,7 @@ const mod = {
     '  { id: "search",         hit: () => intent === "search" },',
     '  { id: "no-match",       hit: () => edits && !candidates.length },',
     '  { id: "selection",      hit: () => edits && selectedId && !candidates.includes(selectedId) },',
-    '  { id: "duplicate",      hit: () => edits && !selectedId && gap !== null && gap < TIE_GAP },',
+    '  { id: "duplicate",      hit: () => edits && !selectedId && gap !== null && gap < tieGap },   // a setting',
     '  { id: "missing-fields", hit: () => intent !== "delete" && (!date || !time) },',
     '  { id: "ready",          hit: () => true },',
     "]",
@@ -176,7 +178,7 @@ const mod = {
               const at = frames.findIndex((f) => f.phase === "Rules" && f.at === i);
               if (at >= 0) seek(at);
             }}
-            rows={RULES.map((r, i) => {
+            rows={rulesFor(paramsOf(ctx)).map((r, i) => {
               const ev = evaluated[i];
               const reached = ev && i <= frame.at;
               if (!ev)
@@ -298,8 +300,77 @@ function cellsOf(frame, ctx) {
 
 const stripResult = (v) => v.replace(/\s*→\s*(true|false)$/, "").replace(/→ !normalized = (true|false)$/, "→ !normalized");
 
+// ---- Explain a cell ----
+
+const RULE_MEANING = {
+  empty: "Ask for a request when nothing was typed.",
+  validation: "Ask about the first problem Extract found, such as an impossible time.",
+  title: "Ask what the reminder is about when no search term is left.",
+  search: "A search answers with ranked records and never writes.",
+  "no-match": "An update or delete needs an existing record; ask when none scores above the match threshold.",
+  selection: "A record chosen by the visitor must be one of this run's candidates.",
+  duplicate: "When the top two candidates score almost the same, ask which one you meant.",
+  "missing-fields": "A create or move needs both a date and a time.",
+  ready: "Every check passed: prepare a proposal for you to confirm.",
+};
+
+function explainRule(trace, rule, r, c) {
+  if (!rule) return null;
+  const ev = trace.rules[r];
+  const fired = trace.rules.findIndex((x) => x.hit);
+  const meaning = `Rule ${r + 1}, ${rule.id}. ${RULE_MEANING[rule.id] ?? ""}`;
+  if (c === 0 || c === 1) return { meaning, formula: `fires when: ${ev?.test ?? rule.test}` };
+  if (!ev)
+    return c === 3
+      ? { meaning: `Not checked: rule ${fired + 1} (${trace.rules[fired]?.id}) already decided, and the list stops at the first true rule.` }
+      : null;
+  const values = evaluate(trace, rule.id);
+  if (c === 2) return { meaning: "The values this rule's test looks at in this run.", formula: ev.test, worked: values };
+  if (c === 3)
+    return {
+      meaning: ev.hit ? `True, so this rule decides and no later rule is checked.` : "False, so the next rule is checked.",
+      formula: "decision = the first rule whose test is true",
+      worked: values,
+    };
+  return null;
+}
+
+const FIELD_MEANING = {
+  status: "What the planner does next: clarify asks you a question, answer shows search results, proposal prepares a change.",
+  reason: "The id of the rule that decided.",
+  message: "The text shown to you.",
+  intent: "The kind of change the proposal makes.",
+  targetId: "The record the change applies to. A create has none.",
+  expectedRevision: "The record's revision seen now. Apply refuses to write if it has changed since.",
+  title: "The reminder's title in the proposal.",
+  "date / time": "The new date and time.",
+  dates: "Every date the change writes. A weekly reminder gets one per week.",
+};
+
+function explainDecision(trace, r, c) {
+  const row = decisionRows(trace)[r];
+  if (!row) return null;
+  const meaning = FIELD_MEANING[row.key] ?? row.key;
+  if (c === 0) return { meaning };
+  if (c !== 1) return null;
+  const d = trace.decision;
+  const p = d.proposal;
+  const fired = trace.rules.find((x) => x.hit);
+  const worked = {
+    status: `rule “${fired?.id}” fired → ${d.status}`,
+    reason: `rule “${fired?.id}” fired → reason = “${d.reason}”`,
+    targetId: p && (p.intent === "create" ? "a create has no target → null" : trace.selectedId ? `the chosen record → ${p.targetId}` : `the top candidate → ${p.targetId}`),
+    expectedRevision: p && (p.intent === "create" ? "a create has no target → null" : `${p.targetId}.revision = ${p.expectedRevision}`),
+    dates:
+      p && (p.dates.length > 1 ? `${p.date} + 7 × i for i = 0 … ${p.dates.length - 1} → ${p.dates.join(", ")}` : `[${p.dates.join(", ")}]`),
+  }[row.key];
+  return { meaning, ...(worked ? { worked } : {}) };
+}
+
 Object.assign(mod, {
-  blocks({ trace }) {
+  blocks(ctx) {
+    const { trace } = ctx;
+    const p = paramsOf(ctx);
     const evaluated = trace.rules;
     return [
       tableBlock({
@@ -307,7 +378,7 @@ Object.assign(mod, {
         title: "rules, in order · the first true one decides",
         head: ["rule", "test", "values", "result"],
         widths: [1.45, 4.3, 5.7, 1.15],
-        rows: RULES.map((r, i) => {
+        rows: rulesFor(p).map((r, i) => {
           const ev = evaluated[i];
           if (!ev)
             return [
@@ -323,6 +394,7 @@ Object.assign(mod, {
             ev.hit ? { text: "true", tone: "good", bold: true } : { text: "false", tone: "muted" },
           ];
         }),
+        explain: (r, c) => explainRule(trace, rulesFor(p)[r], r, c),
       }),
       tableBlock({
         id: "decision",
@@ -333,6 +405,7 @@ Object.assign(mod, {
           { text: r.key, align: "left", dim: true },
           { text: String(r.value), align: "left", tone: r.tone, bold: r.key === "status" },
         ]),
+        explain: (r, c) => explainDecision(trace, r, c),
       }),
     ];
   },

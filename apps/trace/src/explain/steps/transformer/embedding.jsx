@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Expr, Matrix, Panel, Table, fixed } from "../../kit.jsx";
 import { tokenCode } from "../../../engine/transformer.js";
 import { tableBlock } from "../../../map/blocks.js";
-import { DIMS, charTerms, codeSum, hex, labelsOf, list, mat, quote } from "./shared.jsx";
+import { DIMS, charTerms, codeSum, hex, labelsOf, list, mat, paramsOf, quote, tunedSay } from "./shared.jsx";
 
 const DETAIL = 2; // tokens 0..DETAIL-1 get one frame per character and per dimension
 const angle = (code, d) => code * (d + 1) * 0.017;
@@ -23,16 +23,18 @@ export default {
     "}",
     "E = tokens.map(embeddingRow)  // one row per token: n × 4",
   ],
-  frames({ data }) {
-    const m = data.transformer;
+  frames(ctx) {
+    const m = ctx.data.transformer;
     const n = m.tokens.length;
     const frames = [
       {
         phase: "Setup",
         line: 6,
-        say: n
-          ? `There are ${n} tokens. A trained model would look each one up in a learned table. This toy computes the row from the token's characters instead, so every subword gets a row, even one it has never seen.`
-          : "There are no tokens, so E has no rows.",
+        say: `${
+          n
+            ? `There are ${n} tokens. A trained model would look each one up in a learned table. This toy computes the row from the token's characters instead, so every subword gets a row, even one it has never seen.`
+            : "There are no tokens, so E has no rows."
+        }${tunedSay(paramsOf(ctx), ["merges", "context"])}`,
         vars: { n, "E.shape": `${n} × 4` },
         i: -1,
         c: -1,
@@ -125,6 +127,15 @@ export default {
         widths: [1.1],
         rowLabels: labels.length ? labels : undefined,
         rows: m.tokens.map((t) => [String(tokenCode(t))]),
+        explain: (r) => {
+          const t = m.tokens[r];
+          if (t === undefined) return null;
+          return {
+            meaning: `The number that stands for ${quote(t)}: its characters' code points, each weighted by its position.`,
+            formula: "code = Σ codePoint(cᵢ) × (i + 1)",
+            worked: `code(${quote(t)}) = ${codeSum(t)} = ${tokenCode(t)}`,
+          };
+        },
       }),
       mat({
         id: "E",
@@ -133,6 +144,16 @@ export default {
         rowLabels: labels,
         colLabels: DIMS,
         beside: true,
+        explain: (r, c) => {
+          const t = m.tokens[r];
+          if (t === undefined || c > 3) return null;
+          const code = tokenCode(t);
+          return {
+            meaning: `Dimension ${c} of the embedding of ${quote(t)} (token ${r}). The same token gets the same row wherever it stands.`,
+            formula: "E[d] = sin(code × (d + 1) × 0.017)",
+            worked: `E[${r}][${c}] = sin(${code} × ${c + 1} × 0.017) = sin(${fixed(angle(code, c))}) = ${fixed(m.embeddings[r][c])}`,
+          };
+        },
       }),
     ];
   },

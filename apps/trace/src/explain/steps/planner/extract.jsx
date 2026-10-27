@@ -1,6 +1,6 @@
 import { Chars, Expr, Panel, Table, Tag } from "../../kit.jsx";
 import { DAYS, DEMO_TODAY, INTENT_RULES, MONTHS } from "../../../engine/pipeline.js";
-import { diff, edgeWs, hunkSpans, indexed, plural, revealState, showWs, slotRow, spanOf, tokenCells } from "./util.js";
+import { SLOT_ROWS, diff, edgeWs, hunkSpans, indexed, plural, revealState, showWs, slotRow, spanOf, tokenCells } from "./util.js";
 import { row, tableBlock } from "../../../map/blocks.js";
 
 // Local copies of the patterns inside extract(); the engine does not export them.
@@ -823,6 +823,82 @@ function cellsOf(frame, { trace }) {
 
 const tone = (v) => (v === null || v === undefined ? "muted" : undefined);
 
+// ---- Explain a cell ----
+
+function explainIntent(s, r, c) {
+  const rule = INTENT_RULES[r];
+  if (!rule) return null;
+  const tried = s.st.intent.tried[r];
+  const test = `/^(${rule.verbs.join("|")})\\b/`;
+  if (c === 0) return { meaning: `Rule ${r + 1}: a request that starts with one of these verbs is a${rule.intent === "update" ? "n" : ""} ${rule.intent}.` };
+  if (c === 1) return { meaning: `The verbs that mean ${rule.intent}. Only the first word of the request is compared.`, formula: test };
+  if (c !== 2) return null;
+  if (!tried) return { meaning: "Not tried: an earlier rule already matched, and the first match wins." };
+  return {
+    meaning: tried.matched ? `The first word is one of these verbs, so intent = ${rule.intent}.` : "The first word is not one of these verbs; the next rule is tried.",
+    formula: `${test}.test(command)`,
+    worked: `${test}.test(“${s.firstWord}”) = ${tried.matched}`,
+  };
+}
+
+function explainSlot(s, key, c) {
+  const { e, st } = s;
+  if (!key) return null;
+  const meaning = {
+    intent: "What the request wants to do: create, update, delete or search.",
+    date: "The day the reminder is for, as YYYY-MM-DD. Today is fixed at " + DEMO_TODAY + ".",
+    time: "The clock time, as 24-hour HH:MM.",
+    recurring: "Whether the reminder repeats every week.",
+    weeks: "How many weeks a repeating reminder runs.",
+    title: "What the reminder is about: the request minus every part the rules understood.",
+    issues: "Problems found while reading the request. The first one becomes the planner's question.",
+  }[key];
+  if (c === 0) return { meaning };
+  if (c !== 1 && c !== 2) return null;
+  const d = st.date.filter((x) => x.result || x.rule === "explicit").at(-1);
+  const clock = s.clock;
+  const rule = {
+    intent: ["intent = the first INTENT_RULES row whose verbs match the first word", st.intent.verb ? `“${st.intent.verb}” → ${e.intent}` : `no rule matched “${s.firstWord}” → unknown`],
+    date: ["tomorrow | today | month day | (next|every) weekday", d ? `${d.rule} “${d.matched}”: ${d.calc} → ${d.result ?? "null"}` : "no date words → null"],
+    time: [
+      "h:mm (am|pm)? | h am/pm | at h; with am/pm, hour = (h mod 12) + (pm ? 12 : 0)",
+      clock ? `“${clock.matched}”${clock.calc ? `: ${clock.calc}` : ""} → ${e.time ?? "null (invalid)"}` : "no clock words → null",
+    ],
+    recurring: ["recurring = /\\bevery\\b/.test(input)", `${s.everyM ? "“every” found" : "no “every”"} → ${e.recurring}`],
+    weeks: ["occurrences = N from “for N weeks”", s.countM ? `“${s.countM[0]}” → ${e.occurrences}` : "no “for N weeks” → null"],
+    title: ["title = input minus command words, dates, time, “for N weeks”, “reminder”, “my” and symbols", `${plural(st.title.length, "removal")} → “${e.title}”`],
+    issues: ["one message per failed check", e.issues.length ? `${e.issues.length}: ${e.issues[0]}` : "every check passed → 0"],
+  }[key];
+  return { meaning, formula: rule[0], worked: rule[1] };
+}
+
+function explainTitleOp(s, r, c) {
+  const t = s.st.title[r];
+  if (!t) return c === 0 && r === 0 ? { meaning: "No rule removed anything, so the title is the whole normalized request." } : null;
+  const removed = diff(t.before, t.after)
+    .map((h) => `“${showWs(h.from)}”`)
+    .join(", ");
+  return {
+    meaning: c === 0 ? `Step ${r + 1} of building the title: ${t.label}.` : `The title after step ${r + 1}.`,
+    formula: "title = title.replace(part, \"\")",
+    worked: `“${t.before}” − ${removed || "spaces"} → “${t.after}”`,
+  };
+}
+
+function explainCheck(s, x, c) {
+  if (!x) return null;
+  if (c === 0) return { meaning: `A check on the request: ${x.label}.` };
+  return {
+    meaning: !x.applies
+      ? "This check does not apply to this request."
+      : x.fired
+        ? `This check failed, so it adds an issue: ${x.message ?? "see the issues slot"}`
+        : "This check passed.",
+    formula: x.label,
+    worked: `${x.detail} → ${!x.applies ? "n/a" : x.fired ? "issue" : "ok"}`,
+  };
+}
+
 Object.assign(mod, {
   blocks({ trace }) {
     const s = study(trace);
@@ -866,6 +942,7 @@ Object.assign(mod, {
               ? { text: "match", tone: "good", bold: true }
               : { text: "no", tone: "muted" },
         ]),
+        explain: (r, c) => explainIntent(s, r, c),
       }),
       tableBlock({
         id: "slots",
@@ -874,6 +951,7 @@ Object.assign(mod, {
         widths: [1.15, 2.5, 2.9],
         rows: Object.entries(slotRows).map(([k, v]) => [{ text: k, align: "left", dim: true }, ...v]),
         beside: true,
+        explain: (r, c) => explainSlot(s, SLOT_ROWS[r], c),
       }),
       tableBlock({
         id: "titleops",
@@ -883,6 +961,7 @@ Object.assign(mod, {
         rows: st.title.length
           ? st.title.map((t) => [{ text: SHORT_OP(t.label), align: "left" }, { text: edgeWs(t.after) || "(empty)", align: "left" }])
           : [[{ text: "nothing to remove", tone: "muted" }, { text: edgeWs(e.title) || "(empty)", align: "left", tone: "muted" }]],
+        explain: (r, c) => explainTitleOp(s, r, c),
       }),
       tableBlock({
         id: "checks",
@@ -900,6 +979,7 @@ Object.assign(mod, {
           }),
         ),
         beside: true,
+        explain: (r, c) => explainCheck(s, s.checks[c < 2 ? r : r + 6], c % 2),
       }),
     ];
   },

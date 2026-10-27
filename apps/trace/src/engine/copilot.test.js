@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  buildPrompt,
   CANDIDATES,
   canConfirm,
   citationCheck,
-  promptSections,
+  pyJson,
+  safeExcerpt,
   recordText,
   retrieve,
   sha256,
@@ -65,12 +67,51 @@ test("retrieval applies the overlap filter, the distance cutoff and the limit", 
   assert.equal(CANDIDATES, 25);
 });
 
-test("prompt sections keep the backend's order", () => {
-  const names = promptSections({ message: "hi there", today: "2026-10-23" }).map((s) => s.name);
-  assert.deepEqual(names.slice(1, 4), ["TODAY", "PLANNER_BRIEFING", "UNTRUSTED_SOURCES"]);
-  assert.ok(names.indexOf("CONVERSATION") < names.indexOf("USER_QUESTION"));
-  assert.ok(names.indexOf("USER_QUESTION") < names.indexOf("TOOLS_AVAILABLE"));
-  assert.equal(names.at(-1), "Reply style");
+// Generated from the backend's own code by scripts/prompt_fixture.py.
+const prompts = JSON.parse(readFileSync(new URL("./fixtures/prompt.json", import.meta.url)));
+
+function exchangeOf(c) {
+  const records = prompts.records;
+  const kept = (c.expected.searches[0]?.candidates ?? [])
+    .filter((x) => x.outcome === "kept")
+    .map((x) => records.find((r) => r.id === x.record_id));
+  const turn = {
+    today: c.today,
+    reply_style: c.settings.reply_style,
+    daily_capacity_minutes: c.settings.max_daily_minutes ?? 360,
+    indexed_entity_types: c.settings.indexed_entity_types,
+    index_attachments: c.settings.index_attachments,
+  };
+  const focus = c.focus ? records.find((r) => r.id === c.focus.record_id) : null;
+  const exchange = { message: c.message, history: c.history, earlier: c.earlier, focus, today: c.today, records, response: { retrieval: { turn } } };
+  return { exchange, kept };
+}
+
+test("json encoding and excerpts match Python's", () => {
+  assert.equal(pyJson({ a: [1, true, null], b: "“é”\n\u0001" }), '{"a": [1, true, null], "b": "\\u201c\\u00e9\\u201d\\n\\u0001"}');
+  assert.equal(pyJson("👋"), '"\\ud83d\\udc4b"');
+  assert.equal(safeExcerpt("  a \n\t b  ", 240), "a b");
+  assert.equal(safeExcerpt("abcdef", 3), "abc…");
+});
+
+test("the rebuilt prompt matches the server's, section by section", () => {
+  for (const c of prompts.cases) {
+    const { exchange, kept } = exchangeOf(c);
+    const built = buildPrompt(exchange, { kept, items: c.briefing_items ?? 40 });
+    assert.deepEqual(built.sections.map((s) => s.name), c.expected.sections.map((s) => s.name), c.name);
+    built.sections.forEach((s, i) => assert.equal(s.text, c.expected.sections[i].text, `${c.name}: ${s.name}`));
+    assert.equal(built.chars, c.expected.chars, c.name);
+    assert.deepEqual(built.issued, c.expected.issued, `${c.name}: citation ledger`);
+  }
+});
+
+test("the browser's search reaches the server's outcomes on the same records", () => {
+  for (const c of prompts.cases) {
+    const run = retrieve(c.message, prompts.records, undefined, { types: c.settings.indexed_entity_types, attachments: c.settings.index_attachments });
+    const outcome = (reason) => (!reason ? "kept" : reason.startsWith("distance") ? "too_far" : reason.startsWith("no shared") ? "no_shared_word" : "limit_reached");
+    const mine = new Map(run.candidates.map((x) => [x.record.id, [Math.round(x.distance * 1e6) / 1e6, outcome(x.reason)]]));
+    for (const x of c.expected.searches[0].candidates) assert.deepEqual(mine.get(x.record_id), [x.distance, x.outcome], `${c.name}: ${x.record_id}`);
+  }
 });
 
 test("the citation check and the confirm rule follow the backend", () => {
@@ -89,6 +130,15 @@ test("the retrieval step is badged real only when the reply carries the server's
   assert.equal(badge(COPILOT_STEPS), "recomputed");
   assert.equal(badge(copilotSteps({ response: null })), "recomputed");
   assert.equal(badge(copilotSteps(sampleCopilot())), "real");
-  const kept = sampleCopilot().response.retrieval.searches[0].candidates.filter((c) => c.outcome === "kept");
-  assert.equal(kept[0].record_id, sampleCopilot().response.citations[0].record_id);
+  const sample = sampleCopilot();
+  const kept = sample.response.retrieval.searches[0].candidates.filter((c) => c.outcome === "kept");
+  assert.equal(kept[0].record_id, sample.response.citations[0].record_id);
+  // The sample's citation ids come from the same ledger the prompt uses.
+  assert.equal(kept[0].citation_id, sample.response.citations[0].citation_id);
+  assert.equal(sample.response.retrieval.result_count, sample.response.retrieval.turn.issued.length);
+  const prompt = (steps) => steps.find((s) => s.id === "prompt").badge;
+  assert.equal(prompt(COPILOT_STEPS), "recomputed");
+  assert.equal(prompt(copilotSteps(sample)), "real");
+  // The model illustration says how large the real prompt was.
+  assert.match(copilotSteps(sample).find((s) => s.id === "bpe").limit, /characters \(roughly/);
 });

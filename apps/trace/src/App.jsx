@@ -1,13 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Database, Moon, PenLine, Square, Sun, Workflow, X } from "lucide-react";
+import {
+  Box,
+  Brain,
+  CalendarClock,
+  Database,
+  MessagesSquare,
+  Moon,
+  PenLine,
+  SlidersHorizontal,
+  Square,
+  Sun,
+  Waypoints,
+  Workflow,
+  X,
+} from "lucide-react";
 import TrackView from "./TrackView.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import StepPlayer from "./explain/StepPlayer.jsx";
 import { DataPanel, RequestPanel } from "./Panels.jsx";
 import { analyze, applyProposal, SCENARIOS, SEED_RECORDS } from "./engine/pipeline.js";
-import { microscope } from "./engine/microscope.js";
 import { copilotSteps, stepsFor } from "./steps.js";
-import { sampleCopilot, SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
+import { SAMPLE_MESSAGE, SAMPLE_RESPONSE } from "./engine/copilotSample.js";
+import { useParams } from "./tune/useParams.js";
+import { changed } from "./tune/schema.js";
+import { buildCtx } from "./tune/context.js";
+import TunePanel from "./tune/TunePanel.jsx";
 
 const seeds = () => SEED_RECORDS.map((r) => ({ ...r }));
 function useReducedMotion() {
@@ -96,7 +113,13 @@ export default function App() {
   const [records, setRecords] = useState(seeds);
   const [input, setInput] = useState(SCENARIOS[0].prompt);
   const [scenario, setScenario] = useState(SCENARIOS[0].id);
-  const [trace, setTrace] = useState(() => analyze(SCENARIOS[0].prompt));
+  // The request as last run: its text, the records it ran against and the
+  // record the visitor picked. The trace is recomputed from it whenever the
+  // settings change.
+  const [request, setRequest] = useState(() => ({ text: SCENARIOS[0].prompt, records: seeds(), selectedId: null }));
+  const { params, tune, reset: resetParams, set: setParams } = useParams();
+  const [tuneOpen, setTuneOpen] = useState(false);
+  const [tuneFocus, setTuneFocus] = useState(null);
   const [applied, setApplied] = useState(false);
   const [notice, setNotice] = useState("");
   const [generatedTokens, setGeneratedTokens] = useState([]);
@@ -106,21 +129,26 @@ export default function App() {
   // Earlier turns when the visitor answers a question instead of rewriting.
   const [thread, setThread] = useState([]);
 
+  const trace = useMemo(
+    () => analyze(request.text, request.records, request.selectedId, params.planner),
+    [request, params.planner],
+  );
   const steps =
     mode === "copilot"
-      ? copilotSteps({ response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null })
-      : stepsFor(mode);
-  const data = useMemo(() => microscope(trace, generatedTokens), [trace, generatedTokens]);
-  const ctx = useMemo(() => {
-    // The copilot track uses the sample exchange; any other message has no
-    // real reply to show.
-    const copilot = {
-      ...sampleCopilot(),
-      message: trace.original || SAMPLE_MESSAGE,
-      response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null,
-    };
-    return { trace, data, model: data.transformer, records, applied, generatedTokens, copilot };
-  }, [trace, data, records, applied, generatedTokens]);
+      ? copilotSteps({ response: trace.original === SAMPLE_MESSAGE ? SAMPLE_RESPONSE : null }, params)
+      : stepsFor(mode, params);
+  const ctx = useMemo(
+    () =>
+      buildCtx({
+        trace,
+        rerun: (planner) => analyze(request.text, request.records, request.selectedId, planner),
+        records,
+        applied,
+        generatedTokens,
+        params,
+      }),
+    [trace, request, records, applied, generatedTokens, params],
+  );
   // Playback halts after Decide while the request still needs an answer.
   const stopAt =
     mode === "planner" && trace.decision.status === "clarify"
@@ -128,10 +156,23 @@ export default function App() {
       : null;
   const closeDrawer = useCallback(() => setDrawer(null), []);
   useDialog(!!drawer, closeDrawer);
+  // Esc closes the Tune panel, unless a drawer above it takes the key first.
+  useEffect(() => {
+    if (!tuneOpen || drawer) return;
+    const key = (e) =>
+      e.key === "Escape" &&
+      !e.defaultPrevented &&
+      !e.composedPath?.().some((n) => n.tagName === "DIALOG") &&
+      setTuneOpen(false);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [tuneOpen, drawer]);
 
+  const data = ctx.data;
+  const tunedCount = changed(mode, params[mode]).length;
   function run(text = input, keepThread = false) {
     if (!keepThread) setThread([]);
-    setTrace(analyze(text, records));
+    setRequest({ text, records, selectedId: null });
     setInput(text);
     setApplied(false);
     setNotice("");
@@ -143,7 +184,7 @@ export default function App() {
     editRequest: () => setDrawer("request"),
     openData: () => setDrawer("data"),
     chooseRecord(id) {
-      setTrace(analyze(trace.original, records, id));
+      setRequest({ text: trace.original, records, selectedId: id });
       setApplied(false);
       setNotice("");
     },
@@ -160,7 +201,7 @@ export default function App() {
     reset() {
       const next = seeds();
       setRecords(next);
-      setTrace(analyze(trace.original, next));
+      setRequest({ text: trace.original, records: next, selectedId: null });
       setApplied(false);
       setNotice("");
     },
@@ -196,42 +237,60 @@ export default function App() {
       </a>
       <header className="topbar" data-background>
         <div className="brand">
-          <strong>TRACE</strong>
-          <span>one sentence, every computation</span>
+          <span className="brand-mark" aria-hidden="true">
+            <Waypoints size={15} strokeWidth={2.4} />
+          </span>
+          <span className="brand-text">
+            <strong>TRACE</strong>
+            <span>one input, every computation</span>
+          </span>
         </div>
-        <div className="segmented" role="group" aria-label="What to trace">
+        <div className="segmented is-primary" role="group" aria-label="What to trace">
           <button aria-pressed={mode === "planner"} onClick={() => switchMode("planner")}>
-            Planner pipeline
+            <CalendarClock size={14} /> Planner
           </button>
           <button aria-pressed={mode === "transformer"} onClick={() => switchMode("transformer")}>
-            Transformer block
+            <Brain size={14} /> Transformer
           </button>
           <button aria-pressed={mode === "copilot"} onClick={() => switchMode("copilot")}>
-            Copilot
+            <MessagesSquare size={14} /> Copilot
           </button>
         </div>
+        <span className="topbar-divider" aria-hidden="true" />
         <div className="segmented" role="group" aria-label="View">
-          <button aria-pressed={view === "flow"} onClick={() => setView("flow")}>
+          <button aria-pressed={view === "flow"} onClick={() => setView("flow")} title="Flow (1)">
             <Workflow size={14} /> Flow
           </button>
-          <button aria-pressed={view === "2d"} onClick={() => setView("2d")}>
+          <button aria-pressed={view === "2d"} onClick={() => setView("2d")} title="2D map (2)">
             <Square size={14} /> 2D
           </button>
-          <button aria-pressed={view === "3d"} onClick={() => setView("3d")} disabled={!HAS_WEBGL}>
+          <button aria-pressed={view === "3d"} onClick={() => setView("3d")} disabled={!HAS_WEBGL} title="3D map (3)">
             <Box size={14} /> 3D
           </button>
         </div>
         <div className="topbar-tools">
-          <button className="request-chip" onClick={() => setDrawer("request")} title={trace.original}>
+          <button className="request-chip" onClick={() => setDrawer("request")} title={`Change the request: ${trace.original}`}>
             <PenLine size={14} />
             <span>{trace.original || "Enter a request"}</span>
           </button>
-          <button onClick={toggleTheme} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}>
-            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+          <button
+            className={tunedCount ? "is-tuned" : undefined}
+            onClick={() => {
+              setTuneFocus(null);
+              setTuneOpen((v) => !v);
+            }}
+            aria-expanded={tuneOpen}
+            aria-label={tunedCount ? `Tune the algorithms, ${tunedCount} changed` : "Tune the algorithms"}
+          >
+            <SlidersHorizontal size={16} />
+            <span>Tune{tunedCount ? ` · ${tunedCount}` : ""}</span>
           </button>
           <button onClick={() => setDrawer("data")} aria-label="Records, checks and export">
             <Database size={16} />
             <span>Data</span>
+          </button>
+          <button onClick={toggleTheme} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"} title={theme === "light" ? "Dark theme" : "Light theme"}>
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
           </button>
         </div>
       </header>
@@ -242,7 +301,15 @@ export default function App() {
         steps={steps}
         ctx={ctx}
         theme={theme}
+        params={params}
+        tuneOpen={tuneOpen}
+        onTune={(path, value) => {
+          if (value !== undefined) tune(path, value);
+          setTuneFocus(path);
+          setTuneOpen(true);
+        }}
         view={view}
+        onView={(v) => (v !== "3d" || HAS_WEBGL) && setView(v)}
         runId={runId}
         reduced={reduced}
         stopAt={stopAt}
@@ -266,9 +333,24 @@ export default function App() {
           nextToken: data.transformer.nextToken,
           thread,
           actions,
+          params,
         }}
       />
       </ErrorBoundary>
+
+      <TunePanel
+        open={tuneOpen}
+        mode={mode}
+        params={params}
+        focus={tuneFocus}
+        onTune={tune}
+        onSet={setParams}
+        onReset={resetParams}
+        onClose={() => setTuneOpen(false)}
+        baseline={ctx.baseline}
+        ctx={ctx}
+        steps={steps}
+      />
 
       {notice && (
         <div className="toast" role="status">
@@ -351,3 +433,4 @@ function TablePlayer({ module, ctx, start }) {
     />
   );
 }
+

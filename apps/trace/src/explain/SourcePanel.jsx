@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { PanelRightClose } from "lucide-react";
 import { show } from "./kit.jsx";
 import { sourceMap } from "./sourceLines.js";
 
@@ -44,7 +45,7 @@ function onLine(vars, text) {
   });
 }
 
-export default function SourcePanel({ module, frame, previous = {}, reduced }) {
+export default function SourcePanel({ module, frame, previous = {}, reduced, collapsed = false, onHide = null }) {
   const map = useMemo(() => sourceMap(module), [module]);
   const scroller = useRef(null);
   const lines = [].concat(frame.line ?? []);
@@ -72,10 +73,23 @@ export default function SourcePanel({ module, frame, previous = {}, reduced }) {
   }, [activeKey, module, reduced]);
 
   return (
-    <aside className="source-pane" data-background aria-label="Source code running now">
+    <aside
+      className={`source-pane ${collapsed ? "is-collapsed" : ""}`}
+      data-background
+      aria-label="Source code running now"
+      aria-hidden={collapsed || undefined}
+      inert={collapsed || undefined}
+    >
       <header>
-        <b>Running the real code</b>
-        <span>{map.blocks.map((b) => `${b.file.split("/").pop()}:${b.line}`).join(" · ")}</span>
+        <div>
+          <b>Running the real code</b>
+          <span>{map.blocks.map((b) => `${b.file.split("/").pop()}:${b.line}`).join(" · ")}</span>
+        </div>
+        {onHide && (
+          <button type="button" className="icon-btn" onClick={onHide} aria-label="Hide the source code (S)" title="Hide the source code (S)">
+            <PanelRightClose size={17} />
+          </button>
+        )}
       </header>
       <div className="src-scroll" ref={scroller}>
         {map.blocks.map((block, bi) => (

@@ -6,6 +6,10 @@ export const CELL_W = 1.6;
 export const CELL_H = 0.8;
 const PAD = 0.25;
 const TITLE_H = 0.75;
+// For renderers that draw block titles themselves (view.noTitle).
+export const BLOCK_PAD = PAD;
+export const TITLE_BAND = TITLE_H;
+export const TITLE_SIZE = 0.36;
 const COL_LABEL_H = 0.5;
 const LABEL_FONT = 0.27;
 const TITLE_FONT = 0.36;
@@ -167,7 +171,7 @@ function fitText(ctx, text, max) {
 }
 
 // view: { mode: "done" | "ghost" | "live", done(r, c), source: Set("r,c"),
-//         active: Set("r,c"), highlights: boolean }
+//         active: Set("r,c"), highlights: boolean, noTitle?: boolean }
 // The context is already translated to the block's corner and scaled so one
 // unit is one pixel times `px`; text is skipped when it would be too small.
 export function paintBlock(ctx, b, view, px) {
@@ -182,7 +186,7 @@ export function paintBlock(ctx, b, view, px) {
   ctx.strokeStyle = ghost ? COLORS.edgeGhost : COLORS.edge;
   ctx.stroke();
   ctx.textBaseline = "middle";
-  if (b.title && TITLE_FONT * px >= minText) {
+  if (b.title && !view.noTitle && TITLE_FONT * px >= minText) {
     ctx.font = `600 ${TITLE_FONT}px ${SANS}`;
     ctx.fillStyle = ghost ? COLORS.label : COLORS.title;
     ctx.textAlign = "left";

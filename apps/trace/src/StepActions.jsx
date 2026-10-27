@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { ArrowRight, Check, CheckCircle2, RotateCcw, Send } from "lucide-react";
 import { friendlyDate, friendlyTime, TIE_GAP } from "./engine/pipeline.js";
-import { CONTEXT } from "./engine/transformer.js";
+import { TRANSFORMER_DEFAULTS } from "./engine/transformer.js";
 
 // When the planner asks a question, answer it here; the reply is added to the
 // request and the pipeline runs again.
@@ -56,6 +56,8 @@ export default function StepActions({
   nextToken,
   thread = [],
   actions,
+  params = null,
+  ctx = null,
 }) {
   const { decision } = trace;
   if (mode === "planner" && stepId === "decide") {
@@ -152,12 +154,14 @@ export default function StepActions({
       </div>
     );
   }
-  if (mode === "transformer" && stepId === "decode")
+  if (mode === "transformer" && stepId === "decode") {
+    // The tuned context window, from the settings or the ctx they built.
+    const limit = (params ?? ctx?.params)?.transformer?.context ?? TRANSFORMER_DEFAULTS.context;
     return (
       <div className="actions">
         <button
           className="primary"
-          disabled={generatedTokens.length >= CONTEXT}
+          disabled={generatedTokens.length >= limit}
           onClick={actions.appendToken}
         >
           Append “{nextToken}” and run again <ArrowRight size={15} />
@@ -176,5 +180,6 @@ export default function StepActions({
         )}
       </div>
     );
+  }
   return null;
 }

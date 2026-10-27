@@ -15,12 +15,9 @@ function plannerLook() {
 }
 
 async function localRecords() {
-  const [tasks, reminders, notes] = await Promise.all(['task', 'reminder', 'note'].map(cachedRecords))
-  return [
-    ...tasks.map(record => toTraceRecord('task', record)),
-    ...reminders.map(record => toTraceRecord('reminder', record)),
-    ...notes.map(record => toTraceRecord('note', record)),
-  ]
+  const types = ['task', 'reminder', 'note', 'schedule']
+  const lists = await Promise.all(types.map(cachedRecords))
+  return lists.flatMap((list, i) => (list || []).map(record => toTraceRecord(types[i], record)))
 }
 
 // Opens the step-by-step trace of how a reply was made. The trace code

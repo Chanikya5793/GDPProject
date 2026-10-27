@@ -1,6 +1,7 @@
 import { Chars, Panel, Table, Tag } from "../../kit.jsx";
-import { TOKEN_PATTERNS } from "../../../engine/pipeline.js";
+import { PLANNER_DEFAULTS, TOKEN_PATTERNS } from "../../../engine/pipeline.js";
 import { charGrid, row, tableBlock } from "../../../map/blocks.js";
+import { isDefault, paramsOf } from "./util.js";
 
 const KIND_LINE = { number: 5, context: 6, keyword: 6, punctuation: 7 };
 const RULE_NOTE = {
@@ -10,12 +11,77 @@ const RULE_NOTE = {
   symbol: "any single character that is not whitespace",
 };
 
-function reason(t) {
+function reason(t, p) {
   if (t.kind === "number") return "it starts with a digit → number";
   if (t.kind === "punctuation") return "it starts with neither a digit nor a letter → punctuation";
+  const list = isDefault(p, "stopWords") ? "the stop-word list" : "your stop-word list";
   return t.kind === "context"
-    ? `it starts with a letter and “${t.normalized}” is in the stop-word list → context`
-    : `it starts with a letter and “${t.normalized}” is not a stop word → keyword`;
+    ? `it starts with a letter and “${t.normalized}” is in ${list} → context`
+    : `it starts with a letter and “${t.normalized}” is not in ${list} → keyword`;
+}
+
+// One sentence on how the stop-word setting differs from the default, or "".
+function stopSay(p) {
+  if (isDefault(p, "stopWords")) return "";
+  const def = new Set(PLANNER_DEFAULTS.stopWords);
+  const added = p.stopWords.filter((w) => !def.has(w));
+  return ` Your stop-word list has ${p.stopWords.length} words${
+    added.length ? `, including ${added.slice(0, 4).map((w) => `“${w}”`).join(", ")}` : ""
+  } (the default has ${def.size}).`;
+}
+
+// ---- Explain a cell ----
+
+function explainPattern(trace, r) {
+  const x = TOKEN_PATTERNS[r];
+  if (!x) return null;
+  const used = trace.tokens.filter((t) => t.rule === x.name);
+  return {
+    meaning: `Alternative ${r + 1}, “${x.name}”: ${RULE_NOTE[x.name]}. It is tried only where the alternatives above it did not match.`,
+    formula: `/${x.source}/`,
+    worked: used.length
+      ? `matched ${used.length} time${used.length === 1 ? "" : "s"}: ${used.slice(0, 6).map((t) => `“${t.text}”`).join(", ")}${used.length > 6 ? ", …" : ""}`
+      : "matched nothing in this request",
+  };
+}
+
+function explainToken(t, p, c) {
+  if (!t) return null;
+  switch (c) {
+    case 0:
+      return { meaning: `Token number ${t.id}, counting from 0 in the order the scan found them.` };
+    case 1:
+      return {
+        meaning: "The exact characters the regular expression matched in what you typed.",
+        formula: "text = original.slice(start, end)",
+        worked: `original.slice(${t.start}, ${t.end}) = “${t.text}”`,
+      };
+    case 2:
+      return {
+        meaning: "Where the token sits in the original text, counted in UTF-16 code units. The end is not included.",
+        formula: "end = start + text.length",
+        worked: `${t.start} + ${t.text.length} = ${t.end}`,
+      };
+    case 3:
+      return {
+        meaning:
+          t.kind === "context"
+            ? `“${t.normalized}” is filler: a stop word that says nothing about the topic.`
+            : t.kind === "keyword"
+              ? `“${t.normalized}” is a keyword: a word that may say what the reminder is about.`
+              : `“${t.normalized}” is ${t.kind === "number" ? "a number" : "punctuation"}.`,
+        formula: "digit first → number; letter first → context if a stop word, else keyword; otherwise punctuation",
+        worked: reason(t, p),
+      };
+    case 4:
+      return {
+        meaning: `The alternative of the token regular expression that matched: ${RULE_NOTE[t.rule]}.`,
+        formula: "first alternative that matches wins: clock | word | number | symbol",
+        worked: `at offset ${t.start}, “${t.rule}” matched “${t.text}”`,
+      };
+    default:
+      return null;
+  }
 }
 
 export default {
@@ -31,18 +97,20 @@ export default {
     "  const normalized = normalize(m[0])",
     "  let kind",
     "  if (/^\\d/.test(normalized)) kind = \"number\"",
-    "  else if (/^\\p{L}/u.test(normalized)) kind = STOP_WORDS.has(normalized) ? \"context\" : \"keyword\"",
+    "  else if (/^\\p{L}/u.test(normalized)) kind = stopWords.has(normalized) ? \"context\" : \"keyword\"   // a setting",
     "  else kind = \"punctuation\"",
     "  tokens.push({ id, text: m[0], normalized, start, end, kind })",
     "}",
   ],
-  frames({ trace }) {
+  frames(ctx) {
+    const { trace } = ctx;
+    const p = paramsOf(ctx);
     const text = trace.original;
     const frames = [
       {
         phase: "Setup",
         line: 0,
-        say: `The tokenizer is one regular expression with four alternatives. At each position the engine tries them left to right and keeps the first that matches. The input has ${text.length} UTF-16 code units.`,
+        say: `The tokenizer is one regular expression with four alternatives. At each position the engine tries them left to right and keeps the first that matches. The input has ${text.length} UTF-16 code units.${stopSay(p)}`,
         vars: { text, "text.length": text.length },
         tok: -1,
         offset: 0,
@@ -64,7 +132,7 @@ export default {
       frames.push({
         phase: "Scan",
         line: [3, KIND_LINE[t.kind], 8],
-        say: `normalize(“${t.text}”) = “${t.normalized}”. ${reason(t)[0].toUpperCase()}${reason(t).slice(1)}. Push token ${i}.`,
+        say: `normalize(“${t.text}”) = “${t.normalized}”. ${reason(t, p)[0].toUpperCase()}${reason(t, p).slice(1)}. Push token ${i}.`,
         vars: {
           "m[0]": t.text,
           normalized: t.normalized,
@@ -90,14 +158,17 @@ export default {
     });
     return frames;
   },
-  blocks({ trace }) {
+  blocks(ctx) {
+    const { trace } = ctx;
+    const p = paramsOf(ctx);
     return [
       tableBlock({
         id: "patterns",
         title: "TOKEN_RE alternatives, tried in order",
         head: ["name", "pattern"],
         widths: [1, 3.4],
-        rows: TOKEN_PATTERNS.map((p) => [p.name, { text: p.source, align: "left" }]),
+        rows: TOKEN_PATTERNS.map((x) => [x.name, { text: x.source, align: "left" }]),
+        explain: (r) => explainPattern(trace, r),
       }),
       tableBlock({
         id: "tokens",
@@ -111,6 +182,7 @@ export default {
           { text: t.kind, tone: t.kind },
           t.rule,
         ]),
+        explain: (r, c) => explainToken(trace.tokens[r], p, c),
       }),
     ];
   },
@@ -142,7 +214,7 @@ export default {
             ? { label: "kind", terms: ["starts with a digit or a letter?"], result: "no → punctuation" }
             : {
                 label: "kind",
-                terms: [`STOP_WORDS.has(“${t.normalized}”)`],
+                terms: [`stopWords.has(“${t.normalized}”)`],
                 result: `${t.kind === "context"} → ${t.kind}`,
               },
       );

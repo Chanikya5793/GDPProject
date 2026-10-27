@@ -1,6 +1,6 @@
-import { attention, inspectBPE, encodeBPE, CONTEXT } from "./transformer.js";
+import { attention, inspectBPE, encodeBPE, TRANSFORMER_DEFAULTS } from "./transformer.js";
 
-export function microscope(trace, generatedTokens = []) {
+export function microscope(trace, generatedTokens = [], params = TRANSFORMER_DEFAULTS) {
   const utf16 = [];
   let offset = 0;
   for (const char of trace.original) {
@@ -41,14 +41,15 @@ export function microscope(trace, generatedTokens = []) {
       trace.original,
       generatedTokens.length
         ? {
+            params,
             tokenWindow: [
-              ...encodeBPE(trace.original).slice(0, CONTEXT),
+              ...encodeBPE(trace.original, params.merges).slice(0, params.context),
               ...generatedTokens,
             ],
           }
-        : {},
+        : { params },
     ),
     generatedTokens,
-    bpe: inspectBPE(trace.original),
+    bpe: inspectBPE(trace.original, params.merges),
   };
 }
