@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bot, Send, Trash2, PanelRightClose, ExternalLink, Square, ShieldCheck, X, Search, ChevronDown, ChevronRight, Repeat, Plus, MessageSquare, Pencil } from 'lucide-react'
 import { useAi } from '../context/AiContext'
+import TraceButton from './TraceButton'
 import AttachedRecordChip from './AttachedRecordChip'
 import { changeLines, changeSummary, longTextChange } from '../utils/changePreview'
 import { diffSentence, diffStat, diffWords } from '../utils/textDiff'
@@ -467,6 +468,9 @@ export default function AiSidebar() {
                   <ProposalList proposals={msg.proposals}
                     onConfirm={confirmProposal} onReject={rejectProposal}
                     onConfirmAll={confirmProposals} onRejectAll={rejectProposals} />
+                  {msg.role === 'bot' && !msg.streaming && (
+                    <TraceButton messages={messages} botId={msg.id} />
+                  )}
                 </div>
               </div>
             ))}
@@ -486,6 +490,7 @@ export default function AiSidebar() {
                 The copilot needs the planner backend, which this build is not connected to.
                 Your tasks, reminders, and notes still work — they are stored encrypted on this
                 device.
+                <TraceButton demo label="See how the copilot works" className="ai-trace-demo" />
               </div>
             )}
             <div ref={bottomRef} />

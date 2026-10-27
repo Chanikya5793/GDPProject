@@ -1,0 +1,27 @@
+{
+  "name": "@gdp/trace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4317 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4317 --strictPort",
+    "test": "node --test src/engine/*.test.js src/explain/*.test.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.12"
+  },
+  "exports": {
+    "./embed": "./src/embed.jsx",
+    "./package.json": "./package.json",
+    "./sample": "./src/engine/copilotSample.js"
+  }
+}
