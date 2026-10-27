@@ -12,22 +12,24 @@ function memoryOf(ctx) {
     kind: t.role === "assistant" ? "copilot said" : "you said",
     text: t.text,
     chars: Math.min(TURN_CHARS, t.text.length),
+    proposed: t.proposed ?? [],
   }));
   const earlier = (c.earlier ?? []).map((e) => ({ kind: `source ${e.citation_id}`, text: e.title, id: e.citation_id }));
   const focus = c.focus ? [{ kind: "attached record", text: c.focus.title }] : [];
   const refers = (c.message ?? "").match(REFERS)?.[0] ?? null;
-  return { turns, earlier, focus, refers, rows: [...turns, ...earlier, ...focus] };
+  const server = c.response?.retrieval?.turn?.history_turns;
+  return { turns, earlier, focus, refers, server: typeof server === "number" ? server : null, rows: [...turns, ...earlier, ...focus] };
 }
 
 export default {
   id: "memory",
-  source: [["copilot", "promptSections"]],
+  source: [["copilot", "turnForPrompt"], ["copilot", "buildPrompt"]],
   code: [
-    "const history = conversation.turns.slice(-20)",
-    "  .map((t) => ({ role: t.role, text: t.text.slice(0, 4000) }))",
-    "const sources = reuseCitationIds(conversation.citations)",
-    "const focus = request.focus ? readRecord(request.focus) : null",
-    "return { history, sources, focus }",
+    "const history = (thread ? thread.messages : request.history).slice(-20)",
+    "  .map((t) => ({ role: t.role, text: t.text.slice(0, 4000), proposed: t.proposed }))",
+    "ledger.seed(everyCitationInTheThread) // S-numbers keep their meaning",
+    "const focus = request.focus ?? recordNamedBy(message) // \"S7\" or \"7\" on its own",
+    "return { history, ledger, focus }",
   ],
   frames(ctx) {
     const m = memoryOf(ctx);
@@ -44,7 +46,7 @@ export default {
       frames.push({
         phase: "Turns",
         line: [0, 1],
-        say: `${t.kind === "you said" ? "You said" : "The copilot said"}: “${short(t.text, 90)}”. Sent again (${t.chars} characters).`,
+        say: `${t.kind === "you said" ? "You said" : "The copilot said"}: “${short(t.text, 90)}”. Sent again (${t.chars} characters)${t.proposed.length ? `, with the ${plural(t.proposed.length, "record")} it proposed changes on, so “it” can mean ${t.proposed[0].title ? `“${short(t.proposed[0].title, 40)}”` : "that record"}` : ""}.`,
         vars: { turn: i + 1, chars: t.chars },
         at: i,
         hold: 0.8,
@@ -54,7 +56,7 @@ export default {
       frames.push({
         phase: "Sources",
         line: 2,
-        say: `${e.id} is still “${e.text}”. Earlier sources keep their numbers, so the LLM can point back at the same record.`,
+        say: `${e.id} is still “${e.text}”. Earlier sources keep their numbers: if the record appears again this turn it gets ${e.id} back, and new records are numbered after the highest one used.`,
         vars: { citation: e.id },
         at: m.turns.length + i,
         hold: 0.8,
@@ -71,11 +73,11 @@ export default {
     frames.push({
       phase: "Remembered",
       line: 4,
-      say: !m.rows.length
+      say: (!m.rows.length
         ? "This is the first message of the conversation, so there is nothing earlier to remember."
         : m.refers
           ? `Your message says “${m.refers}”. The LLM works out what that means from what is remembered here: ${plural(m.turns.length, "turn")} and ${plural(m.earlier.length, "earlier source")}.`
-          : `The LLM will read ${plural(m.turns.length, "earlier turn")} and ${plural(m.earlier.length, "earlier source")} alongside your message.`,
+          : `The LLM will read ${plural(m.turns.length, "earlier turn")} and ${plural(m.earlier.length, "earlier source")} alongside your message.`) + (m.server !== null && m.server !== m.turns.length ? ` The server replayed ${plural(m.server, "turn")} from the stored thread, which can differ from what this device shows.` : m.server !== null ? " The server reported replaying the same number of turns." : ""),
       vars: { remembered: m.rows.length },
       at: m.rows.length,
     });

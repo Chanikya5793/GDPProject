@@ -1,6 +1,7 @@
 // The teaching blocks shared by the guide and the Flow cards: a step's
 // lesson (what / why / in this run / try it), the default-vs-yours line, and
 // the chip naming the settings that reach a step.
+import { useId, useState } from "react";
 import { FlaskConical, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { lessonFor } from "./lessons/index.js";
 import Glossed from "./Glossed.jsx";
@@ -56,44 +57,76 @@ export function TryButton({ item, params, onTune, compact = false }) {
   );
 }
 
-export function LessonBlock({ stepId, mode, ctx, detail, params, onTune, seen }) {
+const LESSON_TABS = [
+  ["what", "What"],
+  ["why", "Why"],
+  ["run", "In this run"],
+  ["try", "Try it"],
+];
+
+// A step's lesson as tabs, so the guide stays one calm column. The chosen tab
+// is kept across steps when the caller passes `tab` and `onTab`.
+export function LessonBlock({ stepId, mode, ctx, detail, params, onTune, seen, tab, onTab }) {
+  const [own, setOwn] = useState("what");
+  const base = useId();
   const lesson = safeLesson(stepId, mode);
   if (!lesson) return null;
   const example = detail ? lessonExample(lesson, ctx) : null;
   const tries = onTune ? lessonTries(lesson) : [];
-  const why = detail && typeof lesson.why === "string" ? lesson.why : null;
+  const why = typeof lesson.why === "string" ? lesson.why : null;
   const what = typeof lesson.what === "string" ? lesson.what : null;
-  if (!what && !why && !example && !tries.length) return null;
+  const has = { what: !!what, why: !!why, run: !!example, try: tries.length > 0 };
+  const tabs = LESSON_TABS.filter(([id]) => has[id]);
+  if (!tabs.length) return null;
+  const wanted = tab ?? own;
+  const current = has[wanted] ? wanted : tabs[0][0];
+  const pick = (id) => (onTab ? onTab(id) : setOwn(id));
+  const move = (e) => {
+    const i = tabs.findIndex(([id]) => id === current);
+    const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    const id = tabs[(next + tabs.length) % tabs.length][0];
+    pick(id);
+    e.currentTarget.querySelector(`#${CSS.escape(`${base}-${id}`)}`)?.focus();
+  };
   return (
     <section className="lesson" aria-label="About this step">
-      {what && (
-        <div className="lesson-row">
-          <h3>What</h3>
+      <div className="lesson-tabs" role="tablist" aria-label="About this step" onKeyDown={move}>
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            id={`${base}-${id}`}
+            type="button"
+            role="tab"
+            aria-selected={current === id}
+            aria-controls={`${base}-panel`}
+            tabIndex={current === id ? 0 : -1}
+            onClick={() => pick(id)}
+          >
+            {label}
+            {id === "try" && <span className="lesson-count">{tries.length}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="lesson-panel" id={`${base}-panel`} role="tabpanel" aria-labelledby={`${base}-${current}`} key={current}>
+        {current === "what" && (
           <p>
             <Glossed text={what} seen={seen} />
           </p>
-        </div>
-      )}
-      {why && (
-        <div className="lesson-row">
-          <h3>Why</h3>
+        )}
+        {current === "why" && (
           <p>
             <Glossed text={why} seen={seen} />
           </p>
-        </div>
-      )}
-      {example && (
-        <div className="lesson-row is-example">
-          <h3>In this run</h3>
-          <p>
+        )}
+        {current === "run" && (
+          <p className="is-example">
             <Glossed text={example} seen={seen} />
           </p>
-        </div>
-      )}
-      {tries.length > 0 && (
-        <div className="lesson-row is-try">
-          <h3>Try it</h3>
-          <ul>
+        )}
+        {current === "try" && (
+          <ul className="lesson-try">
             {tries.map((t, i) => (
               <li key={i}>
                 <TryButton item={t} params={params} onTune={onTune} />
@@ -105,8 +138,8 @@ export function LessonBlock({ stepId, mode, ctx, detail, params, onTune, seen })
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }

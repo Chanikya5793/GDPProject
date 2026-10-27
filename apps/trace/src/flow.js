@@ -1,7 +1,7 @@
 // One-line "went in / came out" summaries per step, from the real results,
 // for the Flow view. Kept short: details live in the 2D and 3D maps.
 import { friendlyDate, friendlyTime } from "./engine/pipeline.js";
-import { COPILOT_DEFAULTS, MODEL, promptSections, retrieve, tokenSteps, vectorize } from "./engine/copilot.js";
+import { buildPrompt, COPILOT_DEFAULTS, MODEL, retrieve, serverContextOf, tokenSteps, vectorize } from "./engine/copilot.js";
 import { changed } from "./tune/schema.js";
 
 const q = (s) => `“${s}”`;
@@ -16,7 +16,10 @@ const runs = new WeakMap();
 function retrieval(c, p) {
   let byParams = runs.get(c);
   if (!byParams) runs.set(c, (byParams = new WeakMap()));
-  if (!byParams.has(p)) byParams.set(p, retrieve(c.message, c.records ?? [], p));
+  if (!byParams.has(p)) {
+    const sc = serverContextOf(c);
+    byParams.set(p, retrieve(c.message, c.records ?? [], p, { types: sc.types, attachments: sc.attachments }));
+  }
   return byParams.get(p);
 }
 
@@ -53,7 +56,7 @@ function summarizeCopilot(id, c, p) {
         const titles = new Map(c.records.map((x) => [String(x.id), x.title]));
         const kept = server.candidates.filter((x) => x.outcome === "kept");
         return {
-          in: `${server.candidates.length} nearest records (server)`,
+          in: `${server.candidates.length} nearest records (${c.demo ? "sample" : "server"})${r.retrieval.searches.length > 1 ? ` · ${r.retrieval.searches.length - 1} more searches by lookup` : ""}`,
           out: kept.length
             ? kept.map((x) => `${titles.get(String(x.record_id)) ?? x.record_id} (${x.distance.toFixed(2)})`).join(" · ")
             : "nothing kept",
@@ -73,11 +76,20 @@ function summarizeCopilot(id, c, p) {
       };
     }
     case "prompt": {
-      const kept = retrieval(c, p).kept ?? [];
-      const sections = promptSections({ message: c.message, history: c.history ?? [], focus: c.focus, hits: kept, today: c.today });
+      const opening = r?.retrieval?.searches?.[0];
+      const byId = new Map((c.records ?? []).map((x) => [String(x.id), x]));
+      const kept =
+        opening && !tuned
+          ? opening.candidates.filter((x) => x.outcome === "kept").map((x) => byId.get(String(x.record_id))).filter(Boolean)
+          : (retrieval(c, p).kept ?? []).map((k) => k.record);
+      const built = buildPrompt(c, { kept });
+      const round = r?.retrieval?.turn?.rounds ?? [];
+      const brief = built.sections.find((s) => s.name === "PLANNER_BRIEFING");
       return {
-        in: `${kept.length} source${kept.length === 1 ? "" : "s"}${tuned ? " (what-if)" : ""}, conversation, question`,
-        out: `${sections.length} labelled sections → ${MODEL.name}`,
+        in: `briefing of ${brief.items} records, ${kept.length} source${kept.length === 1 ? "" : "s"}${tuned ? " (what-if)" : ""}, ${built.history.length} turns, question`,
+        out: round.length
+          ? `${built.sections.length} sections, ${round[0].chars.toLocaleString("en-US")} chars (${c.demo ? "sample" : "server"})${round.length > 1 ? ` · ${round.length} prompts in all` : ""} → ${MODEL.name}`
+          : `${built.sections.length} sections, ≈ ${built.chars.toLocaleString("en-US")} chars (rebuilt) → ${MODEL.name}`,
       };
     }
     case "memory": {
@@ -92,8 +104,11 @@ function summarizeCopilot(id, c, p) {
             : "nothing earlier to remember",
       };
     }
-    case "lookups":
-      return { in: "model output", out: !r ? "no reply yet" : r.steps?.length ? r.steps.map((s) => s.label).join(" · ") : "no extra lookups" };
+    case "lookups": {
+      const rounds = r?.retrieval?.turn?.rounds;
+      const gens = rounds?.length ? ` · ${rounds.length} generation${rounds.length === 1 ? "" : "s"}` : "";
+      return { in: "model output", out: !r ? "no reply yet" : `${r.steps?.length ? r.steps.map((s) => s.label).join(" · ") : "no extra lookups"}${gens}` };
+    }
     case "answer":
       return { in: "model JSON", out: !r ? "no reply yet" : `${q(r.answer.slice(0, 90))}${r.answer.length > 90 ? "…" : ""} · ${r.citations?.length ?? 0} citations` };
     case "proposals":

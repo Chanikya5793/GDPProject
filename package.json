@@ -11,6 +11,7 @@
     "dev:trace": "npm run dev --workspace @gdp/trace",
     "build:trace": "npm run build --workspace @gdp/trace",
     "test:trace": "npm run test --workspace @gdp/trace",
+    "build:pages": "npm run build && npm run build:pages --workspace @gdp/trace",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

@@ -120,6 +120,10 @@ class Evidence:
         self._ids: Dict[Tuple[EntityType, str], str] = {}
         self._citations: List[Citation] = []
         self._next = 1
+        # Which part of the turn is handing out ids right now, kept per id for
+        # the trace view. Set by the caller; it changes nothing about the ids.
+        self.via = "briefing"
+        self.issued_via: Dict[str, str] = {}
 
     def seed(self, prior: Sequence[Citation]) -> None:
         """Carry the numbering forward from earlier turns of the thread.
@@ -154,6 +158,7 @@ class Evidence:
             citation_id = f"S{self._next}"
             self._next += 1
             self._ids[key] = citation_id
+        self.issued_via[citation_id] = self.via
         self._citations.append(Citation(
             citation_id=citation_id, entity_type=record.content.entity_type,
             record_id=record.record_id, revision=record.revision,

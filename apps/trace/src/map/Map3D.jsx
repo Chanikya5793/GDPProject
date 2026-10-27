@@ -5,35 +5,36 @@ import { cellAt, COLORS, paintBlock } from "./paint.js";
 import { approach, ease } from "./camera.js";
 import { cellsBox, focusOf, glideOf } from "./track.js";
 import HoverCard, { freeBox, hoverable, placeCard, sameHover } from "./HoverCard.jsx";
+import { createStage, SHADOW_CORE } from "./three/stage.js";
+import { createColumns } from "./three/columns.js";
+import { createFlows } from "./three/flows.js";
+import { createLabels } from "./three/labels.js";
+import { createGlow, weakGpu } from "./three/glow.js";
 
-// The same blocks as the 2D map, as plates on a floor. x is right, the map's
-// y runs toward the viewer (+z); the camera looks down at an angle.
-const PITCH = THREE.MathUtils.degToRad(46);
+// The same blocks as the 2D map, as slabs on a stage. x is right, the map's
+// y runs toward the viewer (+z); the camera looks down at an angle. Numeric
+// cells stand as columns (height = |value|), text cells stay painted tiles.
+const PITCH = THREE.MathUtils.degToRad(48);
+const OVERVIEW_PITCH = THREE.MathUtils.degToRad(30);
 const YAW = THREE.MathUtils.degToRad(-14);
+// The overview turns the pipeline into a diagonal skyline.
+const OVERVIEW_YAW = THREE.MathUtils.degToRad(-30);
 const FOV = 40;
-// Bars: numeric cells rise by |value|; the block's largest value reaches BAR_MAX.
-const BAR_MAX = 1.5;
-const BAR_MIN = 0.06;
 const TEX_PX = 56;
-const LIFT = 0.18;
+const PLATE_H = 0.22;
+const LIFT = 0.5;
+const DRIFT_YAW = THREE.MathUtils.degToRad(5);
+const DRIFT_PITCH = THREE.MathUtils.degToRad(1.5);
+const MAX_CALLOUTS = 3;
 
 function texturePx(block, max) {
   return Math.max(16, Math.min(TEX_PX, Math.floor(max / Math.max(block.w, block.h))));
 }
 
-function labelTexture(text, color) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  ctx.font = "600 64px Manrope, system-ui, sans-serif";
-  ctx.fillStyle = color;
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, 8, 64);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return { texture, width: Math.min(1024, ctx.measureText(text).width + 16) / 1024 };
-}
+const cellCenter = (block, r, c) => [
+  block.x + block.gx + block.offsets[c] + block.widths[c] / 2,
+  block.y + block.gy + r * block.ch + block.ch / 2,
+];
 
 export default function Map3D({ track, scene, insets, follow, overviewing, onUserMove, onCell, onFail, reduced }) {
   const host = useRef(null);
@@ -47,34 +48,41 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
   });
   const api = useRef(null);
 
-  // One renderer for the lifetime of the component.
+  // One renderer for the lifetime of the component (a theme change remounts it).
   useEffect(() => {
     const container = host.current;
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
     } catch {
       onFail?.();
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setClearColor(COLORS.bg);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     const el = renderer.domElement;
-    renderer.domElement.setAttribute("aria-hidden", "true");
+    el.setAttribute("aria-hidden", "true");
     const maxTexture = Math.min(4096, renderer.capabilities.maxTextureSize);
     const anisotropy = renderer.capabilities.getMaxAnisotropy();
 
     const world = new THREE.Scene();
-    world.fog = new THREE.Fog(COLORS.bg, 60, 160);
-    const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 600);
-    const controls = new OrbitControls(camera, renderer.domElement);
+    const stage = createStage(renderer, world);
+    const { tones } = stage;
+    const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 800);
+    const glow = createGlow(renderer, world, camera, {
+      bloom: tones.dark && !props.current.reduced && !weakGpu(renderer),
+    });
+    let hdr = glow.bloom;
+    let columns = createColumns({ env: stage.env, hdr });
+    let flows = createFlows(world, { dark: tones.dark, hdr });
+    const labels = createLabels(container);
+
+    const controls = new OrbitControls(camera, el);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.maxPolarAngle = THREE.MathUtils.degToRad(80);
+    controls.maxPolarAngle = THREE.MathUtils.degToRad(82);
     controls.minDistance = 4;
-    controls.maxDistance = 260;
+    controls.maxDistance = 400;
     controls.screenSpacePanning = false;
     let manual = false;
     controls.addEventListener("start", () => {
@@ -82,79 +90,59 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       props.current.onUserMove?.();
     });
 
-    const grid = new THREE.GridHelper(600, 120, COLORS.grid[0], COLORS.grid[1]);
-    grid.position.y = -0.02;
-    world.add(grid);
-    world.add(new THREE.HemisphereLight("#ffffff", COLORS.bg, 1.4));
-    const sun = new THREE.DirectionalLight("#ffffff", 1.6);
-    sun.position.set(-20, 40, 30);
-    world.add(sun);
-    const barGeometry = new THREE.BoxGeometry(1, 1, 1);
-    barGeometry.translate(0, 0.5, 0);
-    const COLOR = {
-      pos: new THREE.Color("rgb(98, 214, 190)"),
-      neg: new THREE.Color("rgb(240, 152, 120)"),
-      seq: new THREE.Color("rgb(166, 146, 255)"),
-      active: new THREE.Color(COLORS.active),
-      source: new THREE.Color(COLORS.source),
-      pending: new THREE.Color(COLORS.faint),
-      masked: new THREE.Color(COLORS.edgeGhost),
-    };
-    const tmp = new THREE.Object3D();
-    const tint = new THREE.Color();
-
-    const state = {
-      plates: new Map(),
-      links: new THREE.Group(),
-      labels: new THREE.Group(),
-      overlay: new THREE.Group(),
-      particles: [],
-      changedAt: 0,
-      activeFrom: null,
-      activeTo: null,
-      goal: null,
-    };
-    world.add(state.links, state.labels, state.overlay);
-    const sideMaterial = new THREE.MeshBasicMaterial({ color: COLORS.side });
-    const frameMaterial = new THREE.LineBasicMaterial({ color: COLORS.active });
-    const activeFrame = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 0.05, 1)),
-      frameMaterial,
-    );
-    world.add(activeFrame);
+    const glowScale = () => (hdr ? 1.8 : 1);
+    const sideTone = new THREE.Color(tones.side);
+    const frameMaterial = new THREE.LineBasicMaterial({ color: new THREE.Color(COLORS.active).multiplyScalar(glowScale()) });
+    const activeFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 0.05, 1)), frameMaterial);
     activeFrame.visible = false;
+    world.add(activeFrame);
     // Outline of the cell the hover card describes.
-    const hoverMaterial = new THREE.LineBasicMaterial({ color: COLORS.text, transparent: true, opacity: 0.9 });
+    const hoverMaterial = new THREE.LineBasicMaterial({ color: COLORS.text, transparent: true, opacity: 0.95 });
     const hoverFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), hoverMaterial);
     hoverFrame.visible = false;
     world.add(hoverFrame);
 
+    const state = {
+      track: null,
+      plates: new Map(),
+      links: new THREE.Group(),
+      changedAt: performance.now(),
+      activeFrom: null,
+      activeTo: null,
+      activeBlock: null,
+      drawnActive: null,
+      goal: null,
+      lifts: new Map(),
+    };
+    world.add(state.links);
+
     function disposeGroup(group) {
       group.traverse((o) => {
         o.geometry?.dispose();
-        if (o.material) {
-          o.material.map?.dispose();
-          o.material.dispose();
-        }
+        o.material?.dispose();
       });
       group.clear();
     }
+    function releasePlate(p) {
+      world.remove(p.mesh, p.shadow);
+      p.mesh.geometry.dispose();
+      p.top.map.dispose();
+      p.top.dispose();
+      p.side.dispose();
+      p.edge.geometry.dispose();
+      p.edge.material.dispose();
+      p.shadow.material.dispose();
+      if (p.bars) {
+        world.remove(p.bars);
+        columns.release(p.bars);
+      }
+    }
 
     function build(track) {
-      state.plates.forEach((p) => {
-        p.mesh.geometry.dispose();
-        p.top.map.dispose();
-        p.top.dispose();
-        world.remove(p.mesh);
-        if (p.bars) {
-          p.bars.material.dispose();
-          p.bars.dispose();
-          world.remove(p.bars);
-        }
-      });
+      state.track = track;
+      state.plates.forEach(releasePlate);
       state.plates.clear();
       disposeGroup(state.links);
-      disposeGroup(state.labels);
       for (const block of track.blocks) {
         const canvas = document.createElement("canvas");
         const px = texturePx(block, maxTexture);
@@ -164,19 +152,45 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.anisotropy = anisotropy;
         const top = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(block.w, 0.16, block.h), [
-          sideMaterial,
-          sideMaterial,
-          top,
-          sideMaterial,
-          sideMaterial,
-          sideMaterial,
-        ]);
-        mesh.position.set(block.x + block.w / 2, 0.08, block.y + block.h / 2);
+        const side = new THREE.MeshStandardMaterial({
+          color: tones.side,
+          roughness: 0.5,
+          metalness: 0.05,
+          envMap: stage.env,
+          envMapIntensity: 0.35,
+          transparent: true,
+        });
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(block.w, PLATE_H, block.h), [side, side, top, side, side, side]);
+        mesh.position.set(block.x + block.w / 2, PLATE_H / 2, block.y + block.h / 2);
         mesh.userData.block = block;
+        // The active step's slabs carry a lit accent edge.
+        const hw = block.w / 2;
+        const hh = block.h / 2;
+        const y = PLATE_H / 2 + 0.004;
+        const edge = new THREE.LineLoop(
+          new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-hw, y, -hh),
+            new THREE.Vector3(hw, y, -hh),
+            new THREE.Vector3(hw, y, hh),
+            new THREE.Vector3(-hw, y, hh),
+          ]),
+          new THREE.LineBasicMaterial({
+            color: new THREE.Color(COLORS.accent).multiplyScalar(glowScale()),
+            transparent: true,
+            opacity: 0,
+          }),
+        );
+        mesh.add(edge);
         world.add(mesh);
-        const plate = { mesh, top, canvas, px, key: null, lift: 0 };
-        if (block.heat) plate.bars = makeBars(block);
+        const shadow = stage.shadow();
+        shadow.position.x = mesh.position.x;
+        shadow.position.z = mesh.position.z;
+        world.add(shadow);
+        const plate = { mesh, top, side, edge, shadow, canvas, px, key: null, lift: 0, dim: 1, fade: 1 };
+        if (block.heat) {
+          plate.bars = columns.make(block);
+          world.add(plate.bars);
+        }
         state.plates.set(block.id, plate);
       }
       // Arrows between blocks, drawn on the floor.
@@ -184,16 +198,17 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         const from = track.byId.get(link.from);
         const to = track.byId.get(link.to);
         const forward = to.x > from.x + from.w - 0.01;
+        const y = 0.02;
         const a = forward
-          ? new THREE.Vector3(from.x + from.w + 0.15, 0.03, from.y + from.h / 2)
-          : new THREE.Vector3(from.x + from.w / 2, 0.03, from.y + from.h + 0.15);
+          ? new THREE.Vector3(from.x + from.w + 0.15, y, from.y + from.h / 2)
+          : new THREE.Vector3(from.x + from.w / 2, y, from.y + from.h + 0.15);
         const b = forward
-          ? new THREE.Vector3(to.x - 0.2, 0.03, to.y + to.h / 2)
-          : new THREE.Vector3(to.x + to.w / 2, 0.03, to.y - 0.2);
+          ? new THREE.Vector3(to.x - 0.2, y, to.y + to.h / 2)
+          : new THREE.Vector3(to.x + to.w / 2, y, to.y - 0.2);
         const mid = a.clone().add(b).multiplyScalar(0.5);
         const curve = forward
-          ? new THREE.CubicBezierCurve3(a, new THREE.Vector3(mid.x, 0.03, a.z), new THREE.Vector3(mid.x, 0.03, b.z), b)
-          : new THREE.CubicBezierCurve3(a, new THREE.Vector3(a.x, 0.03, mid.z), new THREE.Vector3(b.x, 0.03, mid.z), b);
+          ? new THREE.CubicBezierCurve3(a, new THREE.Vector3(mid.x, y, a.z), new THREE.Vector3(mid.x, y, b.z), b)
+          : new THREE.CubicBezierCurve3(a, new THREE.Vector3(a.x, y, mid.z), new THREE.Vector3(b.x, y, mid.z), b);
         const line = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(curve.getPoints(40)),
           new THREE.LineBasicMaterial({ color: COLORS.link }),
@@ -201,123 +216,66 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         line.userData.to = to.step;
         state.links.add(line);
       }
-      track.columns.forEach((col, i) => {
-        const { texture, width } = labelTexture(`${String(i + 1).padStart(2, "0")}  ${col.step.name}`, "#ffffff");
-        const height = 1.1;
-        const plane = new THREE.Mesh(
-          new THREE.PlaneGeometry(height * 8 * width, height),
-          new THREE.MeshBasicMaterial({ map: texture, transparent: true, color: COLORS.faint }),
-        );
-        plane.geometry.translate((height * 8 * width) / 2, 0, 0);
-        plane.rotation.x = -Math.PI / 2;
-        plane.position.set(col.box.x, 0.02, col.box.y - 1.1);
-        plane.userData.step = i;
-        state.labels.add(plane);
-      });
+      labels.build(track);
     }
 
-    // Numeric blocks get one bar per cell: an InstancedMesh whose heights and
-    // colors follow the frame (pending, read, written, done).
-    function makeBars(block) {
-      const count = block.rows * block.cols;
-      const bars = new THREE.InstancedMesh(
-        barGeometry,
-        new THREE.MeshLambertMaterial({ transparent: true }),
-        count,
-      );
-      bars.userData.block = block;
-      const values = [];
-      for (let r = 0; r < block.rows; r++)
-        for (let c = 0; c < block.cols; c++) values.push(block.cell(r, c)?.value);
-      const finite = values.filter(Number.isFinite).map(Math.abs);
-      const scale = block.scale ?? Math.max(1e-9, ...finite);
-      bars.userData.values = values;
-      bars.userData.scale = scale;
-      bars.userData.height = new Float32Array(count).fill(BAR_MIN);
-      bars.userData.goal = new Float32Array(count).fill(BAR_MIN);
-      bars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      for (let i = 0; i < count; i++) bars.setColorAt(i, COLOR.pending);
-      world.add(bars);
-      return bars;
+    // Plate top (y) for a block at this frame, once it has settled.
+    const restingTop = (view) => PLATE_H + (view?.mode === "live" ? LIFT : 0);
+    function cellTop(block, r, c, view) {
+      const plate = state.plates.get(block.id);
+      const h = plate?.bars ? columns.heightFor(plate.bars, r, c, view) : 0.02;
+      const [x, z] = cellCenter(block, r, c);
+      return new THREE.Vector3(x, restingTop(view) + h, z);
     }
-    function aimBars(bars, view) {
-      const block = bars.userData.block;
-      const { values, scale, goal } = bars.userData;
-      for (let r = 0; r < block.rows; r++)
-        for (let c = 0; c < block.cols; c++) {
-          const i = r * block.cols + c;
-          const key = `${r},${c}`;
-          const v = values[i];
-          const done = view.mode !== "ghost" && (view.done ? view.done(r, c) : true);
-          const masked = block.masked?.(r, c);
-          const size = Number.isFinite(v) ? Math.abs(v) / scale : 0;
-          goal[i] = !done || masked ? BAR_MIN : BAR_MIN + size * BAR_MAX;
-          tint.copy(
-            view.active?.has(key)
-              ? COLOR.active
-              : view.source?.has(key)
-                ? COLOR.source
-                : !done
-                  ? COLOR.pending
-                  : masked
-                    ? COLOR.masked
-                    : block.heat === "sequential"
-                      ? COLOR.seq
-                      : v < 0
-                        ? COLOR.neg
-                        : COLOR.pos,
-          );
-          bars.setColorAt(i, tint);
-        }
-      bars.instanceColor.needsUpdate = true;
-      bars.material.opacity = view.mode === "ghost" ? 0.25 : 1;
-      bars.userData.key = view.key;
-    }
-    function growBars(bars, lift, dt, reduced) {
-      const block = bars.userData.block;
-      const { height, goal } = bars.userData;
-      let moving = bars.userData.lift !== lift;
-      for (let i = 0; i < height.length; i++) {
-        const next = reduced ? goal[i] : approach(height[i], goal[i], dt, 0.45);
-        if (Math.abs(next - height[i]) > 1e-4) moving = true;
-        height[i] = next;
+
+    // Arcs from each cell read to the cells written, and the written value.
+    function routeFlows(scene) {
+      const written = scene.groups.find((g) => g.role === "active");
+      if (!written) {
+        flows.clear();
+        labels.setCallouts([]);
+        return;
       }
-      if (!moving && bars.userData.placed) return;
-      bars.userData.lift = lift;
-      bars.userData.placed = true;
-      for (let r = 0; r < block.rows; r++)
-        for (let c = 0; c < block.cols; c++) {
-          const i = r * block.cols + c;
-          tmp.position.set(
-            block.x + block.gx + block.offsets[c] + block.widths[c] / 2,
-            0.16 + lift,
-            block.y + block.gy + r * block.ch + block.ch / 2,
-          );
-          tmp.scale.set(block.widths[c] * 0.72, height[i], block.ch * 0.72);
-          tmp.updateMatrix();
-          bars.setMatrixAt(i, tmp.matrix);
-        }
-      bars.instanceMatrix.needsUpdate = true;
-    }
-
-    function paint(view, plate, block) {
-      const ctx = plate.canvas.getContext("2d");
-      ctx.clearRect(0, 0, plate.canvas.width, plate.canvas.height);
-      paintBlock(ctx, block, { ...view, bars: !!plate.bars }, plate.px);
-      plate.top.map.needsUpdate = true;
-      plate.key = view.key;
+      const wView = scene.views.get(written.block.id);
+      const tops = written.cells.map(([r, c]) => cellTop(written.block, r, c, wView));
+      const end = tops.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / tops.length);
+      end.y = Math.max(...tops.map((p) => p.y));
+      const box = cellsBox(written.block, written.cells);
+      const routes = [];
+      for (const g of scene.groups) {
+        if (g.role !== "source") continue;
+        const view = scene.views.get(g.block.id);
+        for (const [r, c] of g.cells) routes.push({ start: cellTop(g.block, r, c, view), end });
+      }
+      const floor = restingTop(wView) + 0.01;
+      flows.set(routes, { point: new THREE.Vector3(box.x + box.w / 2, floor, box.y + box.h / 2), size: Math.max(box.w, box.h) });
+      const shown =
+        // Columns carry no text, so their value floats above them; a painted
+        // tile already shows its own text, so only a lone one gets a callout.
+        written.cells.length <= (written.block.heat ? MAX_CALLOUTS : 1)
+          ? written.cells
+              .map(([r, c], i) => {
+                const cell = written.block.cell(r, c);
+                const done = !wView?.done || wView.done(r, c);
+                const text = cell && done ? String(cell.text ?? "") : "";
+                return text ? { point: tops[i].clone().setY(tops[i].y + 0.1), text } : null;
+              })
+              .filter(Boolean)
+          : [];
+      labels.setCallouts(shown);
     }
 
     function goalFor() {
-      const { scene, track, overviewing } = props.current;
+      const { scene, track, overviewing, insets } = props.current;
       const col = scene.column;
       if (!col) return null;
       const focus = focusOf(scene);
+      const pitch = overviewing ? OVERVIEW_PITCH : PITCH;
+      const yaw = overviewing ? OVERVIEW_YAW : YAW;
       const box = overviewing
-        ? track.bounds
+        ? { x: track.bounds.x - 1, y: track.bounds.y - 2, w: track.bounds.w + 2, h: track.bounds.h + 3 }
         : (() => {
             const step = { x: col.box.x - 1, y: col.box.y - 2, w: col.box.w + 2, h: col.box.h + 3 };
-            // Large steps: frame the cells in play rather than the whole step.
             if (step.w * step.h <= 900 || !focus) return step;
             // Large steps: center on the cell being written, with its reads in view.
             const written = scene.groups.find((g) => g.role === "active" && g.block.step === scene.si);
@@ -328,134 +286,142 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
             const h = Math.min(18, Math.max(10, focus.h + 4));
             return { x: cx - w / 2, y: cy - h / 2, w, h };
           })();
-      const target = new THREE.Vector3(box.x + box.w / 2, 0, box.y + box.h / 2);
-      const { insets } = props.current;
-      const w = container.clientWidth;
-      const usable = Math.max(0.3, (w - insets.left - insets.right) / w);
-      const usableH = Math.max(0.3, (container.clientHeight - insets.top - insets.bottom) / container.clientHeight);
+      // In perspective the near end of the skyline looms larger: aim a little past the middle.
+      const target = new THREE.Vector3(box.x + box.w * (overviewing ? 0.56 : 0.5), 0.4, box.y + box.h / 2);
+      const W = container.clientWidth || 1;
+      const H = container.clientHeight || 1;
+      const usable = Math.max(0.3, (W - insets.left - insets.right) / W);
+      const usableH = Math.max(0.3, (H - insets.top - insets.bottom) / H);
       const vfov = THREE.MathUtils.degToRad(FOV);
       const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect * usable);
-      // Seen from PITCH above the floor, depth on the map shrinks by sin(PITCH).
-      const dist =
-        Math.max(
-          (box.h * Math.sin(PITCH)) / 2 / Math.tan(vfov / 2) / usableH,
-          box.w / 2 / Math.tan(hfov / 2),
-          6,
-        ) * 1.05;
-      // Shift the look point so the content centers in the area beside the guide.
-      const shift = ((insets.left - insets.right) / w) * dist * Math.tan(hfov / 2) * 1.1;
-      // Vertically, center between the top bar and whatever covers the bottom
-      // (the dock, or the guide sheet on phones): look nearer the viewer.
-      const lift =
-        (((insets.bottom - insets.top) / container.clientHeight) * dist * Math.tan(vfov / 2)) /
-        Math.sin(PITCH);
+      // The box turned by `yaw`, then seen from `pitch` above the floor: depth
+      // shrinks by sin(pitch); columns add their height times cos(pitch).
+      const across = box.w * Math.cos(yaw) + box.h * Math.abs(Math.sin(yaw));
+      const along = box.w * Math.abs(Math.sin(yaw)) + box.h * Math.cos(yaw);
+      const depth = along * Math.sin(pitch) + 4 * Math.cos(pitch);
+      const dist = Math.max(depth / 2 / Math.tan(vfov / 2) / usableH, across / 2 / Math.tan(hfov / 2), 6) * 1.05;
+      // Shift the look point so the content centers in the area beside the panels.
+      const shift = ((insets.left - insets.right) / W) * dist * Math.tan(hfov / 2) * 1.1;
+      const lift = (((insets.bottom - insets.top) / H) * dist * Math.tan(vfov / 2)) / Math.sin(pitch);
       const look = target
         .clone()
-        .add(new THREE.Vector3(-shift * Math.cos(YAW), 0, shift * Math.sin(YAW)))
-        .add(new THREE.Vector3(Math.sin(YAW) * lift, 0, Math.cos(YAW) * lift));
-      const offset = new THREE.Vector3(
-        Math.sin(YAW) * Math.cos(PITCH),
-        Math.sin(PITCH),
-        Math.cos(YAW) * Math.cos(PITCH),
-      ).multiplyScalar(dist);
-      return { look, position: look.clone().add(offset) };
+        .add(new THREE.Vector3(-shift * Math.cos(yaw), 0, shift * Math.sin(yaw)))
+        .add(new THREE.Vector3(Math.sin(yaw) * lift, 0, Math.cos(yaw) * lift));
+      return { look, dist, pitch, yaw, box: col.box };
+    }
+    const offsetAt = (yaw, pitch, dist) =>
+      new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(dist);
+    function aimCamera(goal) {
+      controls.maxDistance = Math.max(400, goal.dist * 1.6);
+      camera.far = Math.max(800, goal.dist * 6);
+      camera.updateProjectionMatrix();
     }
 
     api.current = {
-      build,
+      build(track) {
+        if (track !== state.track) build(track);
+      },
       update() {
         const { scene, follow } = props.current;
         if (follow) manual = false;
         state.goal = goalFor();
+        if (state.goal) aimCamera(state.goal);
         const active = glideOf(scene);
         state.activeFrom = state.drawnActive ?? active;
         state.activeTo = active;
+        state.activeBlock = scene.groups.find((g) => g.role === "active")?.block ?? null;
         state.changedAt = performance.now();
-        // Flows from the cells read to the cells written.
-        disposeGroup(state.overlay);
-        state.particles = [];
-        const written = scene.groups.find((g) => g.role === "active");
-        const target = written && cellsBox(written.block, written.cells);
-        if (target) {
-          const end = new THREE.Vector3(target.x + target.w / 2, LIFT + 0.2, target.y + target.h / 2);
-          for (const g of scene.groups) {
-            if (g.role !== "source") continue;
-            const box = cellsBox(g.block, g.cells);
-            const start = new THREE.Vector3(box.x + box.w / 2, LIFT + 0.2, box.y + box.h / 2);
-            const distance = start.distanceTo(end);
-            if (distance < 0.5) continue;
-            const control = start.clone().add(end).multiplyScalar(0.5);
-            control.y += Math.min(6, 0.8 + distance * 0.35);
-            const curve = new THREE.QuadraticBezierCurve3(start, control, end);
-            state.overlay.add(
-              new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)),
-                new THREE.LineBasicMaterial({ color: COLORS.source, transparent: true, opacity: 0.55 }),
-              ),
-            );
-            for (let k = 0; k < 3; k++) {
-              const dot = new THREE.Mesh(
-                new THREE.SphereGeometry(0.09, 10, 10),
-                new THREE.MeshBasicMaterial({ color: COLORS.active }),
-              );
-              state.overlay.add(dot);
-              state.particles.push({ dot, curve, offset: k / 3 });
-            }
-          }
-        }
-      },
-      recenter() {
-        manual = false;
+        routeFlows(scene);
       },
     };
     build(props.current.track);
-    api.current.update();
 
     function resize() {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      renderer.setSize(w, h);
+      const w = container.clientWidth || 1;
+      const h = container.clientHeight || 1;
+      glow.setSize(w, h);
+      labels.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       state.goal = goalFor();
+      if (state.goal) aimCamera(state.goal);
     }
     resize();
+    api.current.update();
     if (state.goal) {
-      camera.position.copy(state.goal.position);
       controls.target.copy(state.goal.look);
+      camera.position.copy(state.goal.look).add(offsetAt(state.goal.yaw, state.goal.pitch, state.goal.dist));
     }
     const observer = new ResizeObserver(resize);
     observer.observe(container);
 
+    // If bloom was dropped for speed, rebuild without the >1 colours it relied on.
+    function settleHdr() {
+      if (hdr === glow.bloom) return;
+      state.plates.forEach(releasePlate);
+      state.plates.clear();
+      columns.dispose();
+      flows.dispose();
+      hdr = glow.bloom;
+      columns = createColumns({ env: stage.env, hdr });
+      flows = createFlows(world, { dark: tones.dark, hdr });
+      frameMaterial.color.set(COLORS.active);
+      build(props.current.track);
+      routeFlows(props.current.scene);
+    }
+
     let raf = 0;
     let last = performance.now();
     let lost = false;
+    const tmpPos = new THREE.Vector3();
     function frame(now) {
       raf = requestAnimationFrame(frame);
-      if (lost || document.hidden) return;
+      if (lost || document.hidden) {
+        last = now;
+        return;
+      }
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
+      glow.watch(dt);
+      settleHdr();
       const { scene, track, reduced } = props.current;
-      // Repaint textures whose state changed; lift the step being computed.
+      // Repaint textures whose state changed; lift the step in play, settle the
+      // past lower and dimmer, ghost the future.
       for (const block of track.blocks) {
         const plate = state.plates.get(block.id);
         if (!plate) continue;
         const view = scene.views.get(block.id) ?? { mode: "done", key: "done" };
-        if (plate.key !== view.key) paint(view, plate, block);
-        plate.top.opacity = view.mode === "ghost" ? 0.45 : 1;
-        const lift = view.mode === "live" ? LIFT : 0;
-        plate.lift = reduced ? lift : approach(plate.lift, lift, dt, 0.5);
-        plate.mesh.position.y = 0.08 + plate.lift;
+        if (plate.key !== view.key) {
+          const ctx = plate.canvas.getContext("2d");
+          ctx.clearRect(0, 0, plate.canvas.width, plate.canvas.height);
+          paintBlock(ctx, block, { ...view, bars: !!plate.bars }, plate.px);
+          plate.top.map.needsUpdate = true;
+          plate.key = view.key;
+        }
+        const live = view.mode === "live";
+        const ghost = view.mode === "ghost";
+        const k = (v, t, s = 0.5) => (reduced ? t : approach(v, t, dt, s));
+        plate.lift = k(plate.lift, live ? LIFT : 0);
+        plate.dim = k(plate.dim, live || ghost ? 1 : tones.dark ? 0.7 : 0.9, 0.4);
+        plate.fade = k(plate.fade, ghost ? 0.38 : 1, 0.4);
+        plate.mesh.position.y = PLATE_H / 2 + plate.lift;
+        plate.top.color.setScalar(plate.dim);
+        plate.top.opacity = plate.fade;
+        plate.side.color.copy(sideTone).multiplyScalar(plate.dim);
+        plate.side.opacity = plate.fade;
+        plate.edge.material.opacity = k(plate.edge.material.opacity, live ? 0.9 : 0, 0.3);
+        plate.edge.visible = plate.edge.material.opacity > 0.01;
+        // The shadow spreads and softens as the slab rises.
+        const spread = 1 + plate.lift * 0.35;
+        plate.shadow.scale.set((block.w / SHADOW_CORE) * spread, 1, (block.h / SHADOW_CORE) * spread);
+        plate.shadow.material.opacity = tones.shadowOpacity * plate.fade * (1 - plate.lift * 0.6);
+        state.lifts.set(block.id, PLATE_H + plate.lift);
         if (plate.bars) {
-          if (plate.bars.userData.key !== view.key) aimBars(plate.bars, view);
-          growBars(plate.bars, plate.lift, dt, reduced);
+          plate.bars.material.color.setScalar(plate.dim);
+          if (plate.bars.userData.key !== view.key) columns.aim(plate.bars, view);
+          columns.grow(plate.bars, PLATE_H + plate.lift, dt, reduced);
         }
       }
-      state.labels.children.forEach((label) => {
-        const i = label.userData.step;
-        label.material.color.set(i === scene.si ? COLORS.accent : COLORS.label);
-        label.material.opacity = i > scene.si ? 0.6 : 1;
-      });
       state.links.children.forEach((line) =>
         line.material.color.set(line.userData.to === scene.si ? COLORS.accent : COLORS.link),
       );
@@ -473,19 +439,24 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         state.drawnActive = box;
         activeFrame.visible = true;
         activeFrame.scale.set(box.w + 0.12, 1, box.h + 0.12);
-        activeFrame.position.set(box.x + box.w / 2, 0.2 + LIFT, box.y + box.h / 2);
+        const top = state.lifts.get(state.activeBlock?.id) ?? PLATE_H;
+        activeFrame.position.set(box.x + box.w / 2, top + 0.03, box.y + box.h / 2);
       } else activeFrame.visible = false;
-      const t = (now / 1000) % 1;
-      for (const p of state.particles) {
-        p.dot.visible = !reduced;
-        p.curve.getPoint((t * 0.8 + p.offset) % 1, p.dot.position);
-      }
+      flows.tick(now, reduced);
+      stage.tick(state.goal?.box ?? props.current.track.bounds, dt, reduced);
+
       if (state.goal && !manual) {
-        const settle = reduced ? 0.001 : 0.9;
+        // A gentle drift once the frame has been still for a few seconds.
+        const idle = reduced ? 0 : Math.min(1, Math.max(0, (now - state.changedAt) / 1000 - 3) / 3);
+        const t = now / 1000;
+        const yaw = state.goal.yaw + idle * DRIFT_YAW * Math.sin(t * 0.21);
+        const pitch = state.goal.pitch + idle * DRIFT_PITCH * Math.sin(t * 0.13);
+        tmpPos.copy(state.goal.look).add(offsetAt(yaw, pitch, state.goal.dist));
+        const settle = reduced ? 0.001 : 1;
         camera.position.set(
-          approach(camera.position.x, state.goal.position.x, dt, settle),
-          approach(camera.position.y, state.goal.position.y, dt, settle),
-          approach(camera.position.z, state.goal.position.z, dt, settle),
+          approach(camera.position.x, tmpPos.x, dt, settle),
+          approach(camera.position.y, tmpPos.y, dt, settle),
+          approach(camera.position.z, tmpPos.z, dt, settle),
         );
         controls.target.set(
           approach(controls.target.x, state.goal.look.x, dt, settle),
@@ -494,24 +465,27 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         );
       }
       controls.update();
+      stage.fogFor(camera.position.distanceTo(controls.target));
       updateHover(scene);
-      renderer.render(world, camera);
+      glow.render();
+      labels.update(scene, camera, state.lifts);
+      labels.render(camera);
     }
     raf = requestAnimationFrame(frame);
 
-    // Hover and click map back to a cell through the plate's texture coordinates.
+    // Hover and click map back to a cell: columns by instance, tiles through
+    // the plate's texture coordinates.
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let downAt = null;
     function pick(clientX, clientY) {
-      const rect = renderer.domElement.getBoundingClientRect();
+      const rect = el.getBoundingClientRect();
       pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointer, camera);
       const plates = [...state.plates.values()];
-      const bars = plates.map((p) => p.bars).filter(Boolean);
+      const bars = plates.map((p) => p.bars).filter((b) => b && !b.material.transparent);
       const barHit = raycaster.intersectObjects(bars, false)[0];
-      const meshes = plates.map((p) => p.mesh);
-      const hit = raycaster.intersectObjects(meshes, false).find((h) => h.face?.materialIndex === 2);
+      const hit = raycaster.intersectObjects(plates.map((p) => p.mesh), false).find((h) => h.face?.materialIndex === 2);
       if (barHit && (!hit || barHit.distance <= hit.distance)) {
         const block = barHit.object.userData.block;
         const i = barHit.instanceId;
@@ -524,14 +498,19 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     }
     // Hover: the card always describes the cell under the pointer now. The
     // last pointer position is kept and picked again whenever the camera
-    // moves (playback, damping, zoom) or the frame changes under it.
+    // moves (playback, damping, drift) or the frame changes under it.
     let hovered = null;
+    let hotBars = null;
     let pointerAt = null;
     let seenView = "";
     let seenScene = null;
     function setHoverTo(next) {
       if (sameHover(next, hovered)) return;
       hovered = next;
+      const bars = next ? state.plates.get(next.block.id)?.bars : null;
+      if (hotBars && hotBars !== bars) columns.setHot(hotBars, -1);
+      if (bars) columns.setHot(bars, next.r * next.block.cols + next.c);
+      hotBars = bars ?? null;
       showHover.current(next);
     }
     function clearHover() {
@@ -562,14 +541,13 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       if (!hovered) return;
       const { block, r, c } = hovered;
       const plate = state.plates.get(block.id);
-      const lift = plate?.lift ?? 0;
+      const top = state.lifts.get(block.id) ?? PLATE_H;
       const w = block.widths[c];
-      const x = block.x + block.gx + block.offsets[c] + w / 2;
-      const z = block.y + block.gy + r * block.ch + block.ch / 2;
-      const bar = plate?.bars ? plate.bars.userData.height[r * block.cols + c] : 0;
+      const [x, z] = cellCenter(block, r, c);
+      const bar = plate?.bars ? columns.shown(plate.bars, r * block.cols + c) : 0;
       const h = Math.max(0.04, bar);
       hoverFrame.scale.set(w * (bar ? 0.8 : 0.96), h, block.ch * (bar ? 0.8 : 0.96));
-      hoverFrame.position.set(x, 0.16 + lift + h / 2 + 0.005, z);
+      hoverFrame.position.set(x, top + h / 2 + 0.005, z);
       const rect = el.getBoundingClientRect();
       placeCard(tipRef.current, p.cx - rect.left, p.cy - rect.top, freeBox(rect.width, rect.height, props.current.insets));
     }
@@ -618,25 +596,18 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       window.removeEventListener("blur", clearHover);
       document.removeEventListener("visibilitychange", hidden);
       el.removeEventListener("webglcontextlost", contextLost);
+      controls.dispose();
+      state.plates.forEach(releasePlate);
+      disposeGroup(state.links);
+      columns.dispose();
+      flows.dispose();
+      labels.dispose();
+      stage.dispose();
+      glow.dispose();
       hoverFrame.geometry.dispose();
       hoverMaterial.dispose();
-      controls.dispose();
-      state.plates.forEach((p) => {
-        p.mesh.geometry.dispose();
-        p.top.map.dispose();
-        p.top.dispose();
-        p.bars?.material.dispose();
-        p.bars?.dispose();
-      });
-      barGeometry.dispose();
-      disposeGroup(state.links);
-      disposeGroup(state.labels);
-      disposeGroup(state.overlay);
       activeFrame.geometry.dispose();
       frameMaterial.dispose();
-      sideMaterial.dispose();
-      grid.geometry.dispose();
-      grid.material.dispose();
       renderer.dispose();
       el.remove();
       api.current = null;

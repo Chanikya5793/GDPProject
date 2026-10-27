@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Database, Moon, PenLine, SlidersHorizontal, Square, Sun, Workflow, X } from "lucide-react";
+import {
+  Box,
+  Brain,
+  CalendarClock,
+  Database,
+  MessagesSquare,
+  Moon,
+  PenLine,
+  SlidersHorizontal,
+  Square,
+  Sun,
+  Waypoints,
+  Workflow,
+  X,
+} from "lucide-react";
 import TrackView from "./TrackView.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import StepPlayer from "./explain/StepPlayer.jsx";
@@ -145,12 +159,17 @@ export default function App() {
   // Esc closes the Tune panel, unless a drawer above it takes the key first.
   useEffect(() => {
     if (!tuneOpen || drawer) return;
-    const key = (e) => e.key === "Escape" && !e.defaultPrevented && setTuneOpen(false);
+    const key = (e) =>
+      e.key === "Escape" &&
+      !e.defaultPrevented &&
+      !e.composedPath?.().some((n) => n.tagName === "DIALOG") &&
+      setTuneOpen(false);
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [tuneOpen, drawer]);
 
   const data = ctx.data;
+  const tunedCount = changed(mode, params[mode]).length;
   function run(text = input, keepThread = false) {
     if (!keepThread) setThread([]);
     setRequest({ text, records, selectedId: null });
@@ -218,54 +237,60 @@ export default function App() {
       </a>
       <header className="topbar" data-background>
         <div className="brand">
-          <strong>TRACE</strong>
-          <span>one sentence, every computation</span>
+          <span className="brand-mark" aria-hidden="true">
+            <Waypoints size={15} strokeWidth={2.4} />
+          </span>
+          <span className="brand-text">
+            <strong>TRACE</strong>
+            <span>one input, every computation</span>
+          </span>
         </div>
-        <div className="segmented" role="group" aria-label="What to trace">
+        <div className="segmented is-primary" role="group" aria-label="What to trace">
           <button aria-pressed={mode === "planner"} onClick={() => switchMode("planner")}>
-            Planner pipeline
+            <CalendarClock size={14} /> Planner
           </button>
           <button aria-pressed={mode === "transformer"} onClick={() => switchMode("transformer")}>
-            Transformer block
+            <Brain size={14} /> Transformer
           </button>
           <button aria-pressed={mode === "copilot"} onClick={() => switchMode("copilot")}>
-            Copilot
+            <MessagesSquare size={14} /> Copilot
           </button>
         </div>
+        <span className="topbar-divider" aria-hidden="true" />
         <div className="segmented" role="group" aria-label="View">
-          <button aria-pressed={view === "flow"} onClick={() => setView("flow")}>
+          <button aria-pressed={view === "flow"} onClick={() => setView("flow")} title="Flow (1)">
             <Workflow size={14} /> Flow
           </button>
-          <button aria-pressed={view === "2d"} onClick={() => setView("2d")}>
+          <button aria-pressed={view === "2d"} onClick={() => setView("2d")} title="2D map (2)">
             <Square size={14} /> 2D
           </button>
-          <button aria-pressed={view === "3d"} onClick={() => setView("3d")} disabled={!HAS_WEBGL}>
+          <button aria-pressed={view === "3d"} onClick={() => setView("3d")} disabled={!HAS_WEBGL} title="3D map (3)">
             <Box size={14} /> 3D
           </button>
         </div>
         <div className="topbar-tools">
-          <button className="request-chip" onClick={() => setDrawer("request")} title={trace.original}>
+          <button className="request-chip" onClick={() => setDrawer("request")} title={`Change the request: ${trace.original}`}>
             <PenLine size={14} />
             <span>{trace.original || "Enter a request"}</span>
           </button>
           <button
-            className={changed(mode, params[mode]).length ? "is-tuned" : undefined}
+            className={tunedCount ? "is-tuned" : undefined}
             onClick={() => {
               setTuneFocus(null);
               setTuneOpen((v) => !v);
             }}
             aria-expanded={tuneOpen}
-            aria-label="Tune the algorithms"
+            aria-label={tunedCount ? `Tune the algorithms, ${tunedCount} changed` : "Tune the algorithms"}
           >
             <SlidersHorizontal size={16} />
-            <span>Tune{changed(mode, params[mode]).length ? ` · ${changed(mode, params[mode]).length}` : ""}</span>
-          </button>
-          <button onClick={toggleTheme} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}>
-            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            <span>Tune{tunedCount ? ` · ${tunedCount}` : ""}</span>
           </button>
           <button onClick={() => setDrawer("data")} aria-label="Records, checks and export">
             <Database size={16} />
             <span>Data</span>
+          </button>
+          <button onClick={toggleTheme} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"} title={theme === "light" ? "Dark theme" : "Light theme"}>
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
           </button>
         </div>
       </header>
@@ -284,6 +309,7 @@ export default function App() {
           setTuneOpen(true);
         }}
         view={view}
+        onView={(v) => (v !== "3d" || HAS_WEBGL) && setView(v)}
         runId={runId}
         reduced={reduced}
         stopAt={stopAt}

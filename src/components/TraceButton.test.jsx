@@ -5,7 +5,10 @@ const mountTrace = vi.fn(() => ({ close: vi.fn() }))
 vi.mock('@gdp/trace/embed', () => ({ mountTrace }))
 vi.mock('@gdp/trace/sample', () => ({ sampleCopilot: () => ({ message: 'sample', demo: true, records: [] }) }))
 vi.mock('../api/plannerStore', () => ({
-  cachedRecords: vi.fn(async type => (type === 'task' ? [{ id: 't1', title: 'Report', dueDate: '' }] : [])),
+  cachedRecords: vi.fn(async type => ({
+    task: [{ id: 't1', title: 'Report', dueDate: '' }],
+    schedule: [{ id: 's1', title: 'Lab', starts_at: '2026-10-24T15:00:00Z', ends_at: '2026-10-24T16:00:00Z' }],
+  })[type] || []),
 }))
 
 const { default: TraceButton } = await import('./TraceButton')
@@ -23,7 +26,10 @@ describe('TraceButton', () => {
     expect(mountTrace).toHaveBeenCalledTimes(1)
     const { copilot } = mountTrace.mock.calls[0][0]
     expect(copilot.message).toBe('When is the report due?')
-    expect(copilot.records).toEqual([expect.objectContaining({ id: 't1', type: 'task', dueDate: null })])
+    expect(copilot.records).toEqual([
+      expect.objectContaining({ id: 't1', type: 'task', dueDate: null }),
+      expect.objectContaining({ id: 's1', type: 'schedule', startsAt: '2026-10-24T15:00:00Z' }),
+    ])
     expect(copilot.response.answer).toBe('Thursday.')
   })
 

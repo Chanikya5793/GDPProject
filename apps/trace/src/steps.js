@@ -1,4 +1,5 @@
 import { SETTINGS, changed } from "./tune/schema.js";
+import { buildPrompt } from "./engine/copilot.js";
 
 // One entry per step, shared by the 3D and 2D views. `id` keys the 3D scene
 // geometry and the 2D step module; the prose describes the code that runs.
@@ -303,7 +304,7 @@ const COPILOT_HEAD = [
     plain:
       "Your vector is compared with the vector of every record you allowed the copilot to read. The closest ones that really share a word with your question are kept, up to 5.",
     summary:
-      "Cosine distance to each record's vector; take the 25 nearest, then drop distance > 0.98, records not approved for AI, and hash collisions with no shared word; keep 5.",
+      "Cosine distance to each record's vector; take the 25 nearest, then, in the server's order: stop at 5 kept, drop distance > 0.98, drop hash collisions with no shared word. Records not approved for AI or of an excluded type are never indexed.",
     formula: "distance = 1 − (q · d) / (‖q‖ ‖d‖)",
     io: ["query vector + your records", "up to 5 sources"],
     limit:
@@ -318,7 +319,7 @@ const COPILOT_HEAD = [
     plain:
       "The LLM itself forgets everything between messages. The copilot remembers for it: each turn it re-sends your earlier messages, the records it already pointed to, and any record you attached, so words like “it” still make sense.",
     summary:
-      "Up to 20 earlier turns (4000 chars each) travel with every request. Sources cited earlier keep their S-numbers across turns, and an attached record is re-sent while its chip is on screen.",
+      "Up to 20 earlier turns (4000 chars each) are replayed, from the stored thread when there is one. A turn that proposed changes names their records. Citation ids used anywhere in the thread keep their numbers, and typing one back (“S7”) attaches that record.",
     formula: "context = last 20 turns + earlier sources (same S-numbers) + attached record",
     io: ["earlier turns + sources", "what the LLM will remember"],
     limit: "These are the turns and sources this conversation really carried.",
@@ -326,16 +327,16 @@ const COPILOT_HEAD = [
   {
     id: "prompt",
     name: "Prompt",
-    badge: "real",
+    badge: "recomputed",
     algorithm: "Prompt assembly",
     color: "#a4c5ff",
     plain:
-      "Everything the model will read is packed into labelled sections: today’s date, a briefing of your planner, the search results, the conversation and your question.",
+      "Everything the model will read is packed into labelled sections: instructions, today’s date, a briefing of your planner, the search results, the conversation and your question.",
     summary:
-      "Sections in a fixed order so the provider can cache the stable prefix. Search hits are wrapped as untrusted content; character caps, not token counts, keep it bounded.",
-    formula: "prompt = [TODAY, BRIEFING, SOURCES, TOOLS, CONVERSATION, FOCUS, QUESTION]",
-    io: ["sources + conversation + question", "one prompt"],
-    limit: "The order and caps are real. The system instructions themselves are not shown.",
+      "Sections in a fixed order so the provider can cache the stable prefix. The briefing lists up to 40 records by due day with workload findings; search hits carry up to 2,000 characters each, flagged when they read like instructions. One citation ledger numbers every record.",
+    formula: "prompt = [INSTRUCTIONS, TODAY, BRIEFING, SOURCES, (TOOL_RESULTS), CONVERSATION, (FOCUS), QUESTION, TOOLS, STYLE].join(\"\\n\")",
+    io: ["records + sources + conversation + question", "one prompt"],
+    limit: "Rebuilt in your browser with the server's code, checked character for character against the Python in a test. The separate system message is not shown.",
   },
 ];
 const COPILOT_MODEL = TRANSFORMER_STEPS.map((s) => ({
@@ -353,8 +354,8 @@ const COPILOT_TAIL = [
     plain:
       "Before answering, the model may ask the planner for more: a search or a date range. Each lookup runs, its results are added, and the model writes again.",
     summary:
-      "The model returns tool_requests in its JSON instead of an answer; the server runs at most 4 lookups over at most 3 generations within 90 seconds.",
-    formula: "while answer.tool_requests and rounds < 3: run tools, generate again",
+      "The model returns tool_requests in its JSON instead of an answer; the server runs at most 4 lookups over at most 3 generations, skips repeats, and after 90 seconds allows no more lookups.",
+    formula: "while out.tool_requests and lookups left: run new ones, generate again",
     io: ["model output", "extra evidence"],
     limit: "The lookups listed are the ones that really ran for your message.",
   },
@@ -392,18 +393,41 @@ export const COPILOT_STEPS = [...COPILOT_HEAD, ...COPILOT_MODEL, ...COPILOT_TAIL
 // When the reply carried the server's own search (retrieval.searches), the
 // Retrieval step shows real values and says so. Tuned settings turn the steps
 // they reach into what-ifs.
+// The prompt step is real when the reply reported the server's section sizes,
+// and the model illustration says how much more a real prompt holds.
 export function copilotSteps(copilot, params) {
-  if (!copilot?.response?.retrieval?.searches?.length) return withTuning(COPILOT_STEPS, "copilot", params);
-  const steps = COPILOT_STEPS.map((s) =>
-    s.id === "retrieval"
-      ? {
-          ...s,
-          badge: "real",
-          limit:
-            "The ranking, distances and filter outcomes are the server's own, sent with your reply. The browser's recomputation is shown first so you can check the arithmetic.",
-        }
-      : s,
-  );
+  const searched = !!copilot?.response?.retrieval?.searches?.length;
+  const round = copilot?.response?.retrieval?.turn?.rounds?.[0];
+  let chars = round?.chars ?? null;
+  if (chars === null && copilot?.message && copilot?.records) {
+    try {
+      chars = buildPrompt(copilot).chars;
+    } catch {
+      chars = null;
+    }
+  }
+  const words = String(copilot?.message ?? "").trim().length;
+  const steps = COPILOT_STEPS.map((s) => {
+    if (s.id === "retrieval" && searched)
+      return {
+        ...s,
+        badge: "real",
+        limit:
+          "The ranking, distances and filter outcomes are the server's own, sent with your reply. The browser's recomputation is shown first so you can check the arithmetic.",
+      };
+    if (s.id === "prompt" && round)
+      return {
+        ...s,
+        badge: "real",
+        limit: "Rebuilt in your browser with the server's code and checked against the section sizes the server reported for this reply. Only sizes travel, never the text.",
+      };
+    if (s.badge === "illustration" && chars !== null)
+      return {
+        ...s,
+        limit: `${s.limit} This runs on your question (${words.toLocaleString("en-US")} characters). The real model read the whole prompt, ${round ? "" : "about "}${chars.toLocaleString("en-US")} characters (roughly ${Math.round(chars / 4).toLocaleString("en-US")} tokens) plus its system message: instructions, the briefing, the sources, the conversation and your question.`,
+      };
+    return s;
+  });
   return withTuning(steps, "copilot", params);
 }
 

@@ -3,17 +3,18 @@
   position: fixed;
   z-index: 20;
   top: calc(var(--header-h) + 12px);
-  bottom: 88px;
+  bottom: 100px;
   right: 12px;
   width: min(380px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
   border: 1px solid var(--edge);
-  border-radius: 14px;
+  border-radius: var(--r-lg, 16px);
   background: var(--glass);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 16px 40px var(--shadow);
-  animation: drawer-in 0.22s ease-out;
+  backdrop-filter: blur(16px) saturate(1.15);
+  box-shadow: var(--elev-2, 0 16px 40px var(--shadow));
+  overflow: hidden;
+  animation: drawer-in 0.26s var(--ease, ease-out);
 }
 .tune:focus {
   outline: none;
@@ -43,25 +44,35 @@
 }
 .tune-tabs {
   display: flex;
-  gap: 4px;
-  padding: 0 14px 10px;
+  gap: 2px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--edge);
 }
 .tune-tabs button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: 6px;
+  padding: 8px 10px 10px;
   font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
 }
 .tune-tabs button:hover {
   color: var(--text);
 }
 .tune-tabs [aria-selected="true"] {
-  background: var(--panel-2);
   color: var(--text);
+}
+.tune-tabs [aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 .tune-count {
   min-width: 18px;
@@ -81,27 +92,41 @@
   padding: 6px 18px 18px;
 }
 .tune-group h3 {
-  margin: 16px 0 6px;
-  font: 600 11.5px var(--sans);
-  letter-spacing: 0.06em;
+  margin: 18px 0 8px;
+  font: 600 11px var(--sans);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 .tune-field {
+  position: relative;
   display: grid;
   gap: 8px;
-  margin: 0 -10px 6px;
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  transition: background 0.4s, border-color 0.4s;
+  margin: 0 0 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  transition: background 0.4s, border-color 0.4s, box-shadow 0.4s;
 }
 .tune-field.is-changed {
-  background: color-mix(in srgb, var(--warn) 6%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 6%, var(--panel));
+}
+.tune-field.is-changed::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--warn);
 }
 .tune-field.is-flash {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .tune-field-head {
   display: flex;
@@ -142,7 +167,8 @@
   color: var(--muted);
 }
 .tune-reaches {
-  color: var(--faint);
+  color: var(--muted);
+  opacity: 0.85;
 }
 .tune-range {
   display: grid;
@@ -152,7 +178,9 @@
 }
 .tune-range input[type="range"] {
   width: 100%;
+  height: 20px;
   accent-color: var(--accent);
+  cursor: pointer;
 }
 .tune-num,
 .tune-text,
@@ -314,6 +342,7 @@
   gap: 10px;
   padding: 12px 18px;
   border-top: 1px solid var(--edge);
+  background: color-mix(in srgb, var(--well) 70%, transparent);
 }
 .tune-foot .secondary {
   font-size: 13px;
@@ -437,4 +466,11 @@
     width: auto;
     z-index: 25;
   }
+}
+
+/* Inside the guide's compare box the box itself is the frame. */
+.g-compare .compare {
+  padding: 0;
+  border: 0;
+  background: none;
 }

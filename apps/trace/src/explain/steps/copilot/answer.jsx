@@ -28,7 +28,7 @@ function shapeRows(v) {
   return [
     ["tool_requests", "≤ 3 per generation", res ? ((res.steps ?? []).length ? `${plural(res.steps.length, "lookup")} in earlier rounds` : "none") : "—"],
     ["answer", "≤ 8,000 chars", res ? `${num(res.answer.length)} chars` : "—"],
-    ["citation_ids", "issued source ids", res ? v.cites.map((c) => c.citation_id).join(" ") || "none" : "—"],
+    ["citation_ids", "ids issued this turn", res ? v.cites.map((c) => c.citation_id).join(" ") || "none" : "—"],
     ["needs_clarification", "true or false", res ? "not returned" : "—"],
     ["actions", "suggested changes", res ? `${(res.proposals ?? []).length} proposed, ${(res.unavailable ?? []).length} unavailable` : "—"],
   ];
@@ -49,8 +49,8 @@ function disclosureRows(v) {
 
 const DISCLOSE_NOTES = {
   attempted: "Whether the server searched your planner for this reply.",
-  result_count: "How many records the server's search kept, on its default settings.",
-  entity_types: "Which record types the server's index covers, from your planner's AI settings.",
+  result_count: "How many records the turn handed the model with a citation id: the briefing, the searches, an attached record and any lookups together. Not the search alone.",
+  entity_types: "The record types among those issued records.",
   abstained: "True when the server refused to answer from the sources, for example when the answer cited ids it was never given.",
   "time to first text": "Measured in your browser: from sending the message to the first text arriving.",
   "total time": "Measured in your browser: from sending the message to the whole reply arriving.",
@@ -59,7 +59,7 @@ const DISCLOSE_NOTES = {
 const FIELD_NOTES = {
   tool_requests: "lookups the model wants before it answers; empty in the final reply.",
   answer: "the text you read.",
-  citation_ids: "which issued sources (S1 to S5) the answer relies on.",
+  citation_ids: "which of the citation ids issued this turn (from the briefing, the searches, an attached record or a lookup) the answer relies on.",
   needs_clarification: "true when the model needs to ask you something back; this flag is not returned to the browser.",
   actions: "changes it suggests; they become proposals in the next step.",
 };
@@ -69,10 +69,10 @@ export default {
   source: [["copilot", "MODEL"], ["copilot", "citationCheck"]],
   code: [
     "const out = GeneratedAnswer.parse(generate(prompt))",
-    "out.answer = out.answer.replace(/\\[S\\d+\\]/g, \"\")",
-    "const issued = new Set(sources.map((s) => s.citation_id))",
-    "if (out.citation_ids.some((id) => !issued.has(id)) && !out.actions.length) out = abstain()",
-    "const citations = sources.filter((s) => out.citation_ids.includes(s.citation_id))",
+    "const issued = new Set(ledger.map((c) => c.citation_id)) // briefing, search, focus, lookups",
+    "out.answer = stripMarkers(out.answer, issued) // [S2] lifted out, its id kept",
+    "if (invented.length && !used.length && !out.actions.length && !out.needs_clarification) out = abstain()",
+    "const citations = ledger.filter((c) => out.citation_ids.includes(c.citation_id))",
     "return { answer: out.answer, citations, retrieval, proposals }",
   ],
   frames(ctx) {
@@ -109,12 +109,13 @@ export default {
       }),
     );
     const markers = /\[S\d+\]/.test(v.res.answer);
+    const counted = /^\d+ changes? to confirm\.$/.test(v.res.answer.trim());
     frames.push({
       phase: "Markers",
       line: 1,
       say: markers
         ? "Inline markers such as [S2] are normally removed; this text still has some, so it was not cleaned the usual way."
-        : "Inline markers such as [S2] are removed from the text; citations travel separately. The reply you got has none left.",
+        : `Inline markers such as [S2] are lifted out of the text when they name an issued id; the id still counts as cited. The reply you got has none left.${counted ? " This answer is the server's own wording: with nothing else to say, or reply style quiet, it states how many changes wait for you." : ""}`,
       vars: { markers },
       stage: "text",
       upTo: -1,
@@ -135,7 +136,7 @@ export default {
     frames.push({
       phase: "Check",
       line: [2, 3, 4],
-      say: `${plural(v.cites.length, "citation")} came back${v.cites.length ? `: ${v.cites.map((c) => c.citation_id).join(", ")}` : ""}. An answer that cited ids never issued would have been replaced by an abstention unless it also proposed changes, and only the sources the answer used are returned.`,
+      say: `${plural(v.cites.length, "citation")} came back${v.cites.length ? `: ${v.cites.map((c) => c.citation_id).join(", ")}` : ""}, out of ${plural(v.res.retrieval?.turn?.issued?.length ?? v.res.retrieval?.result_count ?? 0, "id")} issued this turn. An answer citing only ids that were never issued would have been replaced by an abstention, unless it proposed changes or asked you a question; only the records the answer used are returned.`,
       vars: { citations: v.cites.map((c) => c.citation_id) },
       stage: "cites",
       cite: -1,
@@ -209,7 +210,7 @@ export default {
           if (l === undefined) return null;
           return {
             meaning: `Line ${r + 1} of the answer you read, wrapped at ${WIDTH} characters for the map. The text is the real reply.`,
-            formula: "answer = out.answer.replace(/\\[S\\d+\\]/g, \"\")",
+            formula: "answer = stripMarkers(out.answer, issued)",
             worked: `${l.length} characters; the whole answer is ${num(v.res.answer.length)}`,
           };
         },
@@ -232,7 +233,7 @@ export default {
           const x = v.cites[r];
           if (!x) return null;
           return [
-            { meaning: "The label the source carried in the prompt. The answer used it.", formula: "citations = sources ∩ answer.citation_ids", worked: `${x.citation_id} ∈ citation_ids` },
+            { meaning: "The id this record carried in the prompt. The answer used it.", formula: "citations = issued ∩ answer.citation_ids", worked: `${x.citation_id} ∈ citation_ids` },
             { meaning: "The kind of record cited.", formula: "entity_type", worked: x.entity_type },
             { meaning: "The cited record's title.", formula: "record.title", worked: `“${x.title}” (id ${x.record_id})` },
             { meaning: "The record's revision when it was read. A later change gets a new number.", formula: "record.revision", worked: `revision ${x.revision}` },
@@ -292,7 +293,7 @@ export default {
   math(frame, ctx) {
     const v = view(ctx);
     if (frame.stage === "cites" && frame.cite < 0 && v.res)
-      return [{ label: "citations", terms: ["issued", "cited by the answer"], op: "∩", result: v.cites.map((c) => c.citation_id).join(", ") || "none" }];
+      return [{ label: "citations", terms: ["issued this turn", "cited by the answer"], op: "∩", result: v.cites.map((c) => c.citation_id).join(", ") || "none" }];
     if (frame.stage === "end" && v.total !== null)
       return [
         { label: "first text", terms: ["firstText", "sent"], op: "−", result: `${Math.round(v.firstText ?? v.total)} ms` },

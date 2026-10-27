@@ -494,7 +494,7 @@ export function vectorize(queryTerms, records, p = PLANNER_DEFAULTS) {
         record,
         vector,
         dot,
-        score: denominator ? dot / denominator : 0,
+        score: denominator ? Math.min(1, dot / denominator) : 0,
         matched: queryTerms.filter((t) => documents[i].includes(t)),
       };
     })

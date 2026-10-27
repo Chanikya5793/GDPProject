@@ -42,13 +42,64 @@ filters. Regenerate the parity fixture after changing the backend tokenizer:
 backend/.venv312/bin/python apps/trace/scripts/lexical_fixture.py
 ```
 
+## The standalone site
+
+The full site is published with the planner on GitHub Pages at
+<https://chanikya5793.github.io/GDPProject/trace/> (`TRACE_SITE_URL` in `src/site.js`, linked from
+the embed). The Pages workflow builds the planner into `dist/` and then TRACE into `dist/trace/`
+with the base `/GDPProject/trace/`, so both ship in one artifact.
+
 ```sh
 # from the repository root
 npm ci
 npm run dev:trace     # http://127.0.0.1:4317
-npm run test:trace
-npm run build:trace   # static site in apps/trace/dist
+npm run test:trace    # every test below, about 30 s
+npm run build:trace   # static site in apps/trace/dist (relative base)
+npm run build:pages   # what Pages serves: planner in dist/, TRACE in dist/trace/
 ```
+
+## Tune
+
+**Tune** opens every setting of the current track: stop words, aliases, IDF on or off, the
+match threshold and tie gap for the planner; stopwords, query length, vector slots, damping,
+title boost, candidates, distance cutoff, the shared-word rule and the source limit for the
+copilot; merges, context, positional encoding, √d scaling, the causal mask, residuals, the
+activation and temperature for the transformer. The settings live in `src/tune/schema.js`; the
+panel's form and its JSON code view edit the same object, and values are clamped before they run.
+
+Each change reruns the request. Steps a setting can reach are marked **tuned**, a real or
+recomputed copilot step becomes a **what-if** (the server always runs on the defaults), and the
+Flow cards and guide show **default vs yours** for every step whose result changed. Only the
+changed values are kept, in this browser's local storage, so a reload keeps them; **Reset**
+returns a track to the defaults.
+
+## Lessons and hover cards
+
+The guide's lesson for each step (`src/teach/lessons`) says what the step does, why the system
+needs it, the step worked on this run's real values, and **Try it** buttons that apply one
+setting and say what to watch for. Glossary words (`src/teach/glossary.js`) are linked wherever
+they appear. On the 2D and 3D maps, hovering a cell shows what the value means, its formula and
+the arithmetic with this run's numbers.
+
+## Tests
+
+`npm run test:trace` runs, with `node --test` and Vite's SSR loader for the JSX modules:
+
+- `src/engine/*.test.js`: engine invariants, and the copilot search's parity with the backend
+  fixture;
+- `src/explain/steps.test.mjs`: every frame of every step rendered for many inputs;
+- `tests/schema.test.mjs`: clamping, the code view's parser, diffs, that every setting's steps
+  exist, every step has a lesson and every lesson's Try it names a valid setting value;
+- `tests/tuning.test.mjs`: the default-run baseline, default-vs-yours, the copilot search under
+  each setting, and parity on the resolved defaults;
+- `tests/matrix.test.mjs`: every step of every track under defaults, each switch flipped, each
+  number at its min and max, empty lists and both extremes at once, for scenario, empty, long,
+  unicode and emoji requests and chat edges. Frames, map state and math, the Tables view, every
+  hover card, the Flow summary, the lesson example and the comparison must run and never print
+  NaN, undefined or [object Object].
+
+`npm run test:quick --workspace @gdp/trace` skips the matrix. CI runs `test:trace` and the Pages
+build on every push.
 
 ## Three views
 
@@ -121,6 +172,9 @@ src/map/                     block layout and painting, the 2D canvas map, the 3
 src/TrackView.jsx            guide panel, dock and playback
 src/engine/*.test.js         engine invariants and trace consistency
 src/explain/steps.test.mjs   renders every frame and checks every map state for many inputs
+src/tune/                    settings schema, Tune panel, default-run baseline, default-vs-yours
+src/teach/                   lessons, glossary
+tests/                       schema, tuning and settings-matrix tests
 ```
 
 ## References

@@ -26,14 +26,15 @@ function funnelRows(r, p) {
   return [
     ["your records in this browser", String(r.records.length)],
     ["not approved for AI (never read)", `−${r.hidden.length}`],
+    [r.known ? "type kept out by your AI settings" : "type kept out by your AI settings (not reported)", r.known ? `−${r.offType.length}` : "server only"],
     ["scored", String(r.scored.length)],
     [`${p.candidates} nearest (candidates)`, String(r.candidates.length)],
+    [`over the limit of ${p.limit} (checked first)`, `−${count((x) => x.startsWith("limit"))}`],
     [`distance > ${p.maxDistance}`, `−${count((x) => x.startsWith("distance"))}`],
-    ["type not indexed, record gone, stale revision", "server only"],
+    ["record gone, stale revision", "server only"],
     p.requireShared
       ? ["no shared word (hash collision)", `−${count((x) => x.startsWith("no shared"))}`]
       : ["no shared word (filter off in your settings)", "off"],
-    [`over the limit of ${p.limit}`, `−${count((x) => x.startsWith("limit"))}`],
     ["kept", String(r.kept.length)],
   ];
 }
@@ -41,12 +42,13 @@ function funnelRows(r, p) {
 const FUNNEL_HELP = [
   { meaning: "Every record this page can see.", formula: "records.length" },
   { meaning: "Records you did not approve for AI. The copilot never reads them, so they are left out before scoring.", formula: "records.filter((r) => r.approvedForAi === false)" },
+  { meaning: "Record types your privacy settings keep away from the assistant are never indexed. The server reports the setting with the reply.", formula: "!indexed_entity_types.includes(r.type)" },
   { meaning: "Records given a distance to the query.", formula: "readable.map((r) => distance(q, vectorize(r)))" },
   { meaning: "Only the nearest few are looked at further.", formula: "scored.sort(byDistance).slice(0, candidates)" },
+  { meaning: "At most this many sources go into the prompt. The server checks this before anything else, so a far record after the limit counts here.", formula: "kept.length ≥ limit → drop" },
   { meaning: "Records too far from the query are dropped.", formula: "distance > maxDistance → drop" },
-  { meaning: "Filters only the server can apply: it knows your index settings and the latest revisions.", formula: "server only" },
+  { meaning: "Filters only the server can apply: it knows which records still exist and the revision each vector was made from.", formula: "server only" },
   { meaning: "A record can look close only because two different words share a box. This filter drops it unless a real word is shared.", formula: "requireShared && shared.length === 0 → drop" },
-  { meaning: "At most this many sources go into the prompt.", formula: "kept.length ≥ limit → drop" },
   { meaning: "The records that become sources for the LLM.", formula: "kept = candidates that pass every filter" },
 ];
 
@@ -76,13 +78,16 @@ function comparison(ctx) {
         ? `${missing.map((c) => `“${c.title}”`).join(", ")} ${missing.length === 1 ? "was" : "were"} cited by the server but ${missing.length === 1 ? "is" : "are"} not kept with your settings.`
         : `${missing.map((c) => `“${c.title}”`).join(", ")} ${missing.length === 1 ? "is" : "are"} not in the browser's list: ${res.steps?.length ? "it may come from the server's own lookups, " : ""}a record or revision this browser does not have, or the server's index.`,
     );
-  const count = res?.retrieval?.result_count;
-  if (typeof count === "number")
+  const opening = res?.retrieval?.searches?.[0];
+  if (opening) {
+    const count = opening.candidates.filter((c) => c.outcome === "kept").length;
     parts.push(
       count === r.kept.length
-        ? `The server also found ${plural(count, "result")}.`
-        : `The server reported ${plural(count, "search result")} (default settings); ${mine} kept ${r.kept.length}.${tuned ? "" : " Citations list only the sources the answer used, and the server's records or revisions can differ from these."}`,
+        ? `The server's opening search also kept ${plural(count, "record")}.`
+        : `The server's opening search kept ${plural(count, "record")} (default settings); ${mine} kept ${r.kept.length}.${tuned ? "" : " The server's records or revisions can differ from the ones in this browser."}`,
     );
+  }
+  parts.push("Citations list only the records the answer used, and those can come from the briefing as well as the search.");
   return { say: parts.join(" "), rows: matched.map((c) => keptIds.indexOf(String(c.record_id))).map((i) => r.keptRows[i]) };
 }
 
@@ -103,7 +108,7 @@ export default {
   ],
   code: [
     "const q = vectorize(query)",
-    "const readable = records.filter((r) => r.approvedForAi !== false)",
+    "const readable = records.filter((r) => r.approvedForAi !== false && indexed(r.type))",
     "for (const record of readable) {",
     "  const d = vectorize(recordText(record), record.title)",
     "  const shared = tokens(text).filter((t) => queryTokens.has(t))",
@@ -111,9 +116,10 @@ export default {
     "}",
     "const candidates = scored.sort(byDistance).slice(0, p.candidates)",
     "for (const s of candidates) {",
-    "  if (s.distance > p.maxDistance) drop",
+    "  if (kept.length >= p.limit) drop",
+    "  else if (s.distance > p.maxDistance) drop",
     "  else if (p.requireShared && !s.shared.length) drop",
-    "  else if (kept.length < p.limit) kept.push(s)",
+    "  else kept.push(s)",
     "}",
     "return kept",
   ],
@@ -187,7 +193,7 @@ export default {
       r.candidates.forEach((s, i) =>
         frames.push({
           phase: "Filter",
-          line: !s.reason ? 11 : s.reason.startsWith("distance") ? 9 : s.reason.startsWith("no shared") ? 10 : 11,
+          line: !s.reason ? 12 : s.reason.startsWith("distance") ? 10 : s.reason.startsWith("no shared") ? 11 : 9,
           say: !s.reason
             ? `“${short(s.record.title, 40)}”: distance ${f3(s.distance)} ≤ ${p.maxDistance}${p.requireShared ? ", and it shares a real word" : s.shared.length ? ", and it shares a real word" : ", and the shared-word filter is off"}, so it is kept (${r.kept.indexOf(s) + 1} of at most ${p.limit}).`
             : s.reason.startsWith("distance")
@@ -211,17 +217,17 @@ export default {
       );
       frames.push({
         phase: "Funnel",
-        line: [8, 9, 10, 11],
-        say: `The server applies more filters than the browser can: index type, deleted records and stale revisions are checked there only. It also drops unapproved records after the ${p.candidates}-nearest cut, where this page leaves them out before scoring.`,
+        line: [8, 9, 10, 11, 12],
+        say: `The server checks the limit first, then distance, then a shared word. It can also drop deleted records and vectors older than their record, which only it can see.${r.known ? ` Your AI settings, reported with the reply, ${r.offType.length ? `keep ${plural(r.offType.length, "record")} of other types out` : "include every type here"}.` : " Which record types your AI settings index was not reported, so every type is assumed."}`,
         vars: { scored: r.scored.length, candidates: n, kept: r.kept.length },
         at: -1,
         ...end,
       });
       frames.push({
         phase: "Kept",
-        line: 13,
+        line: 14,
         say: (r.kept.length
-          ? `Kept ${r.kept.length}: ${r.kept.map((k) => `“${short(k.record.title, 30)}”`).join(", ")}. The server numbers its own hits S1, S2 and so on for the prompt.`
+          ? `Kept ${r.kept.length}: ${r.kept.map((k) => `“${short(k.record.title, 30)}”`).join(", ")}. Each gets the citation id the turn has already given it (from earlier in the thread or the briefing), or the next free number.`
           : "Nothing survives the filters, so the prompt carries no search sources.") + note,
         vars: { kept: r.kept.map((k) => k.record.id) },
         at: -1,
@@ -233,7 +239,7 @@ export default {
       const cmp = comparison(ctx);
       frames.push({
         phase: "Compare",
-        line: 13,
+        line: 14,
         say: r.skipped ? `${tuned ? "Your settings skip the search." : "The server skipped the search too."} ${cmp.say}` : cmp.say,
         vars: {
           cited: (ctx.copilot.response.citations ?? []).map((c) => c.record_id),
@@ -261,7 +267,7 @@ export default {
       rowsAll.forEach((c, k) => {
         frames.push({
           phase: "Server",
-          line: c.outcome === "kept" ? 11 : c.outcome === "too_far" ? 9 : c.outcome === "no_shared_word" ? 10 : 8,
+          line: c.outcome === "kept" ? 12 : c.outcome === "too_far" ? 10 : c.outcome === "no_shared_word" ? 11 : c.outcome === "limit_reached" ? 9 : 8,
           say: `${c.search === 0 ? "Opening search" : `Lookup ${c.search}`}, rank ${c.rank}: ${c.title ? `“${short(c.title, 40)}”` : "a record the trace does not name"} at distance ${f3(c.distance)}, ${OUTCOME_TEXT[c.outcome] ?? c.outcome}.${c.citation_id ? ` Shown to the model as ${c.citation_id}.` : ""}${serverCheck(c, tuned)}`,
           vars: { rank: c.rank, "server distance": c.distance, outcome: c.outcome, ...(c.citation_id ? { citation: c.citation_id } : {}) },
           at: -1,
@@ -274,7 +280,7 @@ export default {
       const kept = rowsAll.filter((c) => c.outcome === "kept");
       frames.push({
         phase: "Server",
-        line: 13,
+        line: 14,
         say: kept.length
           ? `The server kept ${plural(kept.length, "record")} across these searches: ${kept.map((c) => (c.title ? `“${short(c.title, 30)}”` : c.record_id)).join(", ")}.${tuned ? ` Your what-if kept ${r.kept.length}.` : ""}`
           : "The server's searches kept nothing; the reply rests on the planner briefing or on no records.",
@@ -337,7 +343,7 @@ export default {
     const explainFunnel = (i) => {
       const h = FUNNEL_HELP[i];
       if (!h) return null;
-      return { meaning: `${h.meaning}${tuned && i >= 3 && i !== 5 ? " What-if: counted with your settings." : ""}`, formula: h.formula, worked: `${funnel[i][0]}: ${funnel[i][1]}` };
+      return { meaning: `${h.meaning}${tuned && i >= 4 && i !== 7 ? " What-if: counted with your settings." : ""}`, formula: h.formula, worked: `${funnel[i][0]}: ${funnel[i][1]}` };
     };
     const server = serverSearchesOf(ctx).length ? serverRows(ctx) : [];
     const explainServer = (i, col) => {
@@ -371,7 +377,7 @@ export default {
           };
         default:
           return c.citation_id
-            ? { meaning: "The label this source carried in the prompt, so the LLM could cite it.", formula: "S1, S2, … in the order kept", worked: c.citation_id }
+            ? { meaning: "The citation id this record carried in the prompt, so the LLM could cite it. Ids come from one ledger per turn: a record keeps the number it had earlier in the thread or in the briefing.", formula: "ledger.register(record)", worked: c.citation_id }
             : null;
       }
     };
@@ -437,7 +443,7 @@ export default {
         active: frame.score && s ? row(frame.at, 4) : frame.filter && s ? [[frame.at, 4]] : frame.kept ? r.keptRows.map((i) => [i, 4]) : [],
         source: frame.compare ? comparison(ctx).rows.flatMap((i) => row(i, 5)) : [],
       },
-      cfunnel: { done: () => !!frame.funnel, active: frame.phase === "Funnel" ? all(9, 2) : [] },
+      cfunnel: { done: () => !!frame.funnel, active: frame.phase === "Funnel" ? all(10, 2) : [] },
       ...(serverSearchesOf(ctx).length
         ? {
             cserver: {

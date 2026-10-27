@@ -1,5 +1,5 @@
 // Helpers shared by the copilot step modules.
-import { COPILOT_DEFAULTS, retrieve } from "../../../engine/copilot.js";
+import { buildPrompt, COPILOT_DEFAULTS, retrieve, serverContextOf } from "../../../engine/copilot.js";
 import { changed, SETTINGS } from "../../../tune/schema.js";
 
 export const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
@@ -78,14 +78,18 @@ export function retrievalOf(ctx) {
   if (!r) {
     const records = c.records ?? [];
     const hidden = records.filter((x) => x.approvedForAi === false);
-    const readable = records.filter((x) => x.approvedForAi !== false);
-    const result = retrieve(c.message ?? "", records, p);
+    const sc = serverContextOf(c);
+    const result = retrieve(c.message ?? "", records, p, { types: sc.types, attachments: sc.attachments });
     const candidates = result.candidates ?? [];
     r = {
       ...result,
       records,
       hidden,
-      readable,
+      readable: result.excluded ? records.filter((x) => !result.excluded.includes(x)) : records,
+      // Readable, but of a type the privacy settings keep out of the index.
+      offType: (result.excluded ?? []).filter((x) => x.approvedForAi !== false),
+      // Whether the server reported the privacy settings these filters use.
+      known: sc.known,
       candidates,
       keptRows: result.kept.map((k) => candidates.indexOf(k)),
     };
@@ -154,4 +158,43 @@ export function serverRows(ctx) {
       browser: c.record_id != null ? browser.get(String(c.record_id)) : undefined,
     })),
   );
+}
+
+// The prompt of the first generation, rebuilt in the browser (buildPrompt).
+// Its sources are the server's opening search when the reply carried it and
+// no setting is tuned; otherwise the browser's own pick, a what-if when tuned.
+const prompts = new WeakMap();
+export function promptOf(ctx) {
+  const c = ctx.copilot;
+  const p = paramsOf(ctx);
+  let byParams = prompts.get(c);
+  if (!byParams) prompts.set(c, (byParams = new WeakMap()));
+  let out = byParams.get(p);
+  if (!out) {
+    const opening = serverSearchesOf(ctx)[0];
+    const byId = new Map((c.records ?? []).map((r) => [String(r.id), r]));
+    let kept;
+    let missing = [];
+    let from = "browser";
+    if (opening && !isWhatIf(ctx)) {
+      const ids = opening.candidates.filter((x) => x.outcome === "kept").map((x) => String(x.record_id));
+      kept = ids.map((id) => byId.get(id)).filter(Boolean);
+      missing = ids.filter((id) => !byId.has(id));
+      from = "server";
+    } else kept = retrievalOf(ctx).kept.map((k) => k.record);
+    const built = buildPrompt(c, { kept });
+    const round = c.response?.retrieval?.turn?.rounds?.[0] ?? null;
+    const server = new Map((round?.sections ?? []).map((s) => [s.name, s]));
+    const sections = built.sections.map((s) => {
+      const real = server.get(s.name);
+      const status = !real ? (round ? "browser only" : "recomputed") : real.chars === s.chars ? "exact" : "differs";
+      return { ...s, server: real?.chars ?? null, serverItems: real?.items ?? null, status };
+    });
+    // A section the server sent that the browser did not rebuild.
+    for (const [name, real] of server)
+      if (!sections.some((s) => s.name === name)) sections.push({ name, text: "", chars: null, items: real.items, server: real.chars, serverItems: real.items, status: "server only" });
+    out = { ...built, sections, from, missing, round, rounds: c.response?.retrieval?.turn?.rounds ?? [], turn: c.response?.retrieval?.turn ?? null };
+    byParams.set(p, out);
+  }
+  return out;
 }

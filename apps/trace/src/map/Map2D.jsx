@@ -1,13 +1,30 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { cellAt, COLORS, paintBlock } from "./paint.js";
+import { BLOCK_PAD, cellAt, COLORS, paintBlock, TITLE_BAND, TITLE_SIZE } from "./paint.js";
 import HoverCard, { freeBox, hoverable, placeCard, sameHover } from "./HoverCard.jsx";
-import { approach, ease, framing, overview } from "./camera.js";
+import { ease, framing, overview } from "./camera.js";
 import { cellsBox, focusOf, glideOf } from "./track.js";
 
-export const READABLE = 34; // px per unit where cell text is ~10px
+export const READABLE = 38; // px per unit where cell text is ~11px
 const MAX_ZOOM = 64;
 const MIN_ZOOM = 3;
 const MAX_CACHE = 160;
+
+// A critically damped spring: eases in and out, never overshoots, and is
+// exact for any frame time. Returns [position, velocity].
+function spring(x, v, target, dt, omega) {
+  const c1 = x - target;
+  const c2 = v + omega * c1;
+  const e = Math.exp(-omega * dt);
+  return [target + (c1 + c2 * dt) * e, (c2 - omega * (c1 + c2 * dt)) * e];
+}
+const SANS = "Manrope, system-ui, sans-serif";
+const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace';
+function fit(ctx, text, max) {
+  if (ctx.measureText(text).width <= max) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > max) t = t.slice(0, -1);
+  return `${t}…`;
+}
 
 function center(box) {
   return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
@@ -119,7 +136,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       image = document.createElement("canvas");
       image.width = Math.ceil(b.w * px);
       image.height = Math.ceil(b.h * px);
-      paintBlock(image.getContext("2d"), b, { ...view, highlights: false }, px);
+      paintBlock(image.getContext("2d"), b, { ...view, highlights: false, noTitle: true }, px);
       s.caches.set(key, image);
       if (s.caches.size > MAX_CACHE) s.caches.delete(s.caches.keys().next().value);
       return image;
@@ -132,10 +149,16 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
       last = now;
       if (!s.cam || !s.target) return;
       if (follow || overviewing) {
-        const settle = reduced ? 0.001 : 0.7;
-        s.cam.x = approach(s.cam.x, s.target.x, dt, settle);
-        s.cam.y = approach(s.cam.y, s.target.y, dt, settle);
-        s.cam.z = Math.exp(approach(Math.log(s.cam.z), Math.log(s.target.z), dt, settle));
+        if (reduced) Object.assign(s.cam, s.target);
+        else {
+          const v = (s.vel ||= { x: 0, y: 0, z: 0 });
+          const omega = 6.5;
+          [s.cam.x, v.x] = spring(s.cam.x, v.x, s.target.x, dt, omega);
+          [s.cam.y, v.y] = spring(s.cam.y, v.y, s.target.y, dt, omega);
+          let lz;
+          [lz, v.z] = spring(Math.log(s.cam.z), v.z, Math.log(s.target.z), dt, omega);
+          s.cam.z = Math.exp(lz);
+        }
       }
       const W = canvas.clientWidth;
       const H = canvas.clientHeight;
@@ -200,17 +223,45 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         ctx.fill();
       }
 
-      // Step names above their columns.
+      // The step being computed sits on a faint plate.
+      {
+        const box = track.columns[si]?.box;
+        if (box) {
+          const q = toScreen(box.x - 0.6, box.y - 2.1);
+          ctx.beginPath();
+          ctx.roundRect(q.x, q.y, (box.w + 1.2) * z, (box.h + 2.7) * z, Math.min(18, 0.5 * z));
+          ctx.fillStyle = `${accent}0c`;
+          ctx.fill();
+          ctx.strokeStyle = `${accent}33`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
+      // Step names above their columns: a numbered pill, then the name.
       track.columns.forEach((col, i) => {
+        const size = Math.max(13, Math.min(22, z * 0.55));
         const p = toScreen(col.box.x, col.box.y - 0.9);
-        const size = Math.max(12.5, Math.min(20, z * 0.55));
-        ctx.font = `600 ${size}px Manrope, system-ui, sans-serif`;
-        ctx.textBaseline = "alphabetic";
-        ctx.textAlign = "left";
+        if (p.x > W || p.x + col.box.w * z < -200) return;
+        const current = i === si;
         // Steps not reached yet stay readable, only quieter.
-        ctx.fillStyle = i === si ? accent : COLORS.label;
-        ctx.globalAlpha = i > si ? 0.6 : 1;
-        ctx.fillText(`${String(i + 1).padStart(2, "0")}  ${col.step.name}`, p.x, p.y);
+        ctx.globalAlpha = i > si ? 0.62 : 1;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.font = `600 ${size * 0.78}px ${MONO}`;
+        const n = String(i + 1).padStart(2, "0");
+        const nw = ctx.measureText(n).width + size * 0.7;
+        const ph = size * 1.35;
+        const cy = p.y - size * 0.32;
+        ctx.beginPath();
+        ctx.roundRect(p.x, cy - ph / 2, nw, ph, ph / 2);
+        ctx.fillStyle = current ? accent : `${COLORS.label}22`;
+        ctx.fill();
+        ctx.fillStyle = current ? COLORS.bg : COLORS.label;
+        ctx.fillText(n, p.x + size * 0.35, cy + 0.5);
+        ctx.font = `600 ${size}px ${SANS}`;
+        ctx.fillStyle = current ? COLORS.title : COLORS.label;
+        ctx.fillText(col.step.name, p.x + nw + size * 0.45, cy);
         ctx.globalAlpha = 1;
       });
 
@@ -226,9 +277,23 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
         if (block.w * px > 4096 || block.h * px > 4096) {
           ctx.save();
           ctx.translate(p.x, p.y);
-          paintBlock(ctx, block, { ...view, highlights: false }, z);
+          paintBlock(ctx, block, { ...view, highlights: false, noTitle: true }, z);
           ctx.restore();
         } else ctx.drawImage(blockImage(block, view, px), p.x, p.y, w, h);
+        // Block titles in screen pixels, so they stay legible when zoomed out.
+        if (block.title) {
+          const size = Math.min(15, Math.max(11, TITLE_SIZE * z));
+          if (TITLE_BAND * z >= size + 2) {
+            ctx.font = `600 ${size}px ${SANS}`;
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = view.mode === "ghost" ? COLORS.label : COLORS.title;
+            const tx = p.x + BLOCK_PAD * z;
+            ctx.fillText(fit(ctx, block.title, w - BLOCK_PAD * 2 * z), tx, p.y + (BLOCK_PAD + TITLE_BAND / 2 - 0.05) * z);
+            ctx.fillStyle = COLORS.edge;
+            ctx.fillRect(p.x + 1, p.y + (BLOCK_PAD + TITLE_BAND) * z - 0.5, w - 2, 1);
+          }
+        }
         ctx.globalAlpha = 1;
         // Cells that were just computed fade in.
         if (view.fresh?.length && t < 1) {
@@ -344,6 +409,7 @@ export default function Map2D({ track, scene, insets, follow, overviewing, onUse
     }
     function takeOver() {
       if (s.cam) s.target = { ...s.cam };
+      s.vel = { x: 0, y: 0, z: 0 };
       props.current.onUserMove?.();
     }
     function down(e) {

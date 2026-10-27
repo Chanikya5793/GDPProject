@@ -7,7 +7,9 @@
     "dev": "vite --host 127.0.0.1 --port 4317 --strictPort",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4317 --strictPort",
-    "test": "node --test src/engine/*.test.js src/explain/*.test.mjs"
+    "test": "node --test src/engine/*.test.js src/explain/*.test.mjs tests/*.test.mjs",
+    "test:quick": "node --test src/engine/*.test.js src/explain/*.test.mjs tests/schema.test.mjs tests/tuning.test.mjs",
+    "build:pages": "vite build --base /GDPProject/trace/ --outDir ../../dist/trace --emptyOutDir"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",

@@ -184,6 +184,9 @@ export function AiProvider({ children }) {
         // Proposals are not carried: they expire, so one offered from history
         // could never be confirmed and would only look like a failed change.
         proposals: [],
+        // What a turn proposed, by record, as the server replays it into the
+        // next prompt; kept for the trace view only.
+        proposed: message.proposed || [],
         steps: [],
       }))])
       setConversationId(id)
@@ -266,6 +269,7 @@ export function AiProvider({ children }) {
     const traceMeta = {
       question: trimmed,
       focusId: attachmentRef.current ? String(attachmentRef.current.id) : null,
+      focusType: attachmentRef.current?.kind || null,
       sent: Date.now(),
       firstText: null,
     }

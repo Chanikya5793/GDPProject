@@ -135,3 +135,52 @@ def test_another_users_records_never_appear_in_the_trace(services):
     task(services, "bob-task", "Chemistry homework", uid="bob")
     _, _, trace = services.retrieval.search("bob", "chemistry secret")
     assert all(c.record_id in (None, "bob-task") for c in trace.candidates)
+
+
+def test_the_disclosure_sizes_every_prompt_section_without_their_text(services):
+    from app.ai import ToolName, ToolRequest
+    from tests.test_agent import use
+
+    enable(services)
+    task(services, "t1", "Chemistry exam", notes="Secret study plan")
+    generator = use(
+        services,
+        GeneratedAnswer(tool_requests=[ToolRequest(tool=ToolName.workload)]),
+        GeneratedAnswer(answer="It is on the 20th.", citation_ids=["S1"]),
+    )
+    _, _, disclosure, _ = services.copilot.answer("alice", "when is my chemistry exam?", today=date(2026, 8, 18))
+    turn = disclosure.turn
+    assert turn is not None and turn.today == date(2026, 8, 18)
+    assert len(turn.rounds) == 2 and turn.tool_calls == 1
+    first, second = turn.rounds
+    assert first.tools_available and first.tool_requests == 1 and first.tool_calls == 1
+    names = [s.name for s in first.sections]
+    assert names[:4] == ["INSTRUCTIONS", "TODAY", "PLANNER_BRIEFING", "UNTRUSTED_SOURCES"]
+    assert names[-3:] == ["USER_QUESTION", "TOOLS_AVAILABLE", "REPLY_STYLE"]
+    assert "TOOL_RESULTS" in [s.name for s in second.sections]
+    # Sizes are exact: the sections joined by newlines are the prompt sent.
+    for round_, prompt in zip(turn.rounds, generator.prompts):
+        assert round_.chars == len(prompt)
+        assert sum(s.chars for s in round_.sections) + len(round_.sections) - 1 == len(prompt)
+    assert turn.briefing_items == 1 and not turn.briefing_truncated
+    assert [(c.citation_id, c.record_id, c.via) for c in turn.issued] == [("S1", "t1", "briefing")]
+    assert turn.system_chars > 0 and turn.reply_style == "brief"
+    assert turn.daily_capacity_minutes == 120
+    dumped = disclosure.model_dump_json()
+    assert "Secret study plan" not in dumped and "Answer the student" not in dumped
+
+
+def test_a_focused_record_is_issued_first_and_reported(services):
+    enable(services)
+    task(services, "t1", "Chemistry exam")
+    task(services, "t2", "Physics lab")
+    from app.models import FocusRecordRef
+
+    _, _, disclosure, _ = services.copilot.answer(
+        "alice", "shorten it", today=date(2026, 8, 18),
+        focus=FocusRecordRef(record_id="t2", entity_type=EntityType.task),
+    )
+    turn = disclosure.turn
+    assert turn.focus == "included"
+    assert turn.issued[0].record_id == "t2" and turn.issued[0].via == "focus"
+    assert "FOCUS_RECORD" in [s.name for s in turn.rounds[0].sections]

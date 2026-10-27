@@ -1,5 +1,5 @@
 import { Panel, Table } from "../../kit.jsx";
-import { MESSAGE_CHARS, QUERY_CHARS } from "../../../engine/copilot.js";
+import { MESSAGE_CHARS, QUERY_CHARS, serverContextOf } from "../../../engine/copilot.js";
 import { all, charGrid, charsBlock, row, tableBlock } from "../../../map/blocks.js";
 import { MESSAGE_ROW, messageOf, num, paramsOf, plural, sampleNote, short } from "./util.js";
 
@@ -10,11 +10,13 @@ const TURN_CHARS = 4000;
 const fieldRows = (ctx) => {
   const m = messageOf(ctx);
   const okLength = m.trimmed.length >= 1 && m.trimmed.length <= MESSAGE_CHARS;
+  const sc = serverContextOf(ctx.copilot);
+  const replayed = sc.turn?.history_turns;
   return [
     ["message length", `${num(m.trimmed.length)} chars`, okLength ? "1 to 8,000" : "rejected"],
-    ["history turns", String(m.history.length), "≤ 20 × 4,000"],
+    ["history turns", typeof replayed === "number" && replayed !== m.history.length ? `${m.history.length} here, ${replayed} on the server` : String(m.history.length), "≤ 20 × 4,000"],
     ["focus", m.focus ? `“${m.focus.title}”` : "none", "optional"],
-    ["timezone", ctx.copilot.timezone ?? "—", ctx.copilot.today ? `today ${ctx.copilot.today}` : ""],
+    ["timezone", ctx.copilot.timezone ?? "—", sc.today ? `today ${sc.today}${sc.known ? " (server)" : ""}` : ""],
     ["query", `${num(m.query.length)} chars`, `first ${num(paramsOf(ctx).queryChars)}`],
   ];
 };
@@ -64,7 +66,7 @@ export default {
     "if (message.length < 1 || message.length > 8000) reject(422)",
     "if (body.history.length > 20 || body.history.some((t) => t.text.length > 4000)) reject(422)",
     "const focus = body.focus ?? null",
-    "checkRateLimit(user, 20 per hour); replayIfSeen(body.request_id)",
+    "replayIfSeen(body.request_id); checkRateLimit(user, 20 per hour)",
     "const query = message.slice(0, p.queryChars)",
   ],
   frames(ctx) {

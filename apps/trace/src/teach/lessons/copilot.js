@@ -1,6 +1,6 @@
 // Lessons for the copilot track, keyed by step id. See ./index.js for the shape.
 import { MODEL, vectorize } from "../../engine/copilot.js";
-import { isWhatIf, messageOf, num, paramsOf, plural, retrievalOf, short } from "../../explain/steps/copilot/util.js";
+import { isWhatIf, messageOf, num, paramsOf, plural, promptOf, retrievalOf, short } from "../../explain/steps/copilot/util.js";
 import transformer from "./transformer.js";
 
 const f3 = (v) => Number(v).toFixed(3);
@@ -39,7 +39,7 @@ const copilot = {
     },
     try: [
       { setting: "copilot.stopwords", value: [], watch: "With no stopwords, “when”, “is” and “my” become search words too. Every distance changes, and records start to match on filler." },
-      { setting: "copilot.queryChars", value: 20, watch: "Only “when is my gdp repor” is searched, so “report”, “due” and “friday” disappear from the search words." },
+      { setting: "copilot.queryChars", value: 20, watch: "Only “when is my gdp repor” is searched, so “report”, “due” and “monday” disappear from the search words." },
     ],
   },
   hashvector: {
@@ -57,7 +57,7 @@ const copilot = {
       {
         setting: "copilot.dimensions",
         value: 16,
-        watch: "With only 16 boxes, “move” and “friday” land in the same box. In Retrieval, “Call advisor” and “Meet professor” now look close through collisions and are dropped by the shared-word filter.",
+        watch: "With only 16 boxes, “gdp” and “am” land in the same box. In Retrieval, “Call advisor” and “Meet professor” now look close through collisions and are dropped by the shared-word filter.",
       },
       { setting: "copilot.logWeight", value: false, watch: "Weights become plain counts. Titles count +2 at full strength, so “Submit GDP report” gets closer." },
     ],
@@ -84,7 +84,7 @@ const copilot = {
     ],
   },
   memory: {
-    what: "Earlier turns, sources cited earlier, and any record you attached are sent again with your new message.",
+    what: "Earlier turns (the last 20), the citation numbers the thread already used, and any record you attached are sent again with your new message.",
     why: "The LLM keeps nothing between messages. Without this, a follow-up like “move it” would have nothing to point at.",
     example(ctx) {
       if (!has(ctx)) return "";
@@ -97,15 +97,16 @@ const copilot = {
     try: [],
   },
   prompt: {
-    what: "Everything the LLM will read is packed into labelled sections in a fixed order: today's date, a briefing, search sources, the conversation and your question.",
-    why: "A fixed order lets the provider reuse the unchanged start of the prompt. Marking sources as untrusted stops text inside a record from acting as instructions.",
+    what: "Everything the LLM will read is packed into labelled sections in a fixed order: instructions, today's date, a briefing of your planner (up to 40 records), the search sources, the conversation, an attached record and your question. The browser rebuilds each one with the server's code.",
+    why: "A fixed order lets the provider reuse the unchanged start of the prompt. The briefing means the model sees your overdue and upcoming work even when the search misses it. Marking sources as untrusted stops text inside a record from acting as instructions.",
     example(ctx) {
       if (!has(ctx)) return "";
-      const hits = retrievalOf(ctx).kept;
-      const m = messageOf(ctx);
-      return `${plural(hits.length, "search source")}${yours(ctx)}, ${plural(m.history.length, "earlier turn")} and your ${num(m.trimmed.length)}-character question go into the prompt.`;
+      const P = promptOf(ctx);
+      const brief = P.sections.find((s) => s.name === "PLANNER_BRIEFING");
+      const exact = P.sections.filter((s) => s.status === "exact").length;
+      return `The briefing lists ${plural(brief.items ?? 0, "record")} in ${num(brief.chars)} characters, and the whole first prompt is ${num(P.chars)} characters${yours(ctx)}.${P.round ? ` ${exact} of ${P.sections.length} sections match the server's reported sizes exactly.` : ""}`;
     },
-    try: [{ setting: "copilot.limit", value: 1, watch: "The UNTRUSTED_SOURCES section shrinks to one source, and its estimated size drops." }],
+    try: [{ setting: "copilot.limit", value: 1, watch: "The UNTRUSTED_SOURCES section shrinks to one source. This is a what-if: the server column keeps the real size." }],
   },
   lookups: {
     what: "Before answering, the LLM may ask for more information, such as another search. The server runs it and the LLM writes again.",
@@ -114,7 +115,9 @@ const copilot = {
       const r = ctx?.copilot?.response;
       if (!r) return "There is no reply yet, so no lookups ran.";
       const steps = r.steps ?? [];
-      return steps.length ? `${plural(steps.length, "lookup")} ran: ${steps.map((s) => s.label).join("; ")}.` : "No lookups ran: the LLM answered from the first prompt.";
+      const rounds = r.retrieval?.turn?.rounds?.length;
+      const gens = rounds ? ` The server ran ${plural(rounds, "generation")}.` : "";
+      return (steps.length ? `${plural(steps.length, "lookup")} ran: ${steps.map((s) => s.label).join("; ")}.` : "No lookups ran: the LLM answered from the first prompt.") + gens;
     },
     try: [],
   },
