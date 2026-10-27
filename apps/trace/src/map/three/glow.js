@@ -35,7 +35,7 @@ export function createGlow(renderer, scene, camera, { bloom }) {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, target);
     composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.35, 1.05);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.2, 0.25, 1.1);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
   }
