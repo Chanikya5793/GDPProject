@@ -36,7 +36,7 @@ export function createFlows(world, { dark, hdr }) {
   });
   const haloMaterial = new THREE.MeshBasicMaterial({
     map: texture,
-    color: to.clone().multiplyScalar(hdr ? 1.6 : 1),
+    color: to.clone().multiplyScalar(0.8),
     transparent: true,
     depthWrite: false,
     blending,
@@ -126,9 +126,9 @@ export function createFlows(world, { dark, hdr }) {
     if (lines) lineMaterial.opacity = (dark ? 0.55 : 0.7) * Math.min(1, reduced ? 1 : age * 3);
     if (target) {
       const pulse = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(age * 5);
-      const s = target.size * (1.5 + pulse * 0.35);
+      const s = target.size * (1.05 + pulse * 0.15);
       halo.scale.set(s, s, 1);
-      haloMaterial.opacity = (dark ? 0.5 : 0.35) + pulse * 0.25;
+      haloMaterial.opacity = (dark ? 0.1 : 0.2) + pulse * 0.06;
     }
     if (!points) return;
     points.visible = !reduced;
@@ -145,7 +145,7 @@ export function createFlows(world, { dark, hdr }) {
         pos.setXYZ(i, p.x, p.y, p.z);
         // Fade in at the source, brightest just before landing.
         const fade = Math.min(1, t * 6) * (t > 0.96 ? (1 - t) * 25 : 1);
-        c.copy(from).lerp(to, u).multiplyScalar((hdr ? 2.2 : 1) * (dark ? fade : 1));
+        c.copy(from).lerp(to, u).multiplyScalar((hdr ? 1.3 : 1) * (dark ? fade : 1));
         col.setXYZ(i, c.r, c.g, c.b);
         i++;
       }
