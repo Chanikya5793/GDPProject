@@ -7,8 +7,6 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   globalIgnores([
     'dist', 'coverage', '.vite', 'node_modules',
-    // Workspace apps under apps/ build into their own dist folders.
-    'apps/*/dist',
     // The Expo app has its own toolchain (tsc + vitest) and its own module
     // system; linting it with the web app's browser globals flags valid
     // CommonJS config plugins as no-undef.
