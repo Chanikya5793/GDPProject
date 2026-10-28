@@ -3,7 +3,7 @@ name: Secure copilot CI
 on:
   pull_request:
   push:
-    branches: [main, "feature/**"]
+    branches: [main, "feature/**", "codex/nlp-pages", "codex/pages-nlp-packaging"]
   # Lets a build be started without pushing something to provoke one, which is
   # what you want when the last merge predates a token or a credential change
   # rather than a code change.

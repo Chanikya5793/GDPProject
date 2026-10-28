@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  checks: read
   pages: write
   id-token: write
 
@@ -15,14 +17,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      planner_sha: ${{ steps.verified.outputs.planner_sha }}
+      nlp_sha: ${{ steps.verified.outputs.nlp_sha }}
+      nlp_run: ${{ steps.verified.outputs.nlp_run }}
+    steps:
+      - name: Require all CI and the tested independent NLP artifact
+        id: verified
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const main = await github.rest.git.getRef({...repo, ref: 'heads/main'});
+            const nlp = await github.rest.git.getRef({...repo, ref: 'heads/codex/nlp-pages'});
+            const required = ['web', 'backend', 'mobile', 'mobile-android', 'container', 'no-assistant-attribution'];
+            const targets = new Map([[main.data.object.sha, required], [nlp.data.object.sha, [...required, 'pipeline', 'interface', 'browser']]]);
+            // Also gate the workflow revision when it differs from either source.
+            if (!targets.has(context.sha)) targets.set(context.sha, required);
+            for (let attempt = 0; attempt < 60; attempt++) {
+              let ready = true;
+              for (const [sha, names] of targets) {
+                const response = await github.rest.checks.listForRef({...repo, ref: sha, filter: 'latest', per_page: 100});
+                for (const name of names) {
+                  const check = response.data.check_runs.find(c => c.name === name && c.app?.slug === 'github-actions');
+                  if (check?.status === 'completed' && check.conclusion !== 'success') {
+                    core.setFailed(`${name} failed for ${sha}: ${check.conclusion}`);
+                    return;
+                  }
+                  if (check?.conclusion !== 'success') ready = false;
+                }
+              }
+              if (ready) {
+                const runs = await github.rest.actions.listWorkflowRunsForRepo({...repo, head_sha: nlp.data.object.sha, status: 'success', per_page: 100});
+                const run = runs.data.workflow_runs.find(r => r.name === 'Northwest NLP Lab');
+                if (run) {
+                  const artifacts = await github.rest.actions.listWorkflowRunArtifacts({...repo, run_id: run.id});
+                  if (artifacts.data.artifacts.some(a => a.name === 'nlp-pages' && !a.expired)) {
+                    core.setOutput('planner_sha', main.data.object.sha);
+                    core.setOutput('nlp_sha', nlp.data.object.sha);
+                    core.setOutput('nlp_run', String(run.id));
+                    core.summary.addHeading('Verified Pages sources').addRaw(`Planner: ${main.data.object.sha}\n\nNLP: ${nlp.data.object.sha}\n\nAll required CI passed. The NLP artifact includes browser workflow verification.`).write();
+                    return;
+                  }
+                }
+              }
+              core.info('Waiting for required CI and the tested NLP artifact.');
+              await new Promise(resolve => setTimeout(resolve, 30000));
+            }
+            core.setFailed('Required CI or the tested NLP artifact was unavailable. Rerun Northwest NLP Lab on codex/nlp-pages, then redeploy.');
+
   build:
+    needs: gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gates.outputs.planner_sha }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm install
@@ -44,6 +101,16 @@ jobs:
       # artifact. The planner build above already inlines the embed.
       - run: npm run test:trace
       - run: npm run build:pages --workspace @gdp/trace
+
+      # The independent lab is unlinked from Planner. Reuse the exact static
+      # artifact that passed real Python-in-browser tests on its own branch.
+      - name: Include the verified NLP companion at its full URL
+        uses: actions/download-artifact@v4
+        with:
+          name: nlp-pages
+          path: dist/nlp
+          run-id: ${{ needs.gates.outputs.nlp_run }}
+          github-token: ${{ github.token }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

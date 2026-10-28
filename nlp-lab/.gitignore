@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+dist/
+.lab-data/
+nltk_data/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+.browser-build/
+public/runtime/
+playwright-report/
+test-results/

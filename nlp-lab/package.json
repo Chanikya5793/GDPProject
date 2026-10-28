@@ -1,0 +1,31 @@
+{
+  "name": "northwest-nlp-lab-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "build": "vite build",
+    "build:runtime": "node scripts/build_browser.mjs",
+    "build:pages": "node scripts/build_pages.mjs",
+    "preview:pages": "vite preview --host 127.0.0.1 --port 4175 --strictPort --base /GDPProject/nlp/",
+    "test:pages": "playwright test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.1.1",
+    "pyodide": "314.0.7",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.10"
+  }
+}

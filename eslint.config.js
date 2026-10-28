@@ -13,6 +13,8 @@ export default defineConfig([
     // system; linting it with the web app's browser globals flags valid
     // CommonJS config plugins as no-undef.
     'mobile',
+    // The standalone NLP companion owns its Vite/Vitest environment and dependencies.
+    'nlp-lab',
     'backend/.venv*', 'backend/.pytest_cache',
   ]),
   {
