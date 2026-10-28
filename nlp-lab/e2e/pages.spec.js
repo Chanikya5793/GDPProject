@@ -5,10 +5,14 @@ test('real browser Python handles requests, persists corrections, and trains a c
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) apiCalls.push(request.url()) })
   await page.goto('./')
   const runButton = page.getByRole('button', { name: 'Run pipeline', exact: true })
+  const runRequest = async () => {
+    await runButton.click()
+    await expect(runButton).toBeEnabled({ timeout: 60000 })
+  }
   await expect(runButton).toBeEnabled({ timeout: 240000 })
   await page.getByText('Reference clock & planner context', { exact: false }).click()
   await page.getByLabel('Reference date & time').fill('2026-10-27T12:00')
-  await runButton.click()
+  await runRequest()
   await expect(page.getByRole('button', { name: 'Export JSON', exact: true })).toBeEnabled({ timeout: 60000 })
   await expect(page.getByText('"2026-10-28"', { exact: false }).first()).toBeVisible()
   await page.getByRole('button', { name: /Linguistic analysis/ }).click()
@@ -21,18 +25,18 @@ test('real browser Python handles requests, persists corrections, and trains a c
   await downloadPromise
 
   await page.getByLabel('Planner request').fill("Don't delete the task Pay rent")
-  await runButton.click()
+  await runRequest()
   await expect(page.getByText(/Explicit negation/).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Export JSON', exact: true })).toBeDisabled()
 
   await page.getByLabel('Planner request').fill('Delete my task chemistry')
-  await runButton.click()
+  await runRequest()
   await page.getByRole('button', { name: /Target resolution/ }).click()
   await page.locator('.candidates button').filter({ hasText: 'Chemistry report' }).click()
   await expect(page.getByRole('button', { name: 'Export JSON', exact: true })).toBeEnabled()
 
   await page.getByLabel('Planner request').fill('Create a task called Browser reviewed demo tomorrow at 3pm')
-  await runButton.click()
+  await runRequest()
   await page.getByRole('button', { name: 'Correct prediction', exact: true }).click()
   await page.getByRole('button', { name: 'Approve correction', exact: true }).click()
   await expect(page.getByText(/Correction approved and saved/)).toBeVisible()

@@ -87,7 +87,7 @@ export default function App() {
   }
   useEffect(()=>{let live=true;refresh().then(c=>{if(!live || !c)return;const active=c.items.find(x=>x.id===c.active_id);if(active){const {id,created_at,...value}=active;setConfig(value);setRulesText(formatJSON(value.rules))}});return()=>{live=false}},[])
   const training = models.items.some(m=>['pending','running','evaluating'].includes(m.status))
-  useEffect(()=>{if(!training)return;const id=setInterval(()=>refresh(),3000);return()=>clearInterval(id)},[training])
+  useEffect(()=>{if(!training)return;let polling=false;const id=setInterval(()=>{if(polling)return;polling=true;refresh().finally(()=>{polling=false})},3000);return()=>clearInterval(id)},[training])
   useEffect(()=>{if(page!=='Dataset')return;let cancelled=false;api(`/examples?search=${encodeURIComponent(search)}&split=${split}&offset=${offset}`).then(data=>{if(!cancelled)setExamples(data)}).catch(e=>setError(e.message));return()=>{cancelled=true}},[page,search,split,offset,notice])
   function updateConfig(changes){setConfig(c=>({...c,...changes}));setConfigDirty(true)}
   async function run(selectedRecordId=null, overrideText=null) {
@@ -98,7 +98,7 @@ export default function App() {
     }catch(e){setError(e.message)}finally{setBusy(false)}
   }
   async function exportPayload(){setExporting(true);try{const value=await api(`/runs/${result.id}/export`,{});download(value,`northwest-${result.command.operation}-${result.id.slice(-8)}.json`);setNotice('Validated JSON exported. No Planner request was sent.')}catch(e){setError(e.message)}finally{setExporting(false)}}
-  async function trainModel(){setBusy(true);try{await api('/training',{name:`Corpus experiment ${new Date().toLocaleDateString()}`});await refresh();setNotice('Training started. This candidate will need explicit activation.')}catch(e){setError(e.message)}finally{setBusy(false)}}
+  async function trainModel(){setBusy(true);try{const job=await api('/training',{name:`Corpus experiment ${new Date().toLocaleDateString()}`});setModels(value=>({...value,items:[job,...value.items.filter(item=>item.id!==job.id)]}));setNotice('Training started. This candidate will need explicit activation.')}catch(e){setError(e.message)}finally{setBusy(false)}}
   async function activateModel(id){try{await api(`/models/${id}/activate`,{});await refresh();setNotice('Model activated. Existing runs retain their original versions.')}catch(e){setError(e.message)}}
   async function saveConfig(){setBusy(true);try{const row=await api('/configurations',{...config,rules:JSON.parse(rulesText)});await refresh();setConfigDirty(false);setNotice(`Saved ${row.name}. Activate it below to make it the default.`)}catch(e){setError(e.message)}finally{setBusy(false)}}
   async function activateConfig(id){try{await api(`/configurations/${id}/activate`,{});const c=await refresh();const {id:_,created_at,...value}=c.items.find(x=>x.id===id);setConfig(value);setRulesText(formatJSON(value.rules));setConfigDirty(false);setNotice('Configuration activated.')}catch(e){setError(e.message)}}
