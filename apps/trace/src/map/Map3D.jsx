@@ -90,7 +90,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       props.current.onUserMove?.();
     });
 
-    const glowScale = () => (hdr ? 1.2 : 1);
+    const glowScale = () => (hdr ? 1.8 : 1);
     const sideTone = new THREE.Color(tones.side);
     const frameMaterial = new THREE.LineBasicMaterial({ color: new THREE.Color(COLORS.active).multiplyScalar(glowScale()) });
     const activeFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 0.05, 1)), frameMaterial);

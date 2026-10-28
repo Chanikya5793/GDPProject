@@ -23,7 +23,7 @@ export function createColumns({ env, hdr }) {
     pos: rgb(COLORS.pos),
     neg: rgb(COLORS.neg),
     seq: rgb(COLORS.seq),
-    active: new THREE.Color(COLORS.active).multiplyScalar(hdr ? 1.12 : 1),
+    active: new THREE.Color(COLORS.active).multiplyScalar(hdr ? 1.3 : 1),
     source: new THREE.Color(COLORS.source),
     masked: new THREE.Color(COLORS.edgeGhost),
     ghost: new THREE.Color(COLORS.faint),
