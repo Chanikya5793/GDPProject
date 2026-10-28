@@ -107,6 +107,37 @@ jobs:
           run-id: ${{ needs.gates.outputs.nlp_run }}
           github-token: ${{ github.token }}
 
+      # An unlisted preview of the planner with TRACE, built from the `trace`
+      # branch into a sub-path kept in a repository variable (so the path is
+      # not in this public repo). Nothing links to it and every page carries
+      # noindex. Unset the variable to stop publishing it.
+      - name: Check out the trace branch for the unlisted preview
+        if: vars.TRACE_PREVIEW_PATH != ''
+        uses: actions/checkout@v4
+        with:
+          ref: trace
+          path: preview-src
+
+      - name: Build the unlisted planner + TRACE preview
+        if: vars.TRACE_PREVIEW_PATH != ''
+        working-directory: preview-src
+        env:
+          PREVIEW: ${{ vars.TRACE_PREVIEW_PATH }}
+          VITE_PLANNER_API_URL: ${{ vars.VITE_PLANNER_API_URL }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+        run: |
+          echo "::add-mask::$PREVIEW"
+          npm install
+          npm run test:trace
+          out="$GITHUB_WORKSPACE/dist/$PREVIEW"
+          npx vite build --base "/GDPProject/$PREVIEW/" --outDir "$out" --emptyOutDir
+          (cd apps/trace && npx vite build --base "/GDPProject/$PREVIEW/trace/" --outDir "$out/trace" --emptyOutDir)
+          find "$out" -name index.html -exec sed -i 's#<head>#<head>\n    <meta name="robots" content="noindex, nofollow, noarchive" />#' {} +
+          test "$(grep -l 'noindex' "$out/index.html" "$out/trace/index.html" | wc -l)" = 2
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
