@@ -11,10 +11,10 @@ test('real browser Python handles requests, persists corrections, and trains a c
   await runButton.click()
   await expect(page.getByRole('button', { name: 'Export JSON', exact: true })).toBeEnabled({ timeout: 60000 })
   await expect(page.getByText('"2026-10-28"', { exact: false }).first()).toBeVisible()
-  await page.getByRole('button', { name: /03\s*Linguistic analysis/ }).click()
+  await page.getByRole('button', { name: /Linguistic analysis/ }).click()
   await expect(page.getByRole('columnheader', { name: 'Lemma' })).toBeVisible()
   await expect(page.getByRole('cell', { name: 'unavailable', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: /04\s*Feature extraction/ }).click()
+  await page.getByRole('button', { name: /Feature extraction/ }).click()
   await expect(page.locator('.feature-list span')).not.toHaveCount(0)
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export JSON', exact: true }).click()
@@ -27,7 +27,7 @@ test('real browser Python handles requests, persists corrections, and trains a c
 
   await page.getByLabel('Planner request').fill('Delete my task chemistry')
   await runButton.click()
-  await page.getByRole('button', { name: /08\s*Target resolution/ }).click()
+  await page.getByRole('button', { name: /Target resolution/ }).click()
   await page.locator('.candidates button').filter({ hasText: 'Chemistry report' }).click()
   await expect(page.getByRole('button', { name: 'Export JSON', exact: true })).toBeEnabled()
 
