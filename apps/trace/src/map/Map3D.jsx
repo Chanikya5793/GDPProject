@@ -72,9 +72,9 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     const glow = createGlow(renderer, world, camera, {
       bloom: tones.dark && !props.current.reduced && !weakGpu(renderer),
     });
-    const hdr = glow.bloom;
-    const columns = createColumns({ env: stage.env, hdr });
-    const flows = createFlows(world, { dark: tones.dark, hdr });
+    let hdr = glow.bloom;
+    let columns = createColumns({ env: stage.env, hdr });
+    let flows = createFlows(world, { dark: tones.dark, hdr });
     const labels = createLabels(container);
 
     const controls = new OrbitControls(camera, el);
@@ -355,6 +355,20 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
     const observer = new ResizeObserver(resize);
     observer.observe(container);
 
+    // If bloom was dropped for speed, rebuild without the >1 colours it relied on.
+    function settleHdr() {
+      if (hdr === glow.bloom) return;
+      state.plates.forEach(releasePlate);
+      state.plates.clear();
+      columns.dispose();
+      flows.dispose();
+      hdr = glow.bloom;
+      columns = createColumns({ env: stage.env, hdr });
+      flows = createFlows(world, { dark: tones.dark, hdr });
+      frameMaterial.color.set(COLORS.active);
+      build(props.current.track);
+      routeFlows(props.current.scene);
+    }
 
     let raf = 0;
     let last = performance.now();
@@ -369,6 +383,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
       glow.watch(dt);
+      settleHdr();
       const { scene, track, reduced } = props.current;
       // Repaint textures whose state changed; lift the step in play, settle the
       // past lower and dimmer, ghost the future.
@@ -394,10 +409,6 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         plate.top.opacity = plate.fade;
         plate.side.color.copy(sideTone).multiplyScalar(plate.dim);
         plate.side.opacity = plate.fade;
-        // A see-through plate that writes depth hides whatever sorts after it,
-        // and the sort order flips as the camera drifts: flicker.
-        const solid = plate.fade > 0.99;
-        if (plate.top.depthWrite !== solid) plate.top.depthWrite = plate.side.depthWrite = solid;
         plate.edge.material.opacity = k(plate.edge.material.opacity, live ? 0.9 : 0, 0.3);
         plate.edge.visible = plate.edge.material.opacity > 0.01;
         // The shadow spreads and softens as the slab rises.
@@ -454,14 +465,7 @@ export default function Map3D({ track, scene, insets, follow, overviewing, onUse
         );
       }
       controls.update();
-      const distance = camera.position.distanceTo(controls.target);
-      stage.fogFor(distance);
-      // A near plane that follows the distance keeps depth precise far away.
-      const near = Math.max(0.1, distance * 0.02);
-      if (Math.abs(camera.near - near) > near * 0.05) {
-        camera.near = near;
-        camera.updateProjectionMatrix();
-      }
+      stage.fogFor(camera.position.distanceTo(controls.target));
       updateHover(scene);
       glow.render();
       labels.update(scene, camera, state.lifts);

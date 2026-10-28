@@ -153,9 +153,7 @@ export function cellAt(b, x, y) {
 
 function heat(kind, value, scale) {
   if (!Number.isFinite(value)) return null;
-  // An exact zero is an empty slot: barely tinted, so the values stand out.
-  if (value === 0) return "rgba(128, 128, 128, 0.07)";
-  const a = 0.22 + Math.min(1, Math.abs(value) / (scale || 1)) * 0.6;
+  const a = 0.1 + Math.min(1, Math.abs(value) / (scale || 1)) * 0.5;
   const rgb = kind === "sequential" ? COLORS.seq : value >= 0 ? COLORS.pos : COLORS.neg;
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a.toFixed(3)})`;
 }
@@ -167,13 +165,6 @@ function roundRect(ctx, x, y, w, h, r) {
 
 function fitText(ctx, text, max) {
   if (ctx.measureText(text).width <= max) return text;
-  // A decimal loses digits before it gets an ellipsis: 1.000 → 1.0 → 1.
-  const decimal = /^-?\d+\.(\d+)$/.exec(text);
-  if (decimal)
-    for (let d = decimal[1].length - 1; d >= 0; d--) {
-      const short = Number(text).toFixed(d);
-      if (ctx.measureText(short).width <= max) return short;
-    }
   let s = text;
   while (s.length > 1 && ctx.measureText(`${s}…`).width > max) s = s.slice(0, -1);
   return `${s}…`;

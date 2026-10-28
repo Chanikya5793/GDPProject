@@ -10,7 +10,6 @@ import { approach } from "../camera.js";
 
 export const BAR_MIN = 0.05;
 export const BAR_MAX = 1.6;
-const ZERO_H = 0.015;
 const FOOT = 0.72;
 const HOT_LIFT = 0.12;
 const rgb = ([r, g, b]) => new THREE.Color(`rgb(${r}, ${g}, ${b})`);
@@ -41,8 +40,6 @@ export function createColumns({ env, hdr }) {
       envMapIntensity: 0.4,
     });
     const bars = new THREE.InstancedMesh(geometry, material, count);
-    // Drawn after the plates, so faded plates never hide or re-sort over them.
-    bars.renderOrder = 1;
     const values = [];
     for (let r = 0; r < block.rows; r++)
       for (let c = 0; c < block.cols; c++) values.push(block.cell(r, c)?.value);
@@ -67,12 +64,10 @@ export function createColumns({ env, hdr }) {
   function full(bars, i) {
     const { values, scale } = bars.userData;
     const v = values[i];
-    if (v === 0) return ZERO_H;
     return BAR_MIN + (Number.isFinite(v) ? Math.min(1, Math.abs(v) / scale) : 0) * BAR_MAX;
   }
 
   function valueTone(block, v, scale, out) {
-    if (v === 0) return out.copy(neutral);
     const t = Number.isFinite(v) ? Math.min(1, Math.abs(v) / scale) : 0;
     const hue = block.heat === "sequential" ? tone.seq : v < 0 ? tone.neg : tone.pos;
     return out.copy(neutral).lerp(hue, 0.35 + 0.65 * Math.sqrt(t));

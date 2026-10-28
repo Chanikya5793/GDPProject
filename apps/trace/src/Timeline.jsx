@@ -30,14 +30,9 @@ function Timeline({ mode, columns, si, fi, onSeek }) {
   };
   const show = (e, i) => {
     const c = columns[i];
-    const focus = e.type === "focus";
-    // A click focuses the button too; only keyboard focus keeps a peek open.
-    if (focus && !e.currentTarget.matches(":focus-visible")) return;
     const outer = box.current.getBoundingClientRect();
-    const button = e.currentTarget.getBoundingClientRect();
-    const at = focus ? button.left + button.width / 2 : e.clientX;
-    const x = Math.max(110, Math.min(outer.width - 110, at - outer.left));
-    setPeek({ i, x, f: focus ? null : frameAt(e, c) });
+    const x = Math.max(110, Math.min(outer.width - 110, e.clientX - outer.left));
+    setPeek({ i, x, f: e.type === "focus" ? null : frameAt(e, c) });
   };
   return (
     <div className="tl" ref={box} onPointerLeave={() => setPeek(null)}>
