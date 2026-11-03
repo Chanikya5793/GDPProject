@@ -11,7 +11,7 @@ from app.local_embeddings import LocalEmbeddingClient
 from app.mcp_api import McpSessionManager, McpToolService
 from app.planner import PlannerEngine
 from app.proposals import ProposalService
-from app.rag import CopilotService, IndexingService, RetrievalService
+from app.rag import BobbyService, IndexingService, RetrievalService
 from app.ratelimit import MemoryRateLimiter, RateLimitPolicy
 from app.repository import MemoryPlannerRepository
 from app.runtime import Container
@@ -52,13 +52,13 @@ def services():
     retrieval = RetrievalService(repository, vectors, embeddings, audit, limit=5)
     indexing = IndexingService(repository, vectors, embeddings, audit)
     proposals = ProposalService(repository, audit)
-    copilot = CopilotService(retrieval, generator, planner, repository, audit)
+    bobby = BobbyService(retrieval, generator, planner, repository, audit)
     # Generous by default so unrelated tests never trip the limiter; the
     # rate-limit tests build their own with a tight policy.
     rate_limiter = MemoryRateLimiter(RateLimitPolicy(requests=1000, window_seconds=3600))
     container = Container(
         repository=repository, vector_store=vectors, indexing=indexing,
-        retrieval=retrieval, copilot=copilot, proposals=proposals, planner=planner,
+        retrieval=retrieval, bobby=bobby, proposals=proposals, planner=planner,
         audit=audit, mcp_sessions=McpSessionManager(b"s" * 32),
         mcp_tools=McpToolService(repository, retrieval, planner, audit),
         rate_limiter=rate_limiter,

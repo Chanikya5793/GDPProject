@@ -1,7 +1,7 @@
-# Northwest Planner secure copilot
+# Northwest Planner — Bobby, the secure planner assistant
 
 GDPProject is an offline-capable planner with Firebase Authentication, encrypted web and
-mobile storage, and a user-scoped FastAPI RAG copilot. Planner mutations remain ordinary
+mobile storage, and a user-scoped FastAPI RAG assistant named Bobby. Planner mutations remain ordinary
 deterministic application operations: Muse Spark may explain records and produce a typed
 proposal, but only an explicit confirmation with the previewed revision can apply it.
 

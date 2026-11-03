@@ -19,12 +19,12 @@ interface Props {
  * assistant — and three copies of that rule would drift apart.
  *
  * A record with assistant visibility turned off is still attachable, and the
- * chip on the copilot screen says it is being shared for that question only.
+ * chip on Bobby screen says it is being shared for that question only.
  * That flag keeps records out of what the assistant reaches for by itself: the
  * index, the search, the briefing. Pointing at one record and asking about it
  * is not that. What this never does is change the setting.
  *
- * Routing rather than calling into the copilot directly means the same entry
+ * Routing rather than calling into Bobby directly means the same entry
  * point works from a widget, a Siri shortcut or a pasted link.
  */
 export default function AskAiButton({ record, kind, size = 18 }: Props) {
@@ -33,7 +33,7 @@ export default function AskAiButton({ record, kind, size = 18 }: Props) {
   return (
     <TouchableOpacity
       onPress={() => router.push({
-        pathname: '/(tabs)/copilot',
+        pathname: '/(tabs)/bobby',
         params: {
           about: String(record.id),
           kind,

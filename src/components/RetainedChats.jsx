@@ -19,7 +19,7 @@ export function daysLeft(expiresAt, now = Date.now()) {
 export default function RetainedChats({ chats, status, error, retainOn, onRefresh, onDelete }) {
   const rows = chats || []
   return (
-    <section className="settings-chats" aria-label="Retained copilot chats">
+    <section className="settings-chats" aria-label="Retained Bobby chats">
       <div className="settings-chats-head">
         <MessageSquare size={14} />
         <strong>Your conversations</strong>

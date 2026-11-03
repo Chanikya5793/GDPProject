@@ -87,8 +87,8 @@ export function readEventStream(
     transport.onprogress = () => {
       if (transport.status === 200) drain();
     };
-    transport.onerror = () => fail(new EventStreamError('The copilot connection failed.', 0, 'network'));
-    transport.ontimeout = () => fail(new EventStreamError('The copilot took too long to answer.', 504, 'timeout'));
+    transport.onerror = () => fail(new EventStreamError('The connection to Bobby failed.', 0, 'network'));
+    transport.ontimeout = () => fail(new EventStreamError('Bobby took too long to answer.', 504, 'timeout'));
     transport.onabort = () => {
       cleanup();
       resolve();

@@ -101,7 +101,7 @@ class ScriptedStreamingGenerator(ScriptedGenerator):
 
 def use(services, *responses: GeneratedAnswer) -> ScriptedGenerator:
     generator = ScriptedGenerator(*responses)
-    services.copilot.generator = generator
+    services.bobby.generator = generator
     return generator
 
 
@@ -122,7 +122,7 @@ def test_the_briefing_sorts_the_planner_into_days_without_being_asked(services):
     add_task(services, "done", "Old quiz", date(2026, 8, 1), completed=True)
     generator = use(services, GeneratedAnswer(answer="ok"))
 
-    services.copilot.answer("alice", "what is due today?", today=TODAY)
+    services.bobby.answer("alice", "what is due today?", today=TODAY)
     briefing = briefing_from(generator.prompts[-1])
 
     assert [item["title"] for item in briefing["overdue"]] == ["Lab report"]
@@ -139,7 +139,7 @@ def test_every_briefed_record_carries_a_citation_it_can_be_checked_against(servi
     add_task(services, "now", "Chemistry revision", TODAY)
     generator = use(services, GeneratedAnswer(answer="ok"))
 
-    _, _, _, _ = services.copilot.answer("alice", "today", today=TODAY)
+    _, _, _, _ = services.bobby.answer("alice", "today", today=TODAY)
     briefing = briefing_from(generator.prompts[-1])
 
     cited = briefing["due_today"][0]["citation_id"]
@@ -163,7 +163,7 @@ def test_a_briefed_citation_can_be_used_in_the_answer(services):
         )
 
     generator.generate = capture
-    answer, citations, disclosure, _ = services.copilot.answer("alice", "today", today=TODAY)
+    answer, citations, disclosure, _ = services.bobby.answer("alice", "today", today=TODAY)
 
     assert not disclosure.abstained
     assert [citation.record_id for citation in citations] == [record.record_id]
@@ -179,7 +179,7 @@ def test_the_briefing_obeys_the_same_privacy_gate_retrieval_does(services):
     ))
     generator = use(services, GeneratedAnswer(answer="ok"))
 
-    services.copilot.answer("alice", "today", today=TODAY)
+    services.bobby.answer("alice", "today", today=TODAY)
     prompt = generator.prompts[-1]
 
     assert "Chemistry revision" in prompt
@@ -193,16 +193,16 @@ def test_the_briefing_is_not_built_for_a_student_who_opted_out(services):
     use(services, GeneratedAnswer(answer="ok"))
 
     with pytest.raises(PermissionError):
-        services.copilot.answer("alice", "today", today=TODAY)
+        services.bobby.answer("alice", "today", today=TODAY)
 
 
 def test_the_briefing_stops_at_its_item_budget(services):
     for index in range(12):
         add_task(services, f"t{index}", f"Task {index}", date(2026, 9, 20))
-    services.copilot.toolbox.briefing_items = 5
+    services.bobby.toolbox.briefing_items = 5
     generator = use(services, GeneratedAnswer(answer="ok"))
 
-    services.copilot.answer("alice", "anything", today=TODAY)
+    services.bobby.answer("alice", "anything", today=TODAY)
     briefing = briefing_from(generator.prompts[-1])
 
     assert len(briefing["due_later"]) == 5
@@ -216,10 +216,10 @@ def test_the_briefing_lists_overdue_work_before_it_runs_out_of_room(services):
     for index in range(6):
         add_task(services, f"later{index}", f"Later {index}", date(2026, 9, 30))
     add_task(services, "late", "Lab report", date(2026, 8, 20))
-    services.copilot.toolbox.briefing_items = 3
+    services.bobby.toolbox.briefing_items = 3
     generator = use(services, GeneratedAnswer(answer="ok"))
 
-    services.copilot.answer("alice", "anything", today=TODAY)
+    services.bobby.answer("alice", "anything", today=TODAY)
     briefing = briefing_from(generator.prompts[-1])
 
     assert [item["title"] for item in briefing["overdue"]] == ["Lab report"]
@@ -230,7 +230,7 @@ def test_the_briefing_carries_the_workload_findings(services):
     add_task(services, "b", "Revision", TODAY, estimated_minutes=90)
     generator = use(services, GeneratedAnswer(answer="ok"))
 
-    services.copilot.answer("alice", "am I overloaded?", today=TODAY)
+    services.bobby.answer("alice", "am I overloaded?", today=TODAY)
     briefing = briefing_from(generator.prompts[-1])
 
     rules = {finding["rule_id"] for finding in briefing["findings"]}
@@ -253,7 +253,7 @@ def test_the_assistant_can_ask_for_a_lookup_and_is_run_again_with_the_result(ser
         GeneratedAnswer(answer="You have finished one thing so far."),
     )
 
-    answer, _, _, _ = services.copilot.answer(
+    answer, _, _, _ = services.bobby.answer(
         "alice", "how much have I finished?", today=TODAY
     )
 
@@ -277,7 +277,7 @@ def test_a_lookup_is_announced_as_a_step_so_the_pause_is_explained(services):
     )
 
     steps = [
-        item for item in services.copilot.answer_stream("alice", "my week", today=TODAY)
+        item for item in services.bobby.answer_stream("alice", "my week", today=TODAY)
         if isinstance(item, AgentStep)
     ]
 
@@ -297,9 +297,9 @@ def test_the_lookup_budget_is_finite(services):
             tool_requests=[ToolRequest(tool=ToolName.find, query="one more thing")],
         ),
     )
-    services.copilot.max_tool_rounds = 2
+    services.bobby.max_tool_rounds = 2
 
-    answer, _, _, _ = services.copilot.answer("alice", "what should I do?", today=TODAY)
+    answer, _, _, _ = services.bobby.answer("alice", "what should I do?", today=TODAY)
 
     assert answer == "Here is what I have."
     assert len(generator.prompts) == 3
@@ -312,9 +312,9 @@ def test_lookups_can_be_switched_off_entirely(services):
         answer="Answered without looking.",
         tool_requests=[ToolRequest(tool=ToolName.workload)],
     ))
-    services.copilot.max_tool_rounds = 0
+    services.bobby.max_tool_rounds = 0
 
-    services.copilot.answer("alice", "anything", today=TODAY)
+    services.bobby.answer("alice", "anything", today=TODAY)
 
     assert len(generator.prompts) == 1
     assert "TOOLS_AVAILABLE=false" in generator.prompts[0]
@@ -330,7 +330,7 @@ def test_the_same_lookup_is_not_run_twice(services):
         GeneratedAnswer(answer="unreachable"),
     )
 
-    services.copilot.answer("alice", "anything", today=TODAY)
+    services.bobby.answer("alice", "anything", today=TODAY)
 
     assert len(generator.prompts) == 2
     results = section_from(generator.prompts[1], "TOOL_RESULTS=")
@@ -339,7 +339,7 @@ def test_the_same_lookup_is_not_run_twice(services):
 
 def test_an_unknown_tool_is_refused_rather_than_crashing(services):
     request = ToolRequest.model_construct(tool="delete_everything")
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(request)
 
@@ -356,7 +356,7 @@ def test_find_filters_by_type_status_priority_and_due_window(services):
     add_task(services, "b", "Reading", date(2026, 9, 4), priority="low")
     add_task(services, "c", "Old", date(2026, 8, 1), priority="high")
     add_task(services, "d", "Done", date(2026, 9, 4), priority="high", completed=True)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(
         tool=ToolName.find, entity_type=EntityType.task, status="open",
@@ -370,7 +370,7 @@ def test_find_filters_by_type_status_priority_and_due_window(services):
 def test_find_matches_text_inside_notes(services):
     add_task(services, "a", "Essay", date(2026, 9, 4), notes="cite the Whitman reading")
     add_task(services, "b", "Reading", date(2026, 9, 4))
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.find, query="whitman"))
 
@@ -386,7 +386,7 @@ def test_agenda_groups_everything_that_lands_in_the_window_by_day(services):
         datetime(2026, 9, 4, 10, 0, tzinfo=timezone.utc),
     )
     add_task(services, "far", "Later", date(2026, 10, 1))
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.agenda, start="2026-09-03", end="2026-09-05"))
 
@@ -401,7 +401,7 @@ def test_workload_hands_back_the_records_its_findings_point_at(services):
     # attribute to anything.
     add_task(services, "a", "Essay", TODAY, estimated_minutes=90)
     add_task(services, "b", "Revision", TODAY, estimated_minutes=90)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.workload))
 
@@ -412,7 +412,7 @@ def test_workload_hands_back_the_records_its_findings_point_at(services):
 
 def test_open_day_skips_days_that_are_already_full(services):
     add_task(services, "a", "Essay", date(2026, 9, 3), estimated_minutes=120)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.open_day, start="2026-09-02", minutes=60))
 
@@ -425,7 +425,7 @@ def test_open_day_shows_what_filled_the_days_it_walked_past(services):
     # is right to strike that out. A live run abstained on a correct answer for
     # exactly this reason, so the tool hands back its own evidence.
     add_task(services, "a", "Essay", date(2026, 9, 3), estimated_minutes=120)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.open_day, start="2026-09-02", minutes=60))
 
@@ -443,7 +443,7 @@ def test_every_tool_that_returns_records_makes_them_citable(services):
     # said out loud.
     add_task(services, "a", "Essay", date(2026, 9, 3), estimated_minutes=120)
     add_task(services, "b", "Overdue thing", date(2026, 8, 1))
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
     requests = [
         ToolRequest(tool=ToolName.find, status="open"),
         ToolRequest(tool=ToolName.agenda, start="2026-08-01", end="2026-09-30"),
@@ -476,7 +476,7 @@ def _records_in(payload):
 
 def test_a_date_the_model_wrote_as_prose_does_not_become_a_server_error(services):
     add_task(services, "a", "Essay", date(2026, 9, 3))
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.agenda, start="next Friday", end="soon"))
 
@@ -487,7 +487,7 @@ def test_one_record_keeps_one_citation_id_across_tools(services):
     # Seen in the briefing and again in a search, a task must not arrive twice
     # under two IDs; the answer would read as though there were two of them.
     add_task(services, "now", "Chemistry revision", TODAY)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     briefing = session.briefing()
     found = session.run(ToolRequest(tool=ToolName.find, query="chemistry"))
@@ -498,7 +498,7 @@ def test_one_record_keeps_one_citation_id_across_tools(services):
 
 def test_a_lookup_is_recorded_in_the_privacy_audit(services):
     add_task(services, "now", "Chemistry revision", TODAY)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     session.run(ToolRequest(tool=ToolName.workload))
 
@@ -523,7 +523,7 @@ def test_a_question_back_survives_the_citation_guard(services):
         answer="Sure. What should I call it?", needs_clarification=True,
     ))
 
-    answer, _, disclosure, _ = services.copilot.answer(
+    answer, _, disclosure, _ = services.bobby.answer(
         "alice", "create a new task for tomorrow", today=TODAY
     )
 
@@ -540,7 +540,7 @@ def test_a_source_that_was_never_retrieved_is_refused(services):
         answer="You have nine tasks due tomorrow.", citation_ids=["S404"],
     ))
 
-    answer, citations, disclosure, _ = services.copilot.answer(
+    answer, citations, disclosure, _ = services.bobby.answer(
         "alice", "chemistry", today=TODAY
     )
 
@@ -563,7 +563,7 @@ def test_an_uncited_answer_is_allowed_through(services):
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
     use(services, GeneratedAnswer(answer="You have nine tasks due tomorrow."))
 
-    answer, _, disclosure, _ = services.copilot.answer("alice", "chemistry", today=TODAY)
+    answer, _, disclosure, _ = services.bobby.answer("alice", "chemistry", today=TODAY)
 
     assert not disclosure.abstained
     assert answer == "You have nine tasks due tomorrow."
@@ -575,7 +575,7 @@ def test_the_briefing_alone_does_not_turn_a_general_question_into_a_refusal(serv
     add_task(services, "now", "Chemistry revision", date(2026, 12, 1))
     use(services, GeneratedAnswer(answer="Work in short blocks with breaks."))
 
-    answer, _, disclosure, _ = services.copilot.answer(
+    answer, _, disclosure, _ = services.bobby.answer(
         "alice", "how should I study for exams?", today=TODAY
     )
 
@@ -600,7 +600,7 @@ def test_several_changes_become_several_previews(services, client, auth):
         ],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "push my overdue work to Friday", "request_id": "multi-0001",
     }).json()
 
@@ -677,7 +677,7 @@ def test_changes_that_cannot_be_prepared_are_counted_not_hidden(services, client
         ],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "remind me about two things", "request_id": "unprepared-01",
     }).json()
 
@@ -692,12 +692,12 @@ def test_changes_that_cannot_be_prepared_are_counted_not_hidden(services, client
 
 def test_a_step_reaches_the_client_as_its_own_event(services, client, auth):
     add_task(services, "now", "Chemistry revision", TODAY)
-    services.copilot.generator = ScriptedStreamingGenerator(
+    services.bobby.generator = ScriptedStreamingGenerator(
         GeneratedAnswer(tool_requests=[ToolRequest(tool=ToolName.workload)]),
         GeneratedAnswer(answer="Nothing is overloaded."),
     )
 
-    with client.stream("POST", "/v1/copilot/chat/stream", headers=auth, json={
+    with client.stream("POST", "/v1/bobby/chat/stream", headers=auth, json={
         "message": "am I overloaded?", "request_id": "stream-step-01",
     }) as response:
         body = "".join(response.iter_text())
@@ -713,7 +713,7 @@ def test_a_greeting_is_not_refused_for_having_nothing_to_cite(services):
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
     use(services, GeneratedAnswer(answer="Hi. What would you like to look at?"))
 
-    answer, _, disclosure, _ = services.copilot.answer("alice", "Hello", today=TODAY)
+    answer, _, disclosure, _ = services.bobby.answer("alice", "Hello", today=TODAY)
 
     assert not disclosure.abstained
     assert answer == "Hi. What would you like to look at?"
@@ -722,7 +722,7 @@ def test_a_greeting_is_not_refused_for_having_nothing_to_cite(services):
 def test_a_reply_with_nothing_in_it_says_so_rather_than_showing_an_empty_bubble(services):
     use(services, GeneratedAnswer())
 
-    answer, _, _, _ = services.copilot.answer("alice", "anything", today=TODAY)
+    answer, _, _, _ = services.bobby.answer("alice", "anything", today=TODAY)
 
     assert "couldn't put that together" in answer
 
@@ -735,7 +735,7 @@ def test_a_change_described_in_silence_still_says_how_many(services, client, aut
         title="Draft the essay", due_date="2026-09-04",
     )]))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "add an essay task for Friday", "request_id": "silent-0001",
     }).json()
 
@@ -754,7 +754,7 @@ def test_the_model_is_shown_the_id_it_needs_to_change_a_record(services):
     add_task(services, "lab-report-01", "Lab report", date(2026, 9, 4))
     generator = use(services, GeneratedAnswer(answer="Two left."))
 
-    services.copilot.answer("alice", "when is the lab report due?", today=TODAY)
+    services.bobby.answer("alice", "when is the lab report due?", today=TODAY)
 
     assert "lab-report-01" in generator.prompts[0]
 
@@ -773,7 +773,7 @@ def test_a_citation_id_in_record_id_is_resolved_rather_than_duplicating(services
         )],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "push the essay to next Friday", "request_id": "citeid-0001",
     }).json()
 
@@ -796,7 +796,7 @@ def test_an_unresolvable_citation_id_is_refused_honestly(services, client, auth)
         )],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "push the essay to next Friday", "request_id": "citeid-0002",
     }).json()
 
@@ -818,7 +818,7 @@ def test_a_note_is_in_the_briefing_so_it_can_be_edited(services):
     )
     generator = use(services, GeneratedAnswer(answer="Done."))
 
-    services.copilot.answer("alice", "reword my chem notes", today=TODAY)
+    services.bobby.answer("alice", "reword my chem notes", today=TODAY)
 
     assert "chem-notes-01" in generator.prompts[0]
 
@@ -831,7 +831,7 @@ def test_a_focused_record_reaches_the_model_with_its_real_id(services):
     add_task(services, "lab-report-77", "Lab report", date(2026, 9, 4))
     generator = use(services, GeneratedAnswer(answer="Friday."))
 
-    services.copilot.answer(
+    services.bobby.answer(
         "alice", "when is this due?", today=TODAY,
         focus=FocusRecordRef(record_id="lab-report-77", entity_type=EntityType.task),
     )
@@ -845,7 +845,7 @@ def test_without_a_focus_the_prompt_is_unchanged(services):
     add_task(services, "lab-report-78", "Lab report", date(2026, 9, 4))
     generator = use(services, GeneratedAnswer(answer="Friday."))
 
-    services.copilot.answer("alice", "when is the lab report due?", today=TODAY)
+    services.bobby.answer("alice", "when is the lab report due?", today=TODAY)
 
     assert "FOCUS_RECORD=" not in generator.prompts[0]
 
@@ -857,7 +857,7 @@ def test_the_focused_record_sits_beside_the_question_not_in_the_briefing(service
     add_task(services, "lab-report-79", "Lab report", date(2026, 9, 4))
     generator = use(services, GeneratedAnswer(answer="Friday."))
 
-    services.copilot.answer(
+    services.bobby.answer(
         "alice", "when is this due?", today=TODAY,
         focus=FocusRecordRef(record_id="lab-report-79", entity_type=EntityType.task),
     )
@@ -875,7 +875,7 @@ def test_a_record_kept_from_the_assistant_is_still_answered_when_pointed_at(serv
     add_task(services, "private-01", "Therapy appointment", date(2026, 9, 4), approved=False)
     generator = use(services, GeneratedAnswer(answer="Friday."))
 
-    services.copilot.answer(
+    services.bobby.answer(
         "alice", "when is this?", today=TODAY,
         focus=FocusRecordRef(record_id="private-01", entity_type=EntityType.task),
     )
@@ -897,7 +897,7 @@ def test_focus_on_a_kind_the_student_excluded_is_refused(services):
     ))
     generator = use(services, GeneratedAnswer(answer="Friday."))
 
-    services.copilot.answer(
+    services.bobby.answer(
         "alice", "when is this due?", today=TODAY,
         focus=FocusRecordRef(record_id="lab-report-80", entity_type=EntityType.task),
     )
@@ -911,7 +911,7 @@ def test_focus_on_a_deleted_record_still_answers_the_question(services):
     # A stale pin must not take the student's whole question down with it.
     generator = use(services, GeneratedAnswer(answer="I can't see that one."))
 
-    answer, _, _, _ = services.copilot.answer(
+    answer, _, _, _ = services.bobby.answer(
         "alice", "what is this about?", today=TODAY,
         focus=FocusRecordRef(record_id="gone-forever", entity_type=EntityType.task),
     )
@@ -925,7 +925,7 @@ def test_a_focused_record_is_not_also_quoted_as_a_search_hit(services):
     add_task(services, "lab-report-81", "Lab report", date(2026, 9, 4))
     generator = use(services, GeneratedAnswer(answer="Friday."))
 
-    services.copilot.answer(
+    services.bobby.answer(
         "alice", "lab report", today=TODAY,
         focus=FocusRecordRef(record_id="lab-report-81", entity_type=EntityType.task),
     )
@@ -944,7 +944,7 @@ def test_asking_about_a_focused_record_edits_it_rather_than_copying_it(services,
         )],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "make this high priority", "request_id": "focused-00001",
         "focus": {"record_id": "essay-90", "entity_type": "task"},
     }).json()
@@ -955,7 +955,7 @@ def test_asking_about_a_focused_record_edits_it_rather_than_copying_it(services,
 
 
 def test_a_focus_naming_only_half_a_record_is_rejected(services, client, auth):
-    response = client.post("/v1/copilot/chat", headers=auth, json={
+    response = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "what is this?", "request_id": "focused-00002",
         "focus": {"record_id": "essay-90"},
     })
@@ -990,7 +990,7 @@ def test_notes_survive_a_briefing_full_of_dated_work(services):
     add_note(services, "chem-1", "Chem notes", "Titration steps")
     generator = use(services, GeneratedAnswer(answer="Sure."))
 
-    services.copilot.answer("alice", "rewrite my chem notes", today=TODAY)
+    services.bobby.answer("alice", "rewrite my chem notes", today=TODAY)
 
     briefing = briefing_from(generator.prompts[0])
     assert "notes" in briefing
@@ -1006,12 +1006,12 @@ def test_a_citation_id_keeps_its_number_across_turns(services, client, auth):
         GeneratedAnswer(answer="Here it is.", citation_ids=["S1"]),
         GeneratedAnswer(answer="Still here.", citation_ids=["S1"]))
 
-    first = client.post("/v1/copilot/chat", headers=auth, json={
+    first = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "show my chem notes", "request_id": "stable-00001",
     }).json()
     number = next(c["citation_id"] for c in first["citations"] if c["record_id"] == "chem-2")
 
-    second = client.post("/v1/copilot/chat", headers=auth, json={
+    second = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "and again", "request_id": "stable-00002",
         "conversation_id": first["conversation_id"],
     }).json()
@@ -1029,14 +1029,14 @@ def test_typing_a_citation_id_back_points_at_that_record(services, client, auth)
         GeneratedAnswer(answer="That one."),
         GeneratedAnswer(answer="That one."))
 
-    first = client.post("/v1/copilot/chat", headers=auth, json={
+    first = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "show my chem notes", "request_id": "ref-00001",
     }).json()
     number = next(c["citation_id"] for c in first["citations"] if c["record_id"] == "chem-3")
-    generator = services.copilot.generator
+    generator = services.bobby.generator
 
     for message, request_id in ((number, "ref-00002"), (number[1:], "ref-00003")):
-        client.post("/v1/copilot/chat", headers=auth, json={
+        client.post("/v1/bobby/chat", headers=auth, json={
             "message": message, "request_id": request_id,
             "conversation_id": first["conversation_id"],
         })
@@ -1057,7 +1057,7 @@ def test_a_create_naming_an_existing_note_becomes_an_edit_of_it(services, client
         )],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "expand it", "request_id": "coerce-00001",
     }).json()
 
@@ -1081,7 +1081,7 @@ def test_a_task_create_is_only_coerced_when_the_thread_was_about_that_task(servi
         )],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "add read chapter 4 for next friday", "request_id": "coerce-00002",
     }).json()
 
@@ -1104,7 +1104,7 @@ def test_the_singular_action_is_ignored_when_the_plural_is_filled(services, clie
         ),
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "make me a study plan", "request_id": "pair-00001",
     }).json()
 
@@ -1125,9 +1125,9 @@ def test_a_turn_cannot_spend_more_than_four_lookups(services):
             ToolRequest(tool=ToolName.find, query="e"),
         ]),
         GeneratedAnswer(answer="Gave up."))
-    services.copilot.max_tool_rounds = 3
+    services.bobby.max_tool_rounds = 3
 
-    _, _, _, _ = services.copilot.answer("alice", "find it", today=TODAY)
+    _, _, _, _ = services.bobby.answer("alice", "find it", today=TODAY)
 
     # Opening search + three + one more, then told it has none left.
     assert "TOOLS_AVAILABLE=false" in generator.prompts[-1]
@@ -1135,7 +1135,7 @@ def test_a_turn_cannot_spend_more_than_four_lookups(services):
 
 def test_looking_for_a_note_by_date_says_why_it_found_nothing(services):
     add_note(services, "n-date", "Chem notes", "Titration steps")
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(
         tool=ToolName.find, entity_type=EntityType.note, start="2026-09-12", end="2026-09-12",
@@ -1149,7 +1149,7 @@ def test_undated_records_come_back_newest_first(services):
     # "The first one" was the alphabetically first note, not the latest.
     add_note(services, "older", "Alpha notes")
     add_note(services, "newer", "Zeta notes")
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.find, entity_type=EntityType.note))
 
@@ -1162,7 +1162,7 @@ def test_reply_style_reaches_the_model(services):
     generator = use(services, GeneratedAnswer(answer="Two left."))
     services.repository.set_planner_settings("alice", PlannerSettings(reply_style="detailed"))
 
-    services.copilot.answer("alice", "how busy am I?", today=TODAY)
+    services.bobby.answer("alice", "how busy am I?", today=TODAY)
 
     assert "REPLY_STYLE=detailed" in generator.prompts[0]
 
@@ -1170,7 +1170,7 @@ def test_reply_style_reaches_the_model(services):
 def test_reply_style_defaults_to_brief_without_a_choice(services):
     generator = use(services, GeneratedAnswer(answer="Two left."))
 
-    services.copilot.answer("alice", "how busy am I?", today=TODAY)
+    services.bobby.answer("alice", "how busy am I?", today=TODAY)
 
     assert "REPLY_STYLE=brief" in generator.prompts[0]
 
@@ -1188,7 +1188,7 @@ def test_quiet_drops_prose_the_model_wrote_anyway(services, client, auth):
         )],
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "add an essay task for Friday", "request_id": "quiet-00001",
     }).json()
 
@@ -1202,7 +1202,7 @@ def test_quiet_leaves_an_answer_to_a_question_alone(services, client, auth):
     services.repository.set_planner_settings("alice", PlannerSettings(reply_style="quiet"))
     use(services, GeneratedAnswer(answer="Two tasks."))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "how many tasks today?", "request_id": "quiet-00002",
     }).json()
 
@@ -1225,13 +1225,13 @@ def test_a_slow_turn_stops_asking_for_lookups_instead_of_running_out_of_time(ser
         ),
         GeneratedAnswer(answer="Reached only when the deadline did not bite."),
     )
-    services.copilot.max_tool_rounds = 2
-    services.copilot.deadline_seconds = 1
+    services.bobby.max_tool_rounds = 2
+    services.bobby.deadline_seconds = 1
     # Under the deadline for the first round, past it for the second.
     slow = iter([0.0, 0.5, 5.0, 5.1])
-    services.copilot._clock = lambda: next(slow)
+    services.bobby._clock = lambda: next(slow)
 
-    answer, _, _, _ = services.copilot.answer("alice", "what should I do?", today=TODAY)
+    answer, _, _, _ = services.bobby.answer("alice", "what should I do?", today=TODAY)
 
     assert answer == "Here is what I have."
     # Two generations, not three: the second round was refused its lookups.
@@ -1246,11 +1246,11 @@ def test_the_deadline_is_recorded_so_a_thin_answer_can_be_explained(services):
         GeneratedAnswer(tool_requests=[ToolRequest(tool=ToolName.workload)]),
         GeneratedAnswer(answer="Here is what I have."),
     )
-    services.copilot.deadline_seconds = 1
+    services.bobby.deadline_seconds = 1
     slow = iter([0.0, 0.5, 5.0, 5.1])
-    services.copilot._clock = lambda: next(slow)
+    services.bobby._clock = lambda: next(slow)
 
-    services.copilot.answer("alice", "anything", today=TODAY)
+    services.bobby.answer("alice", "anything", today=TODAY)
 
     assert any(
         event.event_type == "generation" and event.metadata.get("stage") == "deadline"
@@ -1264,10 +1264,10 @@ def test_the_deadline_can_be_switched_off(services):
         GeneratedAnswer(tool_requests=[ToolRequest(tool=ToolName.workload)]),
         GeneratedAnswer(answer="Done looking."),
     )
-    services.copilot.deadline_seconds = 0
-    services.copilot._clock = lambda: 10_000.0
+    services.bobby.deadline_seconds = 0
+    services.bobby._clock = lambda: 10_000.0
 
-    services.copilot.answer("alice", "anything", today=TODAY)
+    services.bobby.answer("alice", "anything", today=TODAY)
 
     assert len(generator.prompts) == 2
 
@@ -1320,7 +1320,7 @@ def test_citation_markers_are_taken_out_of_the_prose(services):
         answer="Chemistry revision is due today at 6 PM [S1].", citation_ids=["S1"],
     ))
 
-    answer, citations, _, _ = services.copilot.answer("alice", "today", today=TODAY)
+    answer, citations, _, _ = services.bobby.answer("alice", "today", today=TODAY)
 
     assert answer == "Chemistry revision is due today at 6 PM."
     assert [citation.citation_id for citation in citations] == ["S1"]
@@ -1333,7 +1333,7 @@ def test_an_answer_that_only_cited_inline_still_counts_as_grounded(services):
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
     use(services, GeneratedAnswer(answer="Chemistry revision is due today [S1].", citation_ids=[]))
 
-    answer, citations, disclosure, _ = services.copilot.answer("alice", "today", today=TODAY)
+    answer, citations, disclosure, _ = services.bobby.answer("alice", "today", today=TODAY)
 
     assert not disclosure.abstained
     assert [citation.citation_id for citation in citations] == ["S1"]
@@ -1345,7 +1345,7 @@ def test_a_bracket_that_was_never_issued_is_left_alone(services):
     # out of it would be worse than leaving the text as written.
     use(services, GeneratedAnswer(answer="Call the module [S404] on the handout."))
 
-    answer, _, _, _ = services.copilot.answer("alice", "anything", today=TODAY)
+    answer, _, _, _ = services.bobby.answer("alice", "anything", today=TODAY)
 
     assert answer == "Call the module [S404] on the handout."
 
@@ -1361,7 +1361,7 @@ def test_a_question_back_does_not_also_carry_a_change(services):
         ),
     ))
 
-    answer, _, _, generated = services.copilot.answer(
+    answer, _, _, generated = services.bobby.answer(
         "alice", "add a task for tomorrow", today=TODAY,
     )
 
@@ -1380,9 +1380,9 @@ def test_a_half_finished_lookup_does_not_leave_a_placeholder_change_behind(servi
             title="placeholder",
         ),
     ))
-    services.copilot.max_tool_rounds = 0
+    services.bobby.max_tool_rounds = 0
 
-    _, _, _, generated = services.copilot.answer("alice", "anything", today=TODAY)
+    _, _, _, generated = services.bobby.answer("alice", "anything", today=TODAY)
 
     assert generated.all_actions() == []
 
@@ -1438,7 +1438,7 @@ def test_a_greeting_is_answered_not_abstained_on(services):
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
     use(services, GeneratedAnswer(answer="Hi. What would you like to look at?"))
 
-    answer, citations, disclosure, _ = services.copilot.answer("alice", "Hello", today=TODAY)
+    answer, citations, disclosure, _ = services.bobby.answer("alice", "Hello", today=TODAY)
 
     assert answer == "Hi. What would you like to look at?"
     assert not disclosure.abstained
@@ -1495,7 +1495,7 @@ def test_a_greeting_does_not_arrive_carrying_a_change(services, client, auth):
         ),
     ))
 
-    body = client.post("/v1/copilot/chat", headers=auth, json={
+    body = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "Hello", "request_id": "greeting-0001",
     }).json()
 
@@ -1533,7 +1533,7 @@ def test_a_search_narrowed_to_notes_returns_notes(services):
         services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
     record = add_note(services, "ai-n1", "AI in the workplace", "CLEAR framework")
     services.indexing.index("alice", EntityType.note, record.record_id, record.revision)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(
         tool=ToolName.search, query="AI in the workplace", entity_type=EntityType.note,
@@ -1547,7 +1547,7 @@ def test_a_search_with_no_kind_still_returns_the_nearest_of_any_kind(services):
     services.indexing.index("alice", EntityType.task, record.record_id, record.revision)
     record = add_note(services, "mix-n", "Titration lab", "steps")
     services.indexing.index("alice", EntityType.note, record.record_id, record.revision)
-    session = services.copilot.toolbox.session("alice", TODAY)
+    session = services.bobby.toolbox.session("alice", TODAY)
 
     outcome = session.run(ToolRequest(tool=ToolName.search, query="titration lab"))
 
@@ -1567,18 +1567,18 @@ def test_the_next_turn_is_told_which_record_the_last_one_proposed_on(services, c
         )]),
         GeneratedAnswer(answer="Done."))
 
-    first = client.post("/v1/copilot/chat", headers=auth, json={
+    first = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "expand the second one", "request_id": "carry-00001",
     }).json()
     assert [p["record_id"] for p in first["proposals"]] == ["ai-2"]
     cited = next((c["citation_id"] for c in first["citations"] if c["record_id"] == "ai-2"), None)
 
-    client.post("/v1/copilot/chat", headers=auth, json={
+    client.post("/v1/bobby/chat", headers=auth, json={
         "message": "you generate and fill it", "request_id": "carry-00002",
         "conversation_id": first["conversation_id"],
     })
 
-    turns = section_from(services.copilot.generator.prompts[-1], "CONVERSATION=")
+    turns = section_from(services.bobby.generator.prompts[-1], "CONVERSATION=")
     proposing = [t for t in turns if t["role"] == "assistant" and t.get("proposed")]
     assert len(proposing) == 1
     assert proposing[0]["proposed"] == [{
@@ -1593,13 +1593,13 @@ def test_a_turn_that_proposed_nothing_carries_no_proposed_field(services, client
     use(services, GeneratedAnswer(answer="Here it is.", citation_ids=["S1"]),
         GeneratedAnswer(answer="Still here."))
 
-    first = client.post("/v1/copilot/chat", headers=auth, json={
+    first = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "show my note", "request_id": "noprop-00001",
     }).json()
-    client.post("/v1/copilot/chat", headers=auth, json={
+    client.post("/v1/bobby/chat", headers=auth, json={
         "message": "thanks", "request_id": "noprop-00002",
         "conversation_id": first["conversation_id"],
     })
 
-    turns = section_from(services.copilot.generator.prompts[-1], "CONVERSATION=")
+    turns = section_from(services.bobby.generator.prompts[-1], "CONVERSATION=")
     assert all("proposed" not in t for t in turns)

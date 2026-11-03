@@ -16,7 +16,7 @@ def ask(client, auth, message, request_id, conversation_id=None, history=None):
         body["conversation_id"] = conversation_id
     if history is not None:
         body["history"] = history
-    return client.post("/v1/copilot/chat", headers=auth, json=body)
+    return client.post("/v1/bobby/chat", headers=auth, json=body)
 
 
 def test_a_chat_with_no_thread_starts_one_and_says_which(client, auth, services):
@@ -250,3 +250,16 @@ def test_an_expired_thread_is_neither_listed_nor_left_behind(client, auth, servi
 
     assert client.get("/v1/conversations", headers=auth).json() == []
     assert key not in services.repository.conversations
+
+
+def test_the_pre_rebrand_copilot_chat_path_still_answers(client, auth, services):
+    # Older clients post to /v1/copilot/chat; the alias must keep threading.
+    services.test_generator.response = GeneratedAnswer(answer="Two things today.")
+
+    response = client.post("/v1/copilot/chat", headers=auth, json={
+        "message": "what is due today?", "request_id": "legacy-0001", "timezone": "UTC",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "Two things today."
+    assert response.json()["conversation_id"]

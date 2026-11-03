@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Copilot is now Bobby
+
+- The planner assistant is renamed **Bobby** everywhere a student sees it: the web
+  sidebar, dashboard widget and Settings, the mobile tab, Settings and privacy copy,
+  the Android launcher shortcut ("Ask Bobby"), and the iOS Shortcuts screen picker.
+  The model is told its name, so answers introduce themselves consistently.
+- API: chat moves to `POST /v1/bobby/chat` and `POST /v1/bobby/chat/stream`. The
+  old `/v1/copilot/...` paths stay as hidden, deprecated aliases so installed mobile
+  builds and cached web bundles keep working.
+- Mobile: the tab route is `/(tabs)/bobby`; `nwplanner://copilot` links and pinned
+  launcher shortcuts redirect there. The iOS `PlannerScreen.bobby` case keeps the raw
+  value `copilot` so Shortcuts students already built still resolve.
+- Backend internals: `CopilotService` is `BobbyService`, the container field is
+  `bobby`, the rate-limit bucket and audit endpoint label are `bobby_chat`, and the
+  package is `northwest-planner-bobby`.
+
 ### Current provider migration
 
 - The backend now uses Meta Muse Spark 1.3 Contributor for every generated answer.

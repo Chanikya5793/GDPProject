@@ -6,8 +6,8 @@
   <string name="planner_shortcut_task_long">Add a task</string>
   <string name="planner_shortcut_reminder_short">Add reminder</string>
   <string name="planner_shortcut_reminder_long">Add a reminder</string>
-  <string name="planner_shortcut_copilot_short">Ask Copilot</string>
-  <string name="planner_shortcut_copilot_long">Ask Copilot about your planner</string>
+  <string name="planner_shortcut_bobby_short">Ask Bobby</string>
+  <string name="planner_shortcut_bobby_long">Ask Bobby about your planner</string>
   <string name="planner_shortcut_calendar_short">Calendar</string>
   <string name="planner_shortcut_calendar_long">Open your calendar</string>
 </resources>

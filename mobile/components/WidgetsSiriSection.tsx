@@ -56,7 +56,7 @@ const ANDROID_WIDGETS: typeof WIDGETS = [
 const ANDROID_SHORTCUTS: { say: string; does: string }[] = [
   { say: 'Add task', does: 'Opens a new task, ready to type.' },
   { say: 'Add reminder', does: 'Same, for reminders.' },
-  { say: 'Ask Copilot', does: 'Opens the assistant.' },
+  { say: 'Ask Bobby', does: 'Opens the assistant.' },
   { say: 'Calendar', does: 'Jumps straight to your calendar.' },
 ];
 

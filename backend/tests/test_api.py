@@ -173,7 +173,7 @@ def test_index_chat_and_confirmed_proposal_flow(client, auth, services):
             operation=ProposalOperation.complete, entity_type=EntityType.task, record_id="t1"
         ),
     )
-    chat = client.post("/v1/copilot/chat", json={
+    chat = client.post("/v1/bobby/chat", json={
         "message": "complete my report", "request_id": "chatreq-0001", "timezone": "UTC"
     }, headers=auth)
     assert chat.status_code == 200
@@ -206,8 +206,8 @@ def test_retained_chat_is_encrypted_repository_backed_idempotent_and_deletable(
         "approved": True, "expected_revision": 1,
     }, headers=auth)
     body = {"message": "When is my report due?", "request_id": "chatreq-0001", "timezone": "UTC"}
-    first = client.post("/v1/copilot/chat", json=body, headers=auth)
-    second = client.post("/v1/copilot/chat", json=body, headers=auth)
+    first = client.post("/v1/bobby/chat", json=body, headers=auth)
+    second = client.post("/v1/bobby/chat", json=body, headers=auth)
     assert first.json() == second.json()
     assert len(services.test_generator.prompts) == 1
     assert client.delete("/v1/chats", headers=auth).json() == {"deleted": 1}
@@ -227,7 +227,7 @@ def test_a_change_it_cannot_prepare_is_admitted_not_implied(client, services, au
             title="Email advisor",
         ),
     )
-    response = client.post("/v1/copilot/chat", headers=auth, json={
+    response = client.post("/v1/bobby/chat", headers=auth, json={
         "message": "remind me to email my advisor", "request_id": "nodate-0001",
     })
     assert response.status_code == 200
@@ -249,7 +249,7 @@ def retain_on(client, auth, days=30):
 
 
 def ask(client, auth, message, request_id):
-    return client.post("/v1/copilot/chat", headers=auth,
+    return client.post("/v1/bobby/chat", headers=auth,
                        json={"message": message, "request_id": request_id, "timezone": "UTC"})
 
 

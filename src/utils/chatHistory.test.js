@@ -24,7 +24,7 @@ describe('toHistory', () => {
     // An error is the app talking about itself, not a turn in the conversation.
     const history = toHistory([
       { id: '1', role: 'user', text: 'Hi' },
-      { id: '2', role: 'error', text: 'Copilot request failed.' },
+      { id: '2', role: 'error', text: 'Bobby request failed.' },
     ])
     expect(history).toEqual([{ role: 'user', text: 'Hi' }])
   })

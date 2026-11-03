@@ -1,4 +1,4 @@
-name: Secure copilot CI
+name: Secure Bobby CI
 
 on:
   pull_request:
@@ -41,8 +41,8 @@ jobs:
             range="HEAD"
           fi
           echo "Checking commits in $range"
-          # The product feature is called the copilot, so the word alone is not a
-          # match; only an attribution trailer naming an assistant is. Kept in
+          # GitHub Copilot is an assistant too, so it stays in the patterns, but
+          # only as an attribution trailer naming it, never the word alone; only an attribution trailer naming an assistant is. Kept in
           # step with .githooks/commit-msg, which strips the same lines.
           if git log "$range" --format='%H%n%B' | grep -inE \
                -e '^[[:space:]]*co-authored-by:.*(claude|anthropic|copilot|codex|chatgpt|openai)' \

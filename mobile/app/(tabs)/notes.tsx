@@ -376,7 +376,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
             <View style={{ flex: 1 }}>
               <Text style={es.aiLabel}>Visible to the assistant</Text>
               <Text style={es.aiHint}>
-                Lets the copilot read this note when you ask about it. Turn it off
+                Lets Bobby read this note when you ask about it. Turn it off
                 to keep this one out of the index.
               </Text>
             </View>

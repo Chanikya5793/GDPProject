@@ -34,7 +34,7 @@ architecture and migration procedure.
    the previewed revision, use idempotency keys, and atomically write the Firestore record
    mutation plus confirmed proposal state: `backend/app/proposals.py`,
    `backend/app/repository.py`, `src/context/AiContext.jsx`,
-   `src/components/AiSidebar.jsx`, and `mobile/app/(tabs)/copilot.tsx`.
+   `src/components/AiSidebar.jsx`, and `mobile/app/(tabs)/bobby.tsx` (named `copilot.tsx` when recorded).
 7. The MCP JSON-RPC endpoint exposes six read-only tools: tasks, reminders, note titles,
    calendar windows, workload summaries, and planner search. A Secret Manager-backed HMAC
    session binds UID and expiry; UID/user_id arguments are rejected: `backend/app/mcp_api.py`,

@@ -34,7 +34,7 @@ const FONT_SIZES: { value: Settings['fontSize']; label: string }[] = [
   { value: 'larger', label: 'Larger' },
 ];
 
-/** Copilot capacity choices. `null` defers to the deployment default. */
+/** Bobby capacity choices. `null` defers to the deployment default. */
 const CAPACITY_CHOICES: { value: number | null; short: string; label: string }[] = [
   { value: null, short: 'Auto', label: 'Use service default' },
   { value: 180, short: '3h', label: '3 hours per day' },
@@ -65,7 +65,7 @@ export default function SettingsScreen() {
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
-  // Copilot capacity lives server-side, so it is only offered when a backend is
+  // Bobby capacity lives server-side, so it is only offered when a backend is
   // actually configured. The offline demo build has none.
   const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>({
     max_daily_minutes: null, reply_style: 'brief',
@@ -329,7 +329,7 @@ export default function SettingsScreen() {
         </SettingsRow>
 
         {plannerStatus !== 'unavailable' && (
-          <SettingsRow label="Copilot Daily Capacity" colors={colors}>
+          <SettingsRow label="Bobby Daily Capacity" colors={colors}>
             <View style={s.miniSegment}>
               {CAPACITY_CHOICES.map(choice => (
                 <TouchableOpacity

@@ -75,7 +75,7 @@ class TestRequestShape:
     def test_every_property_is_listed_as_required(self):
         # Meta refuses a schema whose `required` omits any key in `properties`
         # ("Missing 'citation_ids'"), and pydantic omits every field that has a
-        # default. Without this the copilot gets HTTP 400 on every question.
+        # default. Without this Bobby gets HTTP 400 on every question.
         seen = {}
 
         def handler(request: httpx.Request) -> httpx.Response:

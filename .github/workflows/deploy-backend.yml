@@ -1,6 +1,6 @@
 name: Deploy backend to Cloud Run
 
-# The copilot's prompt, its tools and every rule it follows live in backend/,
+# Bobby's prompt, its tools and every rule it follows live in backend/,
 # and none of that reaches a student until this service is redeployed. That was
 # not obvious: the Pages workflow next door ships the web client on every merge,
 # so a backend fix looks shipped when it has only been merged. A fix for the
@@ -131,7 +131,7 @@ jobs:
       # Deliberately no --set-env-vars: the service's configuration is managed
       # on Cloud Run, and passing a partial set here would silently drop every
       # variable this file does not happen to know about, including the secret
-      # references the copilot needs to answer at all.
+      # references Bobby needs to answer at all.
       - name: Deploy
         if: steps.configured.outputs.ready == 'true'
         run: |

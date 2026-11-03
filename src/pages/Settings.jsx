@@ -75,7 +75,7 @@ export default function Settings() {
   })
   const [privacyStatus, setPrivacyStatus] = useState('loading')
   const [privacyError, setPrivacyError] = useState('')
-  // Copilot daily capacity lives server-side, so it is only offered when a
+  // Bobby daily capacity lives server-side, so it is only offered when a
   // backend is actually configured. The offline demo build has none.
   const [plannerSettings, setPlannerSettings] = useState({ max_daily_minutes: null, reply_style: 'brief' })
   const [plannerStatus, setPlannerStatus] = useState('loading')
@@ -209,7 +209,7 @@ export default function Settings() {
     }
   }
 
-  const deleteCopilotChats = async () => {
+  const deleteBobbyChats = async () => {
     if (confirmAi !== 'chats') { armAi('chats'); return }
     setConfirmAi(null)
     setPrivacyStatus('saving')
@@ -443,7 +443,7 @@ export default function Settings() {
               <>
             <div className="settings-row">
               <div className="settings-row-info">
-                <span className="settings-row-label">AI Copilot</span>
+                <span className="settings-row-label">Bobby (AI assistant)</span>
                 <span className="settings-row-desc">Complete opt-out. Turning this off also deletes your vector index.</span>
               </div>
               <Toggle checked={privacy.ai_enabled}
@@ -457,7 +457,7 @@ export default function Settings() {
                   ai_enabled: false, indexed_entity_types: [], index_attachments: false,
                   retain_chat: false, chat_retention_days: 0,
                 })}
-                label="Enable AI Copilot" />
+                label="Enable Bobby" />
             </div>
 
             <div className="settings-row settings-row-stack">
@@ -495,7 +495,7 @@ export default function Settings() {
                 onChange={value => updatePrivacy({
                   retain_chat: value, chat_retention_days: value ? 30 : 0,
                 })}
-                label="Retain copilot chats" />
+                label="Retain Bobby chats" />
             </div>
 
             {privacy.retain_chat && (
@@ -523,7 +523,7 @@ export default function Settings() {
                 <Trash2 size={14} /> {confirmAi === 'index' ? 'Confirm? Re-index later from each record' : 'Delete my AI index'}
               </button>
               <button className={`btn-danger${confirmAi === 'chats' ? ' confirming' : ''}`}
-                onClick={deleteCopilotChats} disabled={privacyStatus === 'saving'}>
+                onClick={deleteBobbyChats} disabled={privacyStatus === 'saving'}>
                 <Trash2 size={14} /> {confirmAi === 'chats' ? 'Confirm? Cannot undo!' : 'Delete retained chats'}
               </button>
               <span className="settings-row-desc"><Brain size={12} /> Record content is never indexed without approval.</span>
@@ -701,9 +701,9 @@ export default function Settings() {
             {plannerStatus !== 'unavailable' && (
               <div className="settings-row">
                 <div className="settings-row-info">
-                  <span className="settings-row-label">Copilot Daily Capacity</span>
+                  <span className="settings-row-label">Bobby Daily Capacity</span>
                   <span className="settings-row-desc">
-                    How much task work the AI copilot treats as a full day before calling it
+                    How much task work Bobby treats as a full day before calling it
                     overloaded. Measured in minutes from each task&rsquo;s estimate, so it is a
                     separate judgement from Maximum Tasks Per Day above, which counts tasks.
                     {plannerStatus === 'saving' && ' Saving…'}

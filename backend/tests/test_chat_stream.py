@@ -77,11 +77,11 @@ def indexed_task(client, auth):
 
 def test_answer_arrives_as_deltas_then_a_final_event(client, services, auth):
     indexed_task(client, auth)
-    services.copilot.generator = StreamingGenerator(
+    services.bobby.generator = StreamingGenerator(
         GeneratedAnswer(answer="Start with the report. It is due Thursday.", citation_ids=["S1"]),
         chunks=["Start with ", "the report. ", "It is due Thursday."],
     )
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "what first?", "request_id": "stream-0001",
     })
     assert response.status_code == 200
@@ -98,7 +98,7 @@ def test_a_generator_that_cannot_stream_still_answers(client, services, auth):
     # The default fake has no generate_stream at all, which is the same shape as
     # a provider that does not support it: one final event, no deltas.
     indexed_task(client, auth)
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "what first?", "request_id": "stream-0002",
     })
     assert response.status_code == 200
@@ -115,8 +115,8 @@ def test_a_stream_that_dies_before_any_text_falls_back_to_a_blocking_call(
         GeneratedAnswer(answer="Recovered answer.", citation_ids=["S1"]),
         chunks=["never sent"], fail_after=0,
     )
-    services.copilot.generator = generator
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    services.bobby.generator = generator
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "what first?", "request_id": "stream-0003",
     })
     assert response.status_code == 200
@@ -135,8 +135,8 @@ def test_a_stream_that_dies_after_text_reports_an_error_rather_than_contradictin
         GeneratedAnswer(answer="unused", citation_ids=["S1"]),
         chunks=["Start with the "], fail_after=1,
     )
-    services.copilot.generator = generator
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    services.bobby.generator = generator
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "what first?", "request_id": "stream-0004",
     })
     assert response.status_code == 200
@@ -155,7 +155,7 @@ def test_the_final_answer_overrides_streamed_text_when_the_citation_guard_trips(
     # final answer, so this asserts the final event actually carries the
     # replacement rather than the streamed prose.
     indexed_task(client, auth)
-    services.copilot.generator = StreamingGenerator(
+    services.bobby.generator = StreamingGenerator(
         GeneratedAnswer(answer="You have four tasks due tomorrow.", citation_ids=["S9"]),
         chunks=["You have four ", "tasks due tomorrow."],
     )
@@ -163,7 +163,7 @@ def test_the_final_answer_overrides_streamed_text_when_the_citation_guard_trips(
     # there is something for the guard to be strict about. "what is due?" no
     # longer retrieves anything: it is not close enough to any record, which is
     # the fix that stopped "Hello" being answered with an abstention.
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "write report", "request_id": "stream-0005",
     })
     events = read_events(response)
@@ -177,7 +177,7 @@ def test_the_final_answer_overrides_streamed_text_when_the_citation_guard_trips(
 
 def test_a_proposal_is_built_and_carried_on_the_final_event(client, services, auth):
     indexed_task(client, auth)
-    services.copilot.generator = StreamingGenerator(
+    services.bobby.generator = StreamingGenerator(
         GeneratedAnswer(
             answer="I'll mark the report done once you confirm.", citation_ids=["S1"],
             action=GeneratedAction(
@@ -187,7 +187,7 @@ def test_a_proposal_is_built_and_carried_on_the_final_event(client, services, au
         ),
         chunks=["I'll mark the report ", "done once you confirm."],
     )
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "mark the report done", "request_id": "stream-0006",
     })
     final = final_of(read_events(response))
@@ -203,7 +203,7 @@ def test_ai_disabled_is_a_403_not_a_stream_carrying_an_error(client, auth):
         "ai_enabled": False, "indexed_entity_types": [], "index_attachments": False,
         "retain_chat": False, "chat_retention_days": 0,
     }, headers=auth)
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "what first?", "request_id": "stream-0007",
     })
     assert response.status_code == 403
@@ -216,8 +216,8 @@ def test_a_retained_answer_is_replayed_without_regenerating(client, services, au
     }, headers=auth)
     indexed_task(client, auth)
     body = {"message": "when is it due?", "request_id": "stream-0008"}
-    first = final_of(read_events(client.post("/v1/copilot/chat/stream", headers=auth, json=body)))
-    second_response = client.post("/v1/copilot/chat/stream", headers=auth, json=body)
+    first = final_of(read_events(client.post("/v1/bobby/chat/stream", headers=auth, json=body)))
+    second_response = client.post("/v1/bobby/chat/stream", headers=auth, json=body)
     events = read_events(second_response)
     assert [name for name, _ in events] == ["final"]
     assert final_of(events) == first
@@ -229,9 +229,9 @@ def test_the_rate_limit_applies_to_the_streaming_route(client, services, auth):
 
     services.rate_limiter = MemoryRateLimiter(RateLimitPolicy(requests=1, window_seconds=3600))
     body = {"message": "hello", "request_id": "stream-0009"}
-    assert client.post("/v1/copilot/chat/stream", headers=auth, json=body).status_code == 200
+    assert client.post("/v1/bobby/chat/stream", headers=auth, json=body).status_code == 200
     second = client.post(
-        "/v1/copilot/chat/stream", headers=auth,
+        "/v1/bobby/chat/stream", headers=auth,
         json={"message": "hello again", "request_id": "stream-0010"},
     )
     assert second.status_code == 429
@@ -242,10 +242,31 @@ def test_the_rate_limit_applies_to_the_streaming_route(client, services, auth):
     "An emoji \U0001F600 mid sentence.",
 ])
 def test_awkward_characters_survive_the_round_trip(client, services, auth, text):
-    services.copilot.generator = StreamingGenerator(GeneratedAnswer(answer=text))
-    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+    services.bobby.generator = StreamingGenerator(GeneratedAnswer(answer=text))
+    response = client.post("/v1/bobby/chat/stream", headers=auth, json={
         "message": "say it", "request_id": f"stream-odd-{len(text)}",
     })
     events = read_events(response)
     assert deltas(events) == text
     assert final_of(events)["answer"] == text
+
+
+def test_the_pre_rebrand_copilot_stream_path_still_answers(client, services, auth):
+    # Installed mobile builds still post to /v1/copilot/chat/stream. The alias
+    # has to reach the same handler, not a 404 the moment the backend ships.
+    indexed_task(client, auth)
+    services.bobby.generator = StreamingGenerator(
+        GeneratedAnswer(answer="Start with the report.", citation_ids=["S1"]),
+    )
+    response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+        "message": "what first?", "request_id": "stream-legacy-0001",
+    })
+    assert response.status_code == 200
+    assert final_of(read_events(response))["answer"] == "Start with the report."
+
+
+def test_only_the_bobby_paths_are_published_in_the_schema(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/v1/bobby/chat" in paths
+    assert "/v1/bobby/chat/stream" in paths
+    assert not [path for path in paths if "copilot" in path]

@@ -97,7 +97,7 @@ spec:
             # Users may override it for themselves via /v1/planner-settings.
             - name: PLANNER_MAX_DAILY_MINUTES
               value: "360"
-            # Per-user copilot chat budget. Literal values rather than envsubst
+            # Per-user Bobby chat budget. Literal values rather than envsubst
             # placeholders: an unset variable would render empty and fail startup.
             - name: PLANNER_CHAT_RATE_LIMIT_REQUESTS
               value: "20"

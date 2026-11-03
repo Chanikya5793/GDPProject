@@ -151,20 +151,20 @@ describe('providerNotice', () => {
 });
 
 describe('isFullyOptedOut', () => {
-  it('is true only when the copilot is off', () => {
+  it('is true only when Bobby is off', () => {
     expect(isFullyOptedOut(DEFAULT_PRIVACY)).toBe(true);
     expect(isFullyOptedOut(on)).toBe(false);
   });
 });
 
 describe('privacySummary', () => {
-  it('says nothing is exposed when the copilot is off', () => {
-    expect(privacySummary(DEFAULT_PRIVACY)).toBe('Copilot is off. Nothing is indexed or sent.');
+  it('says nothing is exposed when Bobby is off', () => {
+    expect(privacySummary(DEFAULT_PRIVACY)).toBe('Bobby is off. Nothing is indexed or sent.');
   });
 
-  it('calls out an enabled copilot with no indexed types', () => {
+  it('calls out Bobby enabled with no indexed types', () => {
     expect(privacySummary({ ...DEFAULT_PRIVACY, ai_enabled: true }))
-      .toBe('Copilot is on, but no record types are indexed.');
+      .toBe('Bobby is on, but no record types are indexed.');
   });
 
   it('counts the indexed types and the retention window', () => {

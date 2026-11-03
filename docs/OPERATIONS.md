@@ -1,4 +1,4 @@
-# Secure copilot operations
+# Bobby (secure assistant) operations
 
 ## Cloud prerequisites
 
@@ -220,21 +220,26 @@ user across devices.
 
 Note the unit difference: this capacity is **minutes of estimated work**, while the
 clients' "Max Tasks Per Day" counts **tasks**. They are deliberately separate
-judgements — the copilot reasons about effort, the Tasks page about how crowded a day
+judgements — Bobby reasons about effort, the Tasks page about how crowded a day
 looks. A day can trip one and not the other.
 
-## Copilot rate limiting
+## Bobby rate limiting
 
-`POST /v1/copilot/chat` is metered per authenticated UID with a token bucket, so a
-signed-in caller cannot loop the endpoint and run up Muse Spark spend.
+`POST /v1/bobby/chat` (and its streaming twin) is metered per authenticated UID with
+a token bucket, so a signed-in caller cannot loop the endpoint and run up Muse Spark
+spend. The pre-rebrand paths `/v1/copilot/chat` and `/v1/copilot/chat/stream` are
+hidden aliases of the same handlers and draw from the same bucket; they exist only for
+installed clients built before the rename.
 
 - `PLANNER_CHAT_RATE_LIMIT_REQUESTS` (default 20) is both the bucket capacity and the
   per-window allowance, so a user may burst up to 20 and then settles into the
   sustained rate.
 - `PLANNER_CHAT_RATE_LIMIT_WINDOW_SECONDS` (default 3600) is the refill window.
 
-Counters live at `users/{uid}/limits/copilot_chat` and are updated in a Firestore
-transaction. That matters because Cloud Run runs several workers per instance and
+Counters live at `users/{uid}/limits/bobby_chat` and are updated in a Firestore
+transaction. (They lived at `limits/copilot_chat` before the rename; the first deploy
+with the new name starts every user on a full bucket, and the old documents can be
+left to sit or deleted.) That matters because Cloud Run runs several workers per instance and
 scales out: a process-local counter would give each worker its own budget, so the
 effective limit would be N times the configured one.
 
