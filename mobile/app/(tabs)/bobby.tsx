@@ -82,7 +82,7 @@ interface Message extends Partial<ChatResponse> {
   streaming?: boolean;
 }
 
-export default function CopilotScreen() {
+export default function BobbyScreen() {
   const { colors, accent, appearance } = useAppTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -123,7 +123,7 @@ export default function CopilotScreen() {
   const attachmentRef = useRef<LinkContext | null>(null);
   useEffect(() => { attachmentRef.current = attachment; }, [attachment]);
 
-  // Arrives from an Ask AI tap, or from a nwplanner://copilot link. Cleared
+  // Arrives from an Ask AI tap, or from a nwplanner://bobby link. Cleared
   // once read, or returning to the tab would silently re-attach a record the
   // student already finished with.
   const params = useLocalSearchParams<{
@@ -311,7 +311,7 @@ export default function CopilotScreen() {
     });
 
     try {
-      await apiStream('/v1/copilot/chat/stream', {
+      await apiStream('/v1/bobby/chat/stream', {
         signal: controller.signal,
         body: JSON.stringify({
           message: text, request_id: idempotencyKey('mobile-chat'),
@@ -368,14 +368,14 @@ export default function CopilotScreen() {
     } catch (error) {
       upsertAnswer({ streaming: false });
       if (error instanceof Error && error.name === 'AbortError') return;
-      // An unconfigured backend means the copilot is unavailable, not that the
+      // An unconfigured backend means Bobby is unavailable, not that the
       // request failed; saying "not configured" in red reads like a crash.
       const code = (error as { code?: string })?.code;
       setMessages(previous => [...previous, {
         id: idempotencyKey('error'), role: 'error',
         text: code === 'not_configured'
-          ? 'The copilot needs the planner backend, which this build is not connected to. Your tasks, reminders, and notes still work — they are stored encrypted on this device.'
-          : error instanceof Error ? error.message : 'The copilot request failed.',
+          ? 'Bobby needs the planner backend, which this build is not connected to. Your tasks, reminders, and notes still work — they are stored encrypted on this device.'
+          : error instanceof Error ? error.message : 'Bobby request failed.',
       }]);
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
@@ -428,7 +428,7 @@ export default function CopilotScreen() {
     if (acting.has(proposal.proposal_id)) return;
     const body = action === 'confirm'
       ? { idempotency_key: idempotencyKey('mobile-confirm'), expected_base_revision: proposal.base_revision }
-      : { reason: 'Rejected in mobile copilot' };
+      : { reason: 'Rejected in Bobby on mobile' };
     markActing(proposal.proposal_id, true);
     try {
       const updated = await apiRequest<Proposal>(`/v1/proposals/${proposal.proposal_id}/${action}`, {
@@ -750,7 +750,7 @@ export default function CopilotScreen() {
       <View style={[styles.inputRow, { paddingBottom: 12 + bottomSpace }]}>
         <TextInput style={styles.input} value={input} onChangeText={setInput}
           editable={apiConfigured()}
-          placeholder={apiConfigured() ? 'Ask your planner…' : 'Copilot unavailable in this build'}
+          placeholder={apiConfigured() ? 'Ask your planner…' : 'Bobby unavailable in this build'}
           placeholderTextColor={colors.textMuted}
           multiline maxLength={8000} />
         <TouchableOpacity style={[styles.send, !loading && !input.trim() && styles.sendDisabled]}

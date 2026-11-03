@@ -42,7 +42,7 @@ function run(transport: StreamTransport, signal?: AbortSignal) {
   const events: SseEvent[] = [];
   const done = readEventStream(
     transport,
-    { url: 'https://api.test/v1/copilot/chat/stream', headers: { Authorization: 'Bearer t' }, body: '{}', signal },
+    { url: 'https://api.test/v1/bobby/chat/stream', headers: { Authorization: 'Bearer t' }, body: '{}', signal },
     event => events.push(event),
   );
   return { events, done };
@@ -77,7 +77,7 @@ describe('readEventStream', () => {
   it('sets the request up before sending', async () => {
     const transport = new FakeTransport();
     const { done } = run(transport);
-    expect(transport.opened).toEqual(['POST', 'https://api.test/v1/copilot/chat/stream']);
+    expect(transport.opened).toEqual(['POST', 'https://api.test/v1/bobby/chat/stream']);
     expect(transport.headers.Authorization).toBe('Bearer t');
     expect(transport.sent).toBe('{}');
     transport.finish();

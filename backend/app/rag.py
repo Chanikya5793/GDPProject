@@ -34,7 +34,7 @@ from .vector_store import VectorStore
 
 __all__ = [
     "AgentStep",
-    "CopilotService",
+    "BobbyService",
     "IndexingService",
     "RetrievalService",
     "record_text",
@@ -309,7 +309,7 @@ def _turn_for_prompt(turn: ChatTurn) -> Dict[str, Any]:
     return rendered
 
 
-class CopilotService:
+class BobbyService:
     """Answers a question by looking at the planner, possibly more than once.
 
     A turn always starts with two things the model did not have to ask for: a

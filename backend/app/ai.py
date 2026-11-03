@@ -11,7 +11,7 @@ from .models import EntityType, ProposalOperation, StrictModel
 from .streaming import JsonStringFieldStreamer
 
 SYSTEM_INSTRUCTION = (
-    "You are the assistant inside a student planner app. You answer questions about "
+    "You are Bobby, the assistant inside a student planner app. You answer questions about "
     "the student's planner, and you turn requests for changes into actions they "
     "confirm.\n"
     "\n"
@@ -349,7 +349,7 @@ class AnswerGenerator(Protocol):
 
 
 # Yielded items are answer text as it is decoded, with the validated
-# GeneratedAnswer last. A generator without this is still usable: the copilot
+# GeneratedAnswer last. A generator without this is still usable: Bobby
 # falls back to a single blocking call.
 StreamItem = Union[str, GeneratedAnswer]
 
@@ -391,7 +391,7 @@ def strict_json_schema(node: Any) -> Any:
     ``properties``: "'required' is required to be supplied and to be an array
     including every key in properties." Pydantic leaves out any field that has
     a default, so GeneratedAnswer's own schema is refused with HTTP 400 and the
-    copilot can never answer.
+    Bobby can never answer.
 
     Listing every property loses nothing, because optional fields already carry
     a nullable type in the generated schema, so the model can still return null

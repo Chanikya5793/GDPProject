@@ -35,7 +35,7 @@ function AppLayout({ children }) {
       <div className="main-content">
         <div className="beta-banner">
           <span>Beta</span>
-          Secure Copilot
+          Bobby, your secure planner assistant.
           Planner records are encrypted offline and synchronized to your authenticated account.
         </div>
         <VerifyEmailBanner />

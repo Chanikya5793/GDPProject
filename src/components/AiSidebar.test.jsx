@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import AttachedRecordChip from './AttachedRecordChip'
 import { AgentSteps, CitationList, ConversationList, FirstRunNotice, ProposalCard, ProposalList, ThinkingIndicator, seriesSummary } from './AiSidebar'
 
-describe('copilot evidence and confirmation UI', () => {
+describe('Bobby evidence and confirmation UI', () => {
   it('renders source-linked exact record metadata', () => {
     render(<CitationList citations={[{
       citation_id: 'S1', entity_type: 'task', record_id: 'task-1',

@@ -157,7 +157,9 @@ enum PlannerScreen: String, AppEnum {
   case reminders
   case calendar
   case notes
-  case copilot
+  // Stored as "copilot", its name before the rebrand: Shortcuts a student
+  // already built persist the raw value, and renaming it would break them.
+  case bobby = "copilot"
 
   static var typeDisplayRepresentation: TypeDisplayRepresentation {
     TypeDisplayRepresentation(name: "Screen")
@@ -169,12 +171,16 @@ enum PlannerScreen: String, AppEnum {
     .reminders: DisplayRepresentation(title: "Reminders"),
     .calendar: DisplayRepresentation(title: "Calendar"),
     .notes: DisplayRepresentation(title: "Notes"),
-    .copilot: DisplayRepresentation(title: "Copilot"),
+    .bobby: DisplayRepresentation(title: "Bobby"),
   ]
 
   /// The dashboard is the app's root route, so it has no path of its own.
   var path: String {
-    return self == .dashboard ? "" : rawValue
+    switch self {
+    case .dashboard: return ""
+    case .bobby: return "bobby"
+    default: return rawValue
+    }
   }
 }
 `;

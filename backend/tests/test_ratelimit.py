@@ -28,7 +28,7 @@ def limiter(requests=3, window=60, clock=None):
 
 
 def enable_ai(client, auth, retain=False, days=0):
-    """The copilot refuses with 403 until the user opts in, so tests must opt in."""
+    """Bobby refuses with 403 until the user opts in, so tests must opt in."""
     return client.put("/v1/privacy", headers=auth, json={
         "ai_enabled": True, "indexed_entity_types": [], "index_attachments": False,
         "retain_chat": retain, "chat_retention_days": days,
@@ -113,13 +113,13 @@ def test_chat_endpoint_returns_429_with_retry_after(client, auth, services):
     services.rate_limiter = MemoryRateLimiter(RateLimitPolicy(requests=1, window_seconds=60))
 
     first = client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "What is due today?", "request_id": "chat-0001"},
     )
     assert first.status_code == 200
 
     second = client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "What is due today?", "request_id": "chat-0002"},
     )
     assert second.status_code == 429
@@ -131,18 +131,18 @@ def test_rate_limited_chat_is_audited_without_the_prompt(client, auth, services)
     enable_ai(client, auth)
     services.rate_limiter = MemoryRateLimiter(RateLimitPolicy(requests=1, window_seconds=60))
     client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "first question", "request_id": "chat-0001"},
     )
     client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "sensitive question text", "request_id": "chat-0002"},
     )
 
     denied = [e for e in services.test_sink.events if e.event_type == "rate_limited"]
     assert len(denied) == 1
     assert denied[0].outcome == "denied"
-    assert denied[0].metadata["endpoint"] == "copilot_chat"
+    assert denied[0].metadata["endpoint"] == "bobby_chat"
     # The audit trail must never carry the prompt or a raw uid.
     serialized = denied[0].model_dump_json()
     assert "sensitive question text" not in serialized
@@ -153,10 +153,10 @@ def test_limiter_does_not_block_other_endpoints(client, auth, services):
     enable_ai(client, auth)
     services.rate_limiter = MemoryRateLimiter(RateLimitPolicy(requests=1, window_seconds=60))
     client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "burn the budget", "request_id": "chat-0001"},
     )
-    # Ordinary record traffic is unaffected by the copilot budget.
+    # Ordinary record traffic is unaffected by Bobby's budget.
     assert client.get("/v1/records/task", headers=auth).status_code == 200
     assert client.get("/v1/privacy", headers=auth).status_code == 200
 
@@ -165,14 +165,14 @@ def test_retained_chat_replay_does_not_spend_quota(client, auth, services):
     enable_ai(client, auth, retain=True, days=7)
     services.rate_limiter = MemoryRateLimiter(RateLimitPolicy(requests=1, window_seconds=60))
     first = client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "What is due today?", "request_id": "chat-0001"},
     )
     assert first.status_code == 200
 
     # Same request_id: served from the retained copy, so the budget is untouched.
     replay = client.post(
-        "/v1/copilot/chat", headers=auth,
+        "/v1/bobby/chat", headers=auth,
         json={"message": "What is due today?", "request_id": "chat-0001"},
     )
     assert replay.status_code == 200
@@ -245,5 +245,5 @@ def test_firestore_decide_is_capped_at_capacity():
 
 def test_firestore_limiter_targets_a_user_scoped_document():
     limit = FirestoreRateLimiter(FakeFirestoreClient(), RateLimitPolicy(5, 60))
-    assert limit.name == "copilot_chat"
+    assert limit.name == "bobby_chat"
     assert limit._ref("alice") is limit.client

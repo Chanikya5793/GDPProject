@@ -143,7 +143,7 @@ export function AiProvider({ children }) {
 
   const failureText = requestError =>
     requestError.code === 'not_configured'
-      ? 'The AI copilot needs the planner backend, which this build is not connected to. Everything else works offline.'
+      ? 'Bobby needs the planner backend, which this build is not connected to. Everything else works offline.'
       : requestError.code === 'ai_disabled'
       ? 'AI access is off. Enable the planner record types you want indexed in Privacy settings.'
       // Any other refusal -- an unverified address, an account outside the
@@ -152,8 +152,8 @@ export function AiProvider({ children }) {
       ? requestError.message
       : requestError.status === 429
         // A budget, not a malfunction — the backend's detail names the wait.
-        ? `You have reached the copilot request limit. ${requestError.message}`
-        : `The copilot could not answer: ${requestError.message}`
+        ? `You have reached Bobby's request limit. ${requestError.message}`
+        : `Bobby could not answer: ${requestError.message}`
 
   const loadConversations = useCallback(async () => {
     if (!apiConfigured()) return []
@@ -277,7 +277,7 @@ export function AiProvider({ children }) {
       return next
     })
     try {
-      await apiStream('/v1/copilot/chat/stream', {
+      await apiStream('/v1/bobby/chat/stream', {
         method: 'POST',
         signal: controller.signal,
         body: JSON.stringify({
@@ -428,7 +428,7 @@ export function AiProvider({ children }) {
       aiInfo, noticeAcknowledged, acknowledgeNotice,
       attachment, askAbout, detachRecord, collapsed, setCollapsed,
       // Whether a backend exists at all. The sidebar uses this to explain the
-      // copilot is unavailable instead of letting people send doomed requests.
+      // Bobby is unavailable instead of letting people send doomed requests.
       available: apiConfigured(),
     }}>
       {children}

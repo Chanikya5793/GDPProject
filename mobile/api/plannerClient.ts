@@ -270,7 +270,7 @@ function withLocalOnlyFields<T extends PlannerItem>(kind: Kind, saved: T, local:
 /**
  * Keep the AI index in step with a record's approval.
  *
- * Approval alone does nothing: a record is only reachable by the copilot once it
+ * Approval alone does nothing: a record is only reachable by Bobby once it
  * is indexed. Mobile never called this, so every record created on the phone was
  * invisible to the assistant no matter how it was flagged.
  */

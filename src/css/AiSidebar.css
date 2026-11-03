@@ -576,7 +576,7 @@
 }
 
 /* Shown when no planner backend is configured (the offline demo build). The
-   copilot is unavailable rather than broken, so this reads as an explanation
+   Bobby is unavailable rather than broken, so this reads as an explanation
    and the composer is disabled instead of accepting doomed requests. */
 .ai-unavailable {
   margin: 8px 0 4px;

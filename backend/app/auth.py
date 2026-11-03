@@ -18,7 +18,7 @@ class AuthenticatedUser:
 class Forbidden(Exception):
     """A valid token whose holder may not do this, with a code the clients key on.
 
-    HTTPException carries only a detail string, and the web copilot used to
+    HTTPException carries only a detail string, and the web Bobby client used to
     read every 403 as "AI is turned off in Privacy settings" -- including an
     unverified address and a refused domain. The code says which it is.
     """

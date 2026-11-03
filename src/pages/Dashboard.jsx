@@ -543,7 +543,7 @@ const WIDGET_META = {
   upcoming:    { title: 'Upcoming — Next 7 Days', link: { to: '/calendar', text: 'Open calendar' } },
   charts:      { title: 'Analytics' },
   'pinned-note': { title: 'Quick Note', link: { to: '/notes', text: 'All Notes' } },
-  'ai-chat':   { title: 'AI Assistant' },
+  'ai-chat':   { title: 'Bobby' },
 }
 
 /* ─── AI Chat Panel (popped-out widget) ─── */

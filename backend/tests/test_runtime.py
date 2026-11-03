@@ -48,7 +48,7 @@ def test_production_container_wires_cloud_adapters(monkeypatch):
         "FirestoreKeyStore", "GoogleKmsKeyWrapper", "EnvelopeCipher",
         "FirestorePlannerRepository", "FirestoreVectorStore", "LocalEmbeddingClient",
         "FirestoreAuditSink", "AuditLogger", "PlannerEngine",
-        "RetrievalService", "IndexingService", "ProposalService", "CopilotService",
+        "RetrievalService", "IndexingService", "ProposalService", "BobbyService",
         "McpSessionManager", "McpToolService",
     ):
         monkeypatch.setattr(f"app.runtime.{name}", lambda *_args, **_kwargs: marker)
@@ -64,5 +64,5 @@ def test_production_container_wires_cloud_adapters(monkeypatch):
     container = build_production_container(settings)
     assert container.repository is marker
     assert container.vector_store is marker
-    assert container.copilot is marker
+    assert container.bobby is marker
     assert container.mcp_tools is marker

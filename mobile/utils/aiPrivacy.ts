@@ -1,7 +1,7 @@
 // AI privacy settings rules.
 //
 // Mirrors the AI Privacy & Indexing section of src/pages/Settings.jsx. The
-// cascades matter more than they look: turning the copilot off has to clear
+// cascades matter more than they look: turning Bobby off has to clear
 // everything downstream of it, or the server would keep an index and a
 // retention window the user believes they just switched off. Kept pure so those
 // cascades are tested rather than only clicked through.
@@ -45,7 +45,7 @@ export const RETENTION_CHOICES = [7, 30, 90] as const;
 const DEFAULT_RETENTION_DAYS = 30;
 
 /**
- * Flip the copilot on or off.
+ * Flip Bobby on or off.
  *
  * Off is a complete opt-out: it clears the indexed types, attachment indexing
  * and chat retention too. Leaving those set would send the server a payload
@@ -53,7 +53,7 @@ const DEFAULT_RETENTION_DAYS = 30;
  */
 export function setAiEnabled(privacy: AiPrivacy, enabled: boolean): AiPrivacy {
   if (!enabled) return defaultPrivacy();
-  // Off cleared the types, so keeping that empty list switched the copilot on
+  // Off cleared the types, so keeping that empty list switched Bobby on
   // with nothing searchable and no sign of it. Each record still needs its own
   // approval, so restoring the types sends nothing the user did not approve.
   const types = privacy.indexed_entity_types.length
@@ -111,9 +111,9 @@ export function isFullyOptedOut(privacy: AiPrivacy): boolean {
 
 /** A short summary of what is currently exposed, for the section subtitle. */
 export function privacySummary(privacy: AiPrivacy): string {
-  if (!privacy.ai_enabled) return 'Copilot is off. Nothing is indexed or sent.';
+  if (!privacy.ai_enabled) return 'Bobby is off. Nothing is indexed or sent.';
   const count = privacy.indexed_entity_types.length;
-  if (count === 0) return 'Copilot is on, but no record types are indexed.';
+  if (count === 0) return 'Bobby is on, but no record types are indexed.';
   const types = `${count} record type${count === 1 ? '' : 's'} indexed`;
   return privacy.retain_chat
     ? `${types} · chats kept ${privacy.chat_retention_days} days`

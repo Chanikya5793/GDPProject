@@ -13,7 +13,7 @@ import {
 
 // Mirrors web's Settings → AI Privacy & Indexing. The mobile app already sent
 // approved_for_ai on every record but gave no way to see or change what that
-// approval covered, so the only honest answer to "what does the copilot see?"
+// approval covered, so the only honest answer to "what does Bobby see?"
 // was to open the website.
 //
 // Unlike web, the whole section is gated on a configured backend. These
@@ -133,7 +133,7 @@ export default function AiPrivacySection() {
 
       <View style={s.row}>
         <View style={s.rowInfo}>
-          <Text style={s.rowLabel}>AI Copilot</Text>
+          <Text style={s.rowLabel}>Bobby (AI assistant)</Text>
           <Text style={s.rowDesc}>Complete opt-out. Turning this off also deletes your vector index.</Text>
         </View>
         <Switch
@@ -142,7 +142,7 @@ export default function AiPrivacySection() {
           onValueChange={value => save(setAiEnabled(privacy, value))}
           trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
           thumbColor={Platform.OS === 'android' ? (privacy.ai_enabled ? accent.light : '#f4f3f4') : undefined}
-          accessibilityLabel="Enable AI Copilot"
+          accessibilityLabel="Enable Bobby"
         />
       </View>
 
@@ -198,7 +198,7 @@ export default function AiPrivacySection() {
           onValueChange={value => save(setRetainChat(privacy, value))}
           trackColor={{ true: accent.primary, false: colors.surfaceVariant }}
           thumbColor={Platform.OS === 'android' ? (privacy.retain_chat ? accent.light : '#f4f3f4') : undefined}
-          accessibilityLabel="Retain copilot chats"
+          accessibilityLabel="Retain Bobby chats"
         />
       </View>
 
@@ -234,7 +234,7 @@ export default function AiPrivacySection() {
         onPress={() => purge(
           '/v1/index',
           'Delete my AI index',
-          'This permanently removes everything the copilot has indexed from your records. It cannot be undone.',
+          'This permanently removes everything Bobby has indexed from your records. It cannot be undone.',
         )}
       >
         <Ionicons name="trash-outline" size={16} color={colors.error} />
@@ -247,7 +247,7 @@ export default function AiPrivacySection() {
         onPress={() => purge(
           '/v1/chats',
           'Delete retained chats',
-          'This permanently removes every copilot chat kept on the server. It cannot be undone.',
+          'This permanently removes every Bobby chat kept on the server. It cannot be undone.',
         )}
       >
         <Ionicons name="trash-outline" size={16} color={colors.error} />

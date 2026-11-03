@@ -1,2 +1,2 @@
-"""Northwest Planner secure copilot service."""
+"""Northwest Planner Bobby, the secure planner assistant service."""
 

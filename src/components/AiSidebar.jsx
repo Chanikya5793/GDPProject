@@ -390,7 +390,7 @@ export default function AiSidebar() {
     <aside className={`ai-sidebar${collapsed ? ' ai-collapsed' : ''}`}>
       {collapsed ? (
         <div className="ai-collapsed-bar">
-          <button className="ai-collapsed-btn" onClick={toggle} title="Open AI Assistant">
+          <button className="ai-collapsed-btn" onClick={toggle} title="Open Bobby">
             <Bot size={20} />
           </button>
           <span className="ai-collapsed-label">AI</span>
@@ -400,7 +400,7 @@ export default function AiSidebar() {
           <div className="ai-sidebar-header">
             <div className="ai-sidebar-title">
               <Bot size={18} />
-              <span>AI Assistant</span>
+              <span>Bobby</span>
               <span className="ai-badge">Beta</span>
             </div>
             <div className="ai-header-actions">
@@ -483,7 +483,7 @@ export default function AiSidebar() {
             )}
             {!available && (
               <div className="ai-unavailable">
-                The copilot needs the planner backend, which this build is not connected to.
+                Bobby needs the planner backend, which this build is not connected to.
                 Your tasks, reminders, and notes still work — they are stored encrypted on this
                 device.
               </div>
@@ -499,7 +499,7 @@ export default function AiSidebar() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={available ? 'Ask anything...' : 'Copilot unavailable in this build'}
+              placeholder={available ? 'Ask anything...' : 'Bobby unavailable in this build'}
               rows={1}
               disabled={!available}
             />

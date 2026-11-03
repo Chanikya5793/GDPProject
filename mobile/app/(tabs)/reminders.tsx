@@ -356,7 +356,7 @@ function ReminderModal({
             <View style={{ flex: 1 }}>
               <Text style={ms.label}>Visible to the assistant</Text>
               <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 }}>
-                Lets the copilot read this reminder when you ask about it.
+                Lets Bobby read this reminder when you ask about it.
               </Text>
             </View>
             <Switch

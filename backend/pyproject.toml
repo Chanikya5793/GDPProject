@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "northwest-planner-copilot"
+name = "northwest-planner-bobby"
 version = "0.1.0"
 description = "Authenticated, encrypted planner RAG and proposal service"
 requires-python = ">=3.12"

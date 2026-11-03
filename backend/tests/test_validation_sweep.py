@@ -91,14 +91,14 @@ def test_today_follows_the_zone_the_client_sent():
         assert local_today("Not/AZone") == date(2026, 9, 18)
 
 
-def test_chat_passes_the_local_date_to_the_copilot(client, services, auth):
+def test_chat_passes_the_local_date_to_bobby(client, services, auth):
     client.put("/v1/records/task/t1", json=task_request(approved=True), headers=auth)
     client.post("/v1/index/task/t1", json={"approved": True, "expected_revision": 1}, headers=auth)
     services.test_generator.response = GeneratedAnswer(answer="ok", citation_ids=["S1"])
     late_utc = datetime(2026, 9, 18, 1, 30, tzinfo=timezone.utc)
     with patch("app.api.datetime") as fake:
         fake.now.side_effect = lambda tz=None: late_utc.astimezone(tz) if tz else late_utc
-        response = client.post("/v1/copilot/chat", json={
+        response = client.post("/v1/bobby/chat", json={
             "message": "what is due today?", "request_id": "tz-request-0001",
             "timezone": "America/Chicago",
         }, headers=auth)
@@ -171,8 +171,8 @@ def test_a_provider_failure_on_the_blocking_route_is_502(client, services, auth)
         def generate(self, prompt):
             raise RuntimeError("safety block")
 
-    services.copilot.generator = Broken()
-    response = client.post("/v1/copilot/chat", json={
+    services.bobby.generator = Broken()
+    response = client.post("/v1/bobby/chat", json={
         "message": "hello", "request_id": "broken-request-0001",
     }, headers=auth)
     assert response.status_code == 502
@@ -242,7 +242,7 @@ def test_a_confirmed_delete_clears_the_vector_index(client, services, auth):
             operation=ProposalOperation.delete, entity_type=EntityType.task, record_id="t1",
         ),
     )
-    chat = client.post("/v1/copilot/chat", json={
+    chat = client.post("/v1/bobby/chat", json={
         "message": "delete my report task", "request_id": "delete-request-0001",
     }, headers=auth).json()
     proposal = chat["proposals"][0]
@@ -259,11 +259,11 @@ def test_a_failure_after_generation_still_ends_the_stream_with_an_error(client, 
     from tests.test_chat_stream import StreamingGenerator, read_events
     client.put("/v1/records/task/t1", json=task_request(approved=True), headers=auth)
     client.post("/v1/index/task/t1", json={"approved": True, "expected_revision": 1}, headers=auth)
-    services.copilot.generator = StreamingGenerator(
+    services.bobby.generator = StreamingGenerator(
         GeneratedAnswer(answer="Done.", citation_ids=["S1"]), chunks=["Done."],
     )
     with patch("app.api.remember_turn", side_effect=RuntimeError("firestore down")):
-        response = client.post("/v1/copilot/chat/stream", headers=auth, json={
+        response = client.post("/v1/bobby/chat/stream", headers=auth, json={
             "message": "hi", "request_id": "stream-fail-request-0001",
         })
         events = read_events(response)
@@ -276,7 +276,7 @@ def test_ai_disabled_carries_a_code_the_clients_can_key_on(client, auth):
         "ai_enabled": False, "indexed_entity_types": [], "index_attachments": False,
         "retain_chat": False, "chat_retention_days": 0,
     }, headers=auth)
-    response = client.post("/v1/copilot/chat", json={
+    response = client.post("/v1/bobby/chat", json={
         "message": "hello", "request_id": "disabled-request-0001",
     }, headers=auth)
     assert response.status_code == 403

@@ -376,7 +376,7 @@ async def _prebuild_cloud_services(app: FastAPI):
 
 def create_app(container: Container | None = None) -> FastAPI:
     app = FastAPI(
-        title="Northwest Planner Copilot API",
+        title="Northwest Planner Bobby API",
         version="1.0.0",
         docs_url=None if os.getenv("PLANNER_ENVIRONMENT") == "production" else "/docs",
         redoc_url=None,
@@ -604,7 +604,7 @@ def create_app(container: Container | None = None) -> FastAPI:
 
     @app.get("/v1/ai-info", response_model=AiProviderInfo)
     def ai_info(_user: CurrentUser, services: ContainerDep):
-        generator = services.copilot.generator
+        generator = services.bobby.generator
         return AiProviderInfo(
             provider=getattr(generator, "provider", "unknown"),
             model=getattr(generator, "model", "unknown"),
@@ -634,7 +634,7 @@ def create_app(container: Container | None = None) -> FastAPI:
                 "retain_chat": False, "chat_retention_days": 0,
             })
         elif not previous.ai_enabled and not body.indexed_entity_types:
-            # Turning the copilot off clears the types, so a client that sends
+            # Turning Bobby off clears the types, so a client that sends
             # only the switch on would leave nothing indexed, silently. Installed
             # app builds still do; restore the defaults here for them.
             body = body.model_copy(update={
@@ -692,7 +692,14 @@ def create_app(container: Container | None = None) -> FastAPI:
         })
         return Response(status_code=204)
 
-    @app.post("/v1/copilot/chat", response_model=ChatResponse)
+    # The assistant was called Copilot before it was Bobby. Installed mobile
+    # builds and cached web bundles still post to the old paths, so they stay
+    # as hidden aliases of the same handlers until those clients age out.
+    @app.post("/v1/bobby/chat", response_model=ChatResponse)
+    @app.post(
+        "/v1/copilot/chat", response_model=ChatResponse,
+        include_in_schema=False, deprecated=True,
+    )
     def chat(body: ChatRequest, user: CurrentUser, services: ContainerDep):
         privacy = services.repository.get_privacy(user.uid)
         if privacy.retain_chat:
@@ -705,13 +712,13 @@ def create_app(container: Container | None = None) -> FastAPI:
             services.audit.record(
                 user.uid, "rate_limited", outcome="denied",
                 metadata={
-                    "endpoint": "copilot_chat",
+                    "endpoint": "bobby_chat",
                     "retry_after_seconds": exc.retry_after_seconds,
                 },
             )
             raise
         try:
-            answer, citations, disclosure, generated = services.copilot.answer(
+            answer, citations, disclosure, generated = services.bobby.answer(
                 user.uid, body.message, today=local_today(body.timezone),
                 history=thread_history(services, user.uid, body, privacy),
                 focus=body.focus,
@@ -736,7 +743,7 @@ def create_app(container: Container | None = None) -> FastAPI:
             # detail is withheld on purpose: it can quote the prompt, and the
             # prompt carries the student's planner records.
             services.audit.record(user.uid, "failure", "failed", {
-                "stage": "copilot_chat", "error_type": type(exc).__name__,
+                "stage": "bobby_chat", "error_type": type(exc).__name__,
             })
             raise HTTPException(
                 status_code=502,
@@ -749,9 +756,10 @@ def create_app(container: Container | None = None) -> FastAPI:
         retain_chat_response(services, user.uid, privacy, body, response)
         return response
 
-    @app.post("/v1/copilot/chat/stream")
+    @app.post("/v1/bobby/chat/stream")
+    @app.post("/v1/copilot/chat/stream", include_in_schema=False, deprecated=True)
     def chat_stream(body: ChatRequest, user: CurrentUser, services: ContainerDep):
-        """The same answer as /v1/copilot/chat, delivered as it is written.
+        """The same answer as /v1/bobby/chat, delivered as it is written.
 
         Emits `delta` events carrying answer text, `step` events whenever the
         assistant looks something up for itself, and one `final` event with the
@@ -777,12 +785,12 @@ def create_app(container: Container | None = None) -> FastAPI:
             services.audit.record(
                 user.uid, "rate_limited", outcome="denied",
                 metadata={
-                    "endpoint": "copilot_chat_stream",
+                    "endpoint": "bobby_chat_stream",
                     "retry_after_seconds": exc.retry_after_seconds,
                 },
             )
             raise
-        stream = services.copilot.answer_stream(
+        stream = services.bobby.answer_stream(
             user.uid, body.message, today=local_today(body.timezone),
             history=thread_history(services, user.uid, body, privacy),
             focus=body.focus,

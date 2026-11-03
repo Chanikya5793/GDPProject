@@ -30,7 +30,7 @@ function respondWith(chunks, init = {}) {
 async function collect(chunks) {
   globalThis.fetch = respondWith(chunks)
   const events = []
-  await apiStream('/v1/copilot/chat/stream', { method: 'POST' }, e => events.push(e))
+  await apiStream('/v1/bobby/chat/stream', { method: 'POST' }, e => events.push(e))
   return events
 }
 

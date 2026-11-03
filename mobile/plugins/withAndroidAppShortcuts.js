@@ -15,7 +15,7 @@ const { AndroidConfig, withAndroidManifest, withDangerousMod } = require('@expo/
 const SHORTCUTS = [
   { id: 'add_task', icon: 'task', url: 'nwplanner://tasks?new=' },
   { id: 'add_reminder', icon: 'reminder', url: 'nwplanner://reminders?new=' },
-  { id: 'ask_copilot', icon: 'copilot', url: 'nwplanner://copilot' },
+  { id: 'ask_bobby', icon: 'bobby', url: 'nwplanner://bobby' },
   { id: 'calendar', icon: 'calendar', url: 'nwplanner://calendar' },
 ];
 

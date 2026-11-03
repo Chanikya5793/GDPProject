@@ -99,7 +99,7 @@ class FirestoreRateLimiter:
         self,
         client: firestore.Client,
         policy: RateLimitPolicy,
-        name: str = "copilot_chat",
+        name: str = "bobby_chat",
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self.client = client

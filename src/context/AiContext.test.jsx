@@ -126,7 +126,7 @@ describe('AiContext streaming', () => {
     streamMock.mockImplementation(async () => { throw failure })
     renderAi()
     await act(async () => { await ctx.current.sendMessage('hello') })
-    expect(screen.getByText(/reached the copilot request limit/)).toBeInTheDocument()
+    expect(screen.getByText(/reached Bobby's request limit/)).toBeInTheDocument()
   })
 
   it('carries proposals from the final event', async () => {

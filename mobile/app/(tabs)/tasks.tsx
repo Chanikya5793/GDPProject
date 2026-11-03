@@ -837,7 +837,7 @@ function TaskModal({
             <View style={{ flex: 1 }}>
               <Text style={ms.label}>Visible to the assistant</Text>
               <Text style={ms.aiHint}>
-                Lets the copilot read this task when you ask about it. Turn it off to
+                Lets Bobby read this task when you ask about it. Turn it off to
                 keep this one out of the index.
               </Text>
             </View>

@@ -14,7 +14,7 @@ from .mcp_api import McpSessionManager, McpToolService
 from .planner import PlannerEngine
 from .proposals import ProposalService
 from .push import WidgetPusher
-from .rag import CopilotService, IndexingService, RetrievalService
+from .rag import BobbyService, IndexingService, RetrievalService
 from .ratelimit import FirestoreRateLimiter, RateLimiter, RateLimitPolicy
 from .repository import FirestorePlannerRepository, PlannerRepository
 from .secrets import SecretResolver
@@ -48,7 +48,7 @@ class Container:
     vector_store: VectorStore
     indexing: IndexingService
     retrieval: RetrievalService
-    copilot: CopilotService
+    bobby: BobbyService
     proposals: ProposalService
     planner: PlannerEngine
     audit: AuditLogger
@@ -80,7 +80,7 @@ def build_production_container(settings: Settings) -> Container:
     toolbox = PlannerToolbox(
         repository, retrieval, planner, audit, briefing_items=settings.briefing_items
     )
-    copilot = CopilotService(
+    bobby = BobbyService(
         retrieval, generator, planner, repository, audit,
         toolbox=toolbox, max_tool_rounds=settings.agent_tool_rounds,
         deadline_seconds=settings.agent_deadline_seconds,
@@ -93,7 +93,7 @@ def build_production_container(settings: Settings) -> Container:
     )
     return Container(
         repository=repository, vector_store=vector_store, indexing=indexing,
-        retrieval=retrieval, copilot=copilot, proposals=proposals, planner=planner,
+        retrieval=retrieval, bobby=bobby, proposals=proposals, planner=planner,
         audit=audit, mcp_sessions=McpSessionManager(secret),
         mcp_tools=McpToolService(repository, retrieval, planner, audit),
         rate_limiter=rate_limiter,
