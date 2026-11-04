@@ -19,7 +19,9 @@ concurrency:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # Longer than CI itself: mobile-android's Gradle release build alone can run
+    # past 40 minutes, and a gate that gives up first skips the deploy entirely.
+    timeout-minutes: 75
     outputs:
       planner_sha: ${{ steps.verified.outputs.planner_sha }}
       nlp_sha: ${{ steps.verified.outputs.nlp_sha }}
@@ -37,7 +39,7 @@ jobs:
             const targets = new Map([[main.data.object.sha, required], [nlp.data.object.sha, [...required, 'pipeline', 'interface', 'browser']]]);
             // Also gate the workflow revision when it differs from either source.
             if (!targets.has(context.sha)) targets.set(context.sha, required);
-            for (let attempt = 0; attempt < 60; attempt++) {
+            for (let attempt = 0; attempt < 140; attempt++) {
               let ready = true;
               for (const [sha, names] of targets) {
                 const response = await github.rest.checks.listForRef({...repo, ref: sha, filter: 'latest', per_page: 100});
