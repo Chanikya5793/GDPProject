@@ -18,6 +18,7 @@ from sklearn.svm import LinearSVC
 from .language import normalize
 from .schemas import AnalyzeRequest, Configuration
 from .store import digest, now, uid
+from . import transformer
 
 TRAIN_LOCK = threading.Lock()
 
@@ -34,14 +35,23 @@ def predict(store, model_id, text, classifier):
     if not meta or meta.get("status") not in ("completed", "evaluating"):
         return None
     bundle = load_bundle(str(store.models_dir / (model_id + ".joblib")))
+    if classifier not in bundle['classifiers']:
+        raise ValueError('This model has no Transformer heads. Train a candidate with the Transformer option and activate it first.')
     x = bundle["features"].transform([text])
     names = bundle["features"].get_feature_names_out()
     active = sorted(zip(x.indices.tolist(), x.data.tolist()), key=lambda p: -p[1])
     output = {"features": [{"name": str(names[i]), "weight": round(weight, 6)} for i, weight in active], "vocabulary_size": len(names), "classifiers": {}}
     for family, heads in bundle["classifiers"].items():
+        head_x, head_names, head_active = x, names, active
+        if family == 'transformer':
+            if classifier != 'transformer' and not transformer.inspection(store, text):
+                continue
+            head_x = transformer.matrix(store, [text])
+            head_names = [f'embedding[{i}]' for i in range(transformer.DIMENSIONS)]
+            head_active = list(enumerate(head_x[0]))
         result = {}
         for head, model in heads.items():
-            probabilities = model.predict_proba(x)[0]
+            probabilities = model.predict_proba(head_x)[0]
             order = np.argsort(-probabilities)
             label = str(model.classes_[order[0]])
             result[head] = {"label": label, "confidence": float(probabilities[order[0]]), "margin": float(probabilities[order[0]]-probabilities[order[1]]), "ranking": [{"label": str(model.classes_[i]), "probability": round(float(probabilities[i]), 6)} for i in order]}
@@ -50,13 +60,18 @@ def predict(store, model_id, text, classifier):
             if hasattr(model, "coef_"):
                 index = int(order[0]) if model.coef_.shape[0] > 1 else 0
                 coef = model.coef_[index]
-                values = [(str(names[i]), weight*float(coef[i])) for i, weight in active]
+                values = [(str(head_names[i]), weight*float(coef[i])) for i, weight in head_active]
                 result[head]["contributions"] = [{"feature": name, "contribution": round(value, 6)} for name, value in sorted(values, key=lambda p: -abs(p[1]))[:20]]
             elif hasattr(model, "feature_log_prob_"):
                 coef = model.feature_log_prob_[int(order[0])]
                 result[head]["contributions"] = [{"feature": str(names[i]), "contribution": round(weight*float(coef[i]), 6)} for i, weight in active[:20]]
         output["classifiers"][family] = result
     output["selected"] = output["classifiers"][classifier]
+    if classifier == 'transformer':
+        output['transformer'] = transformer.inspection(store, text)
+        vector = transformer.matrix(store, [text])[0]
+        output['features'] = [{'name': f'embedding[{i}]', 'weight': round(float(v), 6)} for i, v in enumerate(vector)]
+        output['vocabulary_size'] = transformer.DIMENSIONS
     return output
 
 
@@ -99,18 +114,29 @@ def train(store, job_id):
         features = FeatureUnion([("word", TfidfVectorizer(ngram_range=(1,2), sublinear_tf=True)), ("char", TfidfVectorizer(analyzer="char_wb", ngram_range=(3,5), sublinear_tf=True))])
         texts = [normalize(r["text"], configs)[0] for r in train_rows]
         x = features.fit_transform(texts)
+        transformer_x = None
+        if job.get('include_transformer'):
+            job.update(phase='encoding requests with frozen MiniLM Transformer')
+            store.put('models', job_id, job)
+            all_texts = [normalize(row['text'], configs)[0] for row in rows if row['approved']]
+            transformer.ensure_vectors(store, all_texts)
+            transformer_x = transformer.matrix(store, texts)
         classifiers = {family: {} for family in ("logistic", "naive_bayes", "svm")}
+        if transformer_x is not None:
+            classifiers['transformer'] = {}
         for head, key in (("operation", "operation"), ("entity", "entity_type")):
             y = np.array([r[key] or "unknown" for r in train_rows])
             if len(set(y)) < 2 or any(len(set(groups[y == label])) < 3 for label in set(y)):
                 raise ValueError(f"{head}: each class needs at least three independent training families")
             classifiers["logistic"][head] = LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42).fit(x,y)
             classifiers["naive_bayes"][head] = MultinomialNB(alpha=0.2).fit(x,y)
+            if transformer_x is not None:
+                classifiers['transformer'][head] = LogisticRegression(max_iter=1500, class_weight='balanced', random_state=42).fit(transformer_x, y)
             folds = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(x,y,groups))
             if any(len(set(y[a])) != len(set(y)) or len(set(y[b])) != len(set(y)) for a,b in folds):
                 raise ValueError("Grouped calibration folds lack a class; add more independent examples")
             classifiers["svm"][head] = CalibratedClassifierCV(LinearSVC(class_weight="balanced", random_state=42), method="sigmoid", cv=folds).fit(x,y)
-        bundle = {"features": features, "classifiers": classifiers, "dataset_version": job["dataset_version"]}
+        bundle = {"features": features, "classifiers": classifiers, "dataset_version": job["dataset_version"], 'encoder': {'model': transformer.MODEL, 'revision': transformer.REVISION, 'frozen': True} if transformer_x is not None else None}
         temporary = store.models_dir / (job_id + ".tmp")
         joblib.dump(bundle, temporary)
         os.replace(temporary, store.models_dir / (job_id + ".joblib"))
@@ -145,7 +171,7 @@ def train(store, job_id):
         TRAIN_LOCK.release()
 
 
-def create_training_job(store, name):
+def create_training_job(store, name, include_transformer=False):
     config, config_id = store.configuration()
     rows = store.all("examples")
     # The same group or text can never cross split boundaries.
@@ -158,4 +184,8 @@ def create_training_job(store, name):
     job_id = uid("model")
     job = {"id":job_id,"name":name,"status":"pending","phase":"queued","created_at":now(),"dataset_version":digest(sorted(rows,key=lambda r:r["id"])),"configuration_id":config_id,"configuration":config.model_dump(),"examples_snapshot":rows,"corpus_notice":"Synthetic template corpus plus explicitly reviewed corrections; not a real-user benchmark.","runtime_versions":{"python":platform.python_version(),**{name:version(name) for name in ("scikit-learn","nltk","dateparser","numpy","pydantic")}}}
     store.put("models",job_id,job)
+    job['include_transformer'] = include_transformer
+    if include_transformer:
+        job['encoder'] = {'model': transformer.MODEL, 'revision': transformer.REVISION, 'frozen': True, 'dimensions': transformer.DIMENSIONS}
+    store.put('models', job_id, job)
     return job

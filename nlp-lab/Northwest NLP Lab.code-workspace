@@ -1,0 +1,27 @@
+{
+  "folders": [{ "name": "Northwest NLP Lab", "path": "." }],
+  "settings": {
+    "git.openRepositoryInParentFolders": "always",
+    "files.exclude": {
+      "**/.local": true,
+      "**/.lab-data": true,
+      "**/.browser-build": true,
+      "**/.venv": true,
+      "**/node_modules": true,
+      "**/nltk_data": true,
+      "**/dist": true,
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/*.egg-info": true,
+      "public/runtime": true
+    },
+    "search.exclude": {
+      "**/.local/**": true,
+      "**/.lab-data/**": true,
+      "**/.browser-build/**": true,
+      "**/nltk_data/**": true,
+      "**/.venv/**": true,
+      "**/public/runtime/**": true
+    }
+  }
+}

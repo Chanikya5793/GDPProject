@@ -138,7 +138,7 @@ def create_app(root=None):
     @app.post("/api/training",status_code=202)
     def training(body:TrainRequest,background:BackgroundTasks):
         if any(r["status"] in ("pending","running","evaluating") for r in store.all("models")): raise HTTPException(409,"A training job is already running")
-        job=create_training_job(store,body.name)
+        job=create_training_job(store,body.name,include_transformer=body.include_transformer)
         background.add_task(train,store,job["id"])
         return public_model(job)
 

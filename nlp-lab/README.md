@@ -1,6 +1,24 @@
 # Northwest NLP Lab
 
+Start with [START_HERE.md](START_HERE.md) for the folder map, presentation files and focused VS Code workspace. Repository and branch details are in [GIT_GUIDE.md](GIT_GUIDE.md).
+
 A local companion to Northwest Planner: type an English command, inspect nine real NLP stages, correct the prediction, compare classical models, and export a validated Planner request. This application does not connect to or execute changes in Planner.
+
+## Transformer demo
+
+The fourth classifier uses a real, frozen pretrained MiniLM Transformer (`Xenova/all-MiniLM-L6-v2`, pinned revision), six layers and twelve attention heads. The encoder produces normalized 384-dimensional sentence embeddings. Separate logistic regression heads learn action and item labels; retraining does not fine-tune the encoder. Rules, field extraction, target selection and payload validation still apply.
+
+In the browser-only build, expand **Reference clock & planner context**, choose **Classifier: transformer**, and run a request. Open **Feature extraction** for actual subword tokens, IDs, attention masks and embedding metadata. Attention matrices are not exported. The first new request downloads the public quantized model; subsequent requests reuse its browser cache. Browser storage eviction requires another download.
+
+For native Windows development, train a candidate with Node installed and the Python environment active:
+
+```powershell
+.venv/Scripts/python.exe -m nlplab.cli train --transformer
+```
+
+Activate the completed candidate explicitly in **Experiments**, then select `transformer` in the inspector. Native encoding uses the same Transformers.js model through a local Node subprocess. Download dependencies, NLP resources and model weights before an offline presentation.
+
+Presentation content, terminology, live-demo steps and professor questions are in [TRANSFORMER_PRESENTATION.md](presentation/TRANSFORMER_PRESENTATION.md). Measured synthetic-family results are in [transformer-browser-results.json](docs/transformer-browser-results.json) and [transformer-results.json](docs/transformer-results.json). These are starter-corpus measurements, not production accuracy claims.
 
 ## Run locally
 

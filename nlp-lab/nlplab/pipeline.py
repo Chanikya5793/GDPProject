@@ -58,7 +58,7 @@ def analyze(store, request: AnalyzeRequest, *, persist=True, linguistic=True):
     tokens, chunks, warnings = annotations(request.text) if linguistic else ([],[],[])
     stage(2,request.text,{"tokens":tokens,"chunks":chunks},warnings=warnings,skipped=not linguistic)
     classification = predict(store,model_id,normalized,config.classifier)
-    stage(3,normalized,{"active_features":classification["features"] if classification else [],"vocabulary_size":classification["vocabulary_size"] if classification else 0,"feature_branches":["word TF-IDF (1–2 grams)","character TF-IDF (3–5 grams)"]},warnings=[] if classification else ["No trained model selected. Features are unavailable until a candidate is trained."],skipped=classification is None)
+    stage(3,normalized,{"active_features":classification["features"] if classification else [],"vocabulary_size":classification["vocabulary_size"] if classification else 0,"feature_branches":["MiniLM contextual sentence embedding"] if config.classifier == "transformer" else ["word TF-IDF (1–2 grams)","character TF-IDF (3–5 grams)"], "transformer":classification.get("transformer") if classification else None},warnings=[] if classification else ["No trained model selected. Features are unavailable until a candidate is trained."],skipped=classification is None)
     rule_op,rule_entity,rule_evidence = classify_rules(normalized,config)
     operation, entity = rule_op, rule_entity
     reasons=[]
@@ -158,5 +158,7 @@ def analyze(store, request: AnalyzeRequest, *, persist=True, linguistic=True):
     status="unsupported" if is_unsupported else "needs_clarification" if reasons else "ready"
     stage(8,command.model_dump(),{"status":status,"payload":payload},warnings=reasons)
     result={"id":uid("run"),"created_at":now(),"request":request.model_dump(mode="json"),"status":status,"command":command.model_dump(),"payload":payload,"reasons":list(dict.fromkeys(reasons)),"stages":stages,"classification":classification,"target_candidates":candidates,"find_results":matches,"record_snapshot":record,"versions":{"model":model_id or "none","dataset":dataset["version"],"configuration":config_id,"rules":"rules-v1-"+digest([r.model_dump() for r in config.rules]),"training_dataset":store.get("models",model_id).get("dataset_version") if model_id and store.get("models",model_id) else None},"configuration_snapshot":config.model_dump(),"elapsed_ms":round((time.perf_counter()-begin)*1000,3)}
+    if classification and classification.get('transformer'):
+        result['versions']['encoder'] = {key: classification['transformer'][key] for key in ('model', 'revision', 'dtype', 'pooling')}
     if persist: store.put("runs",result["id"],result)
     return result

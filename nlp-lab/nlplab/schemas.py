@@ -30,7 +30,7 @@ class Rule(Strict):
 class Configuration(Strict):
     name: str = Field(default="Default hybrid", min_length=1, max_length=100)
     mode: Literal["rules", "model", "hybrid"] = "hybrid"
-    classifier: Literal["logistic", "naive_bayes", "svm"] = "logistic"
+    classifier: Literal["logistic", "naive_bayes", "svm", "transformer"] = "logistic"
     min_confidence: float = Field(default=0.70, ge=0.5, le=1)
     min_margin: float = Field(default=0.15, ge=0, le=1)
     rules: list[Rule] = Field(default_factory=list, max_length=200)
@@ -123,6 +123,7 @@ class Correction(Strict):
 
 
 class TrainRequest(Strict):
+    include_transformer: bool = False
     name: str = Field(default="Reviewed corpus experiment", min_length=1, max_length=100)
 
 

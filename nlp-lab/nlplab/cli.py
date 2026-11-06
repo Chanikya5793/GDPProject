@@ -6,6 +6,7 @@ def main():
     parser=argparse.ArgumentParser(description="Northwest NLP Lab")
     parser.add_argument("command",choices=["serve","setup-nltk","train","export-corpus"])
     parser.add_argument("--port",type=int,default=8001)
+    parser.add_argument('--transformer', action='store_true', help='Include frozen MiniLM embeddings and trained action/type heads')
     args=parser.parse_args()
     if args.command=="serve":
         import uvicorn
@@ -23,7 +24,7 @@ def main():
         store=app.state.store
         if args.command=="train":
             from .models import create_training_job, train
-            job=create_training_job(store,"Starter corpus baseline")
+            job=create_training_job(store,"Starter corpus baseline",include_transformer=args.transformer)
             train(store,job["id"])
             result=store.get("models",job["id"])
             print(json.dumps({k:v for k,v in result.items() if k not in ("corpus_snapshot","examples_snapshot")},indent=2))

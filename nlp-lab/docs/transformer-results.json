@@ -1,0 +1,1646 @@
+{
+  "id": "model-c24343e0bced4b12b505bc37acc9d997",
+  "name": "Verified Transformer comparison",
+  "status": "completed",
+  "phase": "complete",
+  "created_at": "2026-11-05T23:59:25.698375+00:00",
+  "dataset_version": "cfc6641fc83b13b5",
+  "configuration_id": "config-default",
+  "configuration": {
+    "name": "Default hybrid",
+    "mode": "hybrid",
+    "classifier": "logistic",
+    "min_confidence": 0.7,
+    "min_margin": 0.15,
+    "rules": []
+  },
+  "corpus_notice": "Synthetic template corpus plus explicitly reviewed corrections; not a real-user benchmark.",
+  "runtime_versions": {
+    "python": "3.12.14",
+    "scikit-learn": "1.9.1",
+    "nltk": "3.10.4",
+    "dateparser": "1.4.3",
+    "numpy": "2.5.4",
+    "pydantic": "2.14.1"
+  },
+  "include_transformer": true,
+  "encoder": {
+    "model": "Xenova/all-MiniLM-L6-v2",
+    "revision": "751bff37182d3f1213fa05d7196b954e230abad9",
+    "frozen": true,
+    "dimensions": 384
+  },
+  "started_at": "2026-11-05T23:59:25.900596+00:00",
+  "training_count": 600,
+  "evaluation": {
+    "validation": {
+      "rules:logistic": {
+        "count": 100,
+        "action_macro_f1": 1.0,
+        "entity_macro_f1": 1.0,
+        "field_f1": 1.0,
+        "exact_payload_accuracy": 1.0,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.0,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              20,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:logistic": {
+        "count": 100,
+        "action_macro_f1": 0.7436,
+        "entity_macro_f1": 0.9566,
+        "field_f1": 0.9341,
+        "exact_payload_accuracy": 0.7,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.3,
+        "coverage": 0.54,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              0,
+              0,
+              5,
+              5,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              5,
+              10,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              2,
+              0,
+              0,
+              16,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:naive_bayes": {
+        "count": 100,
+        "action_macro_f1": 0.7861,
+        "entity_macro_f1": 0.9523,
+        "field_f1": 0.9375,
+        "exact_payload_accuracy": 0.71,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.29,
+        "coverage": 0.55,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              0,
+              0,
+              1,
+              9,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              2,
+              0,
+              0,
+              16,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:svm": {
+        "count": 100,
+        "action_macro_f1": 0.6215,
+        "entity_macro_f1": 0.9566,
+        "field_f1": 0.8982,
+        "exact_payload_accuracy": 0.71,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.29,
+        "coverage": 0.55,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              0,
+              0,
+              10,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              2,
+              0,
+              0,
+              16,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:transformer": {
+        "count": 100,
+        "action_macro_f1": 0.8625,
+        "entity_macro_f1": 0.9542,
+        "field_f1": 0.9474,
+        "exact_payload_accuracy": 0.51,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.49,
+        "coverage": 0.35,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              3,
+              0,
+              0,
+              7,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              2,
+              2,
+              0,
+              0,
+              0,
+              16,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:logistic": {
+        "count": 100,
+        "action_macro_f1": 0.966,
+        "entity_macro_f1": 0.9566,
+        "field_f1": 0.989,
+        "exact_payload_accuracy": 0.96,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.04,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              2,
+              0,
+              0,
+              16,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:naive_bayes": {
+        "count": 100,
+        "action_macro_f1": 0.966,
+        "entity_macro_f1": 0.9523,
+        "field_f1": 0.9836,
+        "exact_payload_accuracy": 0.96,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.04,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              2,
+              0,
+              0,
+              16,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:svm": {
+        "count": 100,
+        "action_macro_f1": 0.966,
+        "entity_macro_f1": 0.9566,
+        "field_f1": 0.989,
+        "exact_payload_accuracy": 0.96,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.04,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              2,
+              0,
+              0,
+              16,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:transformer": {
+        "count": 100,
+        "action_macro_f1": 0.9622,
+        "entity_macro_f1": 0.9542,
+        "field_f1": 0.9836,
+        "exact_payload_accuracy": 0.96,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.04,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              2,
+              2,
+              0,
+              0,
+              0,
+              16,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      }
+    },
+    "test": {
+      "rules:logistic": {
+        "count": 100,
+        "action_macro_f1": 1.0,
+        "entity_macro_f1": 1.0,
+        "field_f1": 1.0,
+        "exact_payload_accuracy": 1.0,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.0,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              20,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:logistic": {
+        "count": 100,
+        "action_macro_f1": 0.9917,
+        "entity_macro_f1": 0.9656,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.99,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.01,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              19,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:naive_bayes": {
+        "count": 100,
+        "action_macro_f1": 0.9917,
+        "entity_macro_f1": 0.9895,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.99,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.01,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              19,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:svm": {
+        "count": 100,
+        "action_macro_f1": 0.9833,
+        "entity_macro_f1": 0.9678,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.98,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.02,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1,
+              0,
+              0,
+              18,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "model:transformer": {
+        "count": 100,
+        "action_macro_f1": 0.9609,
+        "entity_macro_f1": 0.9507,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.74,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.26,
+        "coverage": 0.56,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              3,
+              0,
+              0,
+              1,
+              0,
+              16,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:logistic": {
+        "count": 100,
+        "action_macro_f1": 0.9917,
+        "entity_macro_f1": 0.9656,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.99,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.01,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              19,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:naive_bayes": {
+        "count": 100,
+        "action_macro_f1": 0.9917,
+        "entity_macro_f1": 0.9895,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.99,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.01,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              19,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:svm": {
+        "count": 100,
+        "action_macro_f1": 0.9833,
+        "entity_macro_f1": 0.9678,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.98,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.02,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1,
+              0,
+              0,
+              18,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      },
+      "hybrid:transformer": {
+        "count": 100,
+        "action_macro_f1": 0.9609,
+        "entity_macro_f1": 0.9507,
+        "field_f1": 0.9945,
+        "exact_payload_accuracy": 0.98,
+        "schema_validity": 1.0,
+        "clarification_rate": 0.02,
+        "coverage": 0.8,
+        "accepted_accuracy": 1.0,
+        "confusion": {
+          "labels": [
+            "complete",
+            "create",
+            "delete",
+            "find",
+            "reschedule",
+            "unsupported",
+            "update"
+          ],
+          "matrix": [
+            [
+              10,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              15,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              15,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              10,
+              0,
+              0
+            ],
+            [
+              3,
+              0,
+              0,
+              1,
+              0,
+              16,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "acceptance_curve": [
+    {
+      "threshold": 0.5,
+      "coverage": 0.55,
+      "accepted_intent_accuracy": 1.0,
+      "accepted_count": 55
+    },
+    {
+      "threshold": 0.6,
+      "coverage": 0.55,
+      "accepted_intent_accuracy": 1.0,
+      "accepted_count": 55
+    },
+    {
+      "threshold": 0.7,
+      "coverage": 0.54,
+      "accepted_intent_accuracy": 1.0,
+      "accepted_count": 54
+    },
+    {
+      "threshold": 0.8,
+      "coverage": 0.27,
+      "accepted_intent_accuracy": 1.0,
+      "accepted_count": 27
+    },
+    {
+      "threshold": 0.9,
+      "coverage": 0.02,
+      "accepted_intent_accuracy": 1.0,
+      "accepted_count": 2
+    },
+    {
+      "threshold": 0.95,
+      "coverage": 0.0,
+      "accepted_intent_accuracy": 0.0,
+      "accepted_count": 0
+    }
+  ],
+  "finished_at": "2026-11-06T00:02:54.699627+00:00"
+}

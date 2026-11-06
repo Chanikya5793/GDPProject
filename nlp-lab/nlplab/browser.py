@@ -64,3 +64,16 @@ def run_pending():
 def checkpoint():
     with app.state.store.connect() as database:
         database.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+
+
+def transformer_missing():
+    from .language import normalize
+    from .transformer import key
+    config, _ = app.state.store.configuration()
+    texts = [normalize(row['text'], config)[0] for row in app.state.store.all('examples') if row['approved']]
+    return list(dict.fromkeys(text for text in texts if not app.state.store.get('embeddings', key(text))))
+
+
+def transformer_store(payload):
+    from .transformer import cache_records
+    cache_records(app.state.store, json.loads(payload))

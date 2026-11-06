@@ -2,6 +2,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +48,9 @@ class Store:
     def connect(self):
         db = sqlite3.connect(self.path, timeout=30)
         try:
-            db.execute("PRAGMA journal_mode=WAL")
+            # Browser workers serialize access. Avoid shared-memory WAL mapping
+            # in Emscripten when the embedding cache grows; IDBFS persists after commits.
+            db.execute("PRAGMA journal_mode=MEMORY" if sys.platform == 'emscripten' else "PRAGMA journal_mode=WAL")
             with db:
                 yield db
         finally:
