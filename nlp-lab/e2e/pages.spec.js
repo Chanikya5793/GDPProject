@@ -2,7 +2,10 @@ import { test, expect } from '@playwright/test'
 
 test('real browser Python handles requests, persists corrections, and trains a candidate', async ({ page }) => {
   const apiCalls = []
-  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) apiCalls.push(request.url()) })
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.origin === new URL(page.url()).origin && url.pathname.startsWith('/api/')) apiCalls.push(request.url())
+  })
   await page.goto('./')
   const runButton = page.getByRole('button', { name: 'Run pipeline', exact: true })
   const runRequest = async () => {
