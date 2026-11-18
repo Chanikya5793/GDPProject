@@ -12,6 +12,7 @@ export interface Task {
   id: PlannerRecordId;
   userId: string;
   title: string;
+  tagIds?: PlannerRecordId[];
   dueDate: string;
   dueTime: string;
   priority: 'high' | 'medium' | 'low';
@@ -36,6 +37,7 @@ export interface Reminder {
   id: PlannerRecordId;
   userId: string;
   title: string;
+  tagIds?: PlannerRecordId[];
   date: string;
   time: string;
   notes: string;
@@ -74,7 +76,7 @@ export interface Note {
   userId: string;
   title: string;
   body: string;
-  tagIds: number[];
+  tagIds: PlannerRecordId[];
   attachments?: NoteAttachment[];
   updatedAt: string;
   createdAt: string;
@@ -89,11 +91,11 @@ export interface Note {
    * `"NaN"`.
    */
   _serverAttachments?: ServerAttachment[];
-  _foreignTagIds?: string[];
+  _foreignTagIds?: string[]; // Legacy cache field; folded into tagIds when read.
 }
 
 export interface Tag {
-  id: number;
+  id: PlannerRecordId;
   name: string;
   color: string;
 }

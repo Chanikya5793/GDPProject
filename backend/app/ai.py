@@ -61,6 +61,7 @@ SYSTEM_INSTRUCTION = (
     "topics and wording, \"what did I write about the lab report\". Set query.\n"
     "  find: filter records exactly. Set any of entity_type, status (open, completed, "
     "any), priority, start and end as a due-date window, and query as a substring. "
+    "Set tag to the exact tag name for tagged tasks, reminders and notes. "
     "Use it to count things or to pull a specific slice.\n"
     "  agenda: everything landing between two dates, grouped by day. Set start and "
     "end.\n"
@@ -221,6 +222,7 @@ class ToolRequest(StrictModel):
 
     tool: ToolName
     query: Optional[str] = Field(default=None, max_length=500)
+    tag: Optional[str] = Field(default=None, max_length=80)
     entity_type: Optional[EntityType] = None
     status: Optional[Literal["open", "completed", "any"]] = None
     priority: Optional[Literal["low", "medium", "high"]] = None

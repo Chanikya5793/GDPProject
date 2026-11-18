@@ -51,10 +51,11 @@ export function describeDetail(detail: unknown, status: number): string {
  * listener can skip the echo of our own writes. Per launch is enough. */
 export const CLIENT_ID = `app-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(path: string, options: RequestInit = {}, expectedUid?: string): Promise<T> {
   if (!firebaseConfigured || !API_URL) throw new ApiError('Planner cloud service is not configured.', 503, 'not_configured');
   if (!auth?.currentUser) throw new ApiError('Sign in is required.', 401, 'unauthenticated');
   const user = auth.currentUser;
+  if (expectedUid && user.uid !== expectedUid) throw new ApiError('Account changed.', 401);
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancel: () => void = () => {};

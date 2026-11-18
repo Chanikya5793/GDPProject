@@ -1,27 +1,13 @@
-import { Note, PlannerRecordId, Tag } from '@/types';
-import { getItem, setItem } from './storage';
+import { Note, PlannerRecordId } from '@/types';
+import { getItem } from './storage';
+export { getTags, createTag, updateTag, deleteTag, restoreTagDirect } from './tags';
 import { addToTrash } from './trash';
 import { addLog } from './logs';
 import { createPlannerItem, deletePlannerItem, readCachedPlannerItems, updatePlannerItem } from './plannerClient';
 
 const NOTES_KEY = 'nw_notes';
-const TAGS_KEY = 'nw_tags';
-
-function defaultTags(): Tag[] {
-  return [
-    { id: 1, name: 'Chemistry', color: '#DBEAFE' },
-    { id: 2, name: 'CS', color: '#DCFCE7' },
-    { id: 3, name: 'History', color: '#FEF3C7' },
-    { id: 4, name: 'Study Tips', color: '#F3E8FF' },
-  ];
-}
-
 async function loadNotes(): Promise<Note[]> {
   return getItem<Note[]>(NOTES_KEY, []);
-}
-
-async function saveNotes(notes: Note[]): Promise<void> {
-  await setItem(NOTES_KEY, notes);
 }
 
 export async function getNotes(userId: string): Promise<Note[]> {
@@ -67,63 +53,4 @@ export async function deleteNote(id: PlannerRecordId): Promise<void> {
 
 export async function restoreNoteDirect(note: Note): Promise<void> {
   await createPlannerItem('note', note);
-}
-
-export async function getTags(): Promise<Tag[]> {
-  return getItem<Tag[]>(TAGS_KEY, defaultTags());
-}
-
-export async function createTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
-  const tags = await getTags();
-  const newTag: Tag = { ...tag, id: Date.now() };
-  await setItem(TAGS_KEY, [...tags, newTag]);
-  await addLog('created', 'tag', newTag.name, { entityId: newTag.id, after: newTag });
-  return newTag;
-}
-
-export async function updateTag(id: PlannerRecordId, updates: Partial<Tag>): Promise<Tag | undefined> {
-  const tags = await getTags();
-  const before = tags.find(tag => String(tag.id) === String(id));
-  const next = tags.map(tag => (String(tag.id) === String(id) ? { ...tag, ...updates } : tag));
-  await setItem(TAGS_KEY, next);
-  const after = next.find(tag => String(tag.id) === String(id));
-  await addLog('updated', 'tag', after?.name || '', { entityId: id, before, after });
-  return after;
-}
-
-export async function deleteTag(id: number): Promise<void> {
-  const tags = await getTags();
-  const removed = tags.find(t => t.id === id);
-  await setItem(TAGS_KEY, tags.filter(t => t.id !== id));
-  const notes = await loadNotes();
-  // Which notes carried the tag is recorded on the log entry, so restoring the
-  // tag can put it back on exactly those notes rather than leaving it orphaned.
-  const taggedNoteIds = notes.filter(n => n.tagIds.includes(id)).map(n => n.id);
-  await saveNotes(notes.map(n => ({ ...n, tagIds: n.tagIds.filter(tid => tid !== id) })));
-  await addLog('deleted', 'tag', removed?.name || '', {
-    entityId: id, before: removed ? { ...removed, taggedNoteIds } : undefined,
-  });
-}
-
-/**
- * Put a tag back, and re-attach it to the notes it was on.
- *
- * Deleting a tag strips it from every note, so restoring the tag record alone
- * would return an unused label rather than undoing the change.
- */
-export async function restoreTagDirect(tag: Tag & { taggedNoteIds?: PlannerRecordId[] }): Promise<void> {
-  const tags = await getTags();
-  const { taggedNoteIds, ...record } = tag;
-  if (!tags.some(item => String(item.id) === String(record.id))) {
-    await setItem(TAGS_KEY, [...tags, record]);
-  }
-  if (taggedNoteIds?.length) {
-    const notes = await loadNotes();
-    const targets = new Set(taggedNoteIds.map(String));
-    await saveNotes(notes.map(note => (
-      targets.has(String(note.id)) && !note.tagIds.includes(record.id)
-        ? { ...note, tagIds: [...note.tagIds, record.id] }
-        : note
-    )));
-  }
 }

@@ -1,3 +1,4 @@
+import TagPicker from '../components/TagPicker'
 import { useState, useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
@@ -99,6 +100,7 @@ function PieChart({ data }) {
 /* ─── Quick Task Modal ─── */
 
 function QuickTaskModal({ onSave, onClose }) {
+  const [tagIds, setTagIds] = useState([])
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState(today())
   const [priority, setPriority] = useState('medium')
@@ -138,7 +140,7 @@ function QuickTaskModal({ onSave, onClose }) {
       setTitleError(true)
       return
     }
-    submit({ title: title.trim(), dueDate, priority, category: 'Homework', dueTime: '', notes: '', reminders: addReminders ? reminders : [] })
+    submit({ tagIds, title: title.trim(), dueDate, priority, category: 'Homework', dueTime: '', notes: '', reminders: addReminders ? reminders : [] })
   }
 
   return (
@@ -195,6 +197,7 @@ function QuickTaskModal({ onSave, onClose }) {
               )}
             </div>
           </div>
+          <TagPicker value={tagIds} onChange={setTagIds} />
           <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -209,6 +212,7 @@ function QuickTaskModal({ onSave, onClose }) {
 /* ─── Quick Reminder Modal ─── */
 
 function QuickReminderModal({ onSave, onClose }) {
+  const [tagIds, setTagIds] = useState([])
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(today())
   const [time, setTime] = useState('')
@@ -221,7 +225,7 @@ function QuickReminderModal({ onSave, onClose }) {
       setTitleError(true)
       return
     }
-    submit({ title: title.trim(), date, time, notes: '' })
+    submit({ tagIds, title: title.trim(), date, time, notes: '' })
   }
 
   return (
@@ -251,6 +255,7 @@ function QuickReminderModal({ onSave, onClose }) {
               </div>
             </div>
           </div>
+          <TagPicker value={tagIds} onChange={setTagIds} />
           <SubmitError message={error} />
           <div className="form-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -372,7 +377,7 @@ function DashNoteWidget({ notes, tags, pinnedNoteId, onPinNote, onUpdateNote }) 
     setMode('preview')
   }
 
-  const noteTags = note ? tags.filter(t => note.tagIds?.includes(t.id)) : []
+  const noteTags = note ? tags.filter(t => note.tagIds?.some(id => String(id) === String(t.id))) : []
 
   // No note pinned — show picker
   if (!note) {
@@ -476,7 +481,7 @@ function PinnedNoteCard({ note, tags, onUpdate }) {
     setMode('preview')
   }, [note.id, note.title, note.body])
 
-  const noteTags = tags.filter(t => note.tagIds?.includes(t.id))
+  const noteTags = tags.filter(t => note.tagIds?.some(id => String(id) === String(t.id)))
 
   const handleSave = async () => {
     await onUpdate(note.id, { title: editTitle, body: editBody })

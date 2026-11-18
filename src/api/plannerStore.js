@@ -28,18 +28,18 @@ function fromServer(record) {
   }
   if (content.entity_type === 'task') return {
     ...common, title: content.title, dueDate: content.due_date || '', dueTime: content.due_time || '',
-    priority: content.priority, category: content.category, notes: content.notes,
+    tagIds: content.tag_ids || [], priority: content.priority, category: content.category, notes: content.notes,
     completed: content.completed, estimatedMinutes: content.estimated_minutes,
     keepScheduled: Boolean(content.keep_scheduled),
     seriesId: content.series_id || null, recurrence: content.recurrence || null,
   }
   if (content.entity_type === 'reminder') return {
     ...common, title: content.title, date: content.date, time: content.time || '',
-    notes: content.notes, completed: content.completed,
+    tagIds: content.tag_ids || [], notes: content.notes, completed: content.completed,
     seriesId: content.series_id || null, recurrence: content.recurrence || null,
   }
   if (content.entity_type === 'note') return {
-    ...common, title: content.title, body: content.body, tagIds: content.tag_ids,
+    ...common, title: content.title, body: content.body, tagIds: content.tag_ids || [],
     attachments: (content.attachments || []).map(item => ({
       id: item.attachment_id, name: item.filename, text: item.text,
       approvedForAi: item.approved_for_ai,
@@ -53,12 +53,14 @@ function toServer(entityType, item) {
     entity_type: 'task', title: item.title, due_date: item.dueDate || null,
     due_time: item.dueTime || null, priority: item.priority || 'medium',
     category: item.category || 'Other', notes: item.notes || '',
+    tag_ids: (item.tagIds || []).map(String),
     completed: Boolean(item.completed), estimated_minutes: item.estimatedMinutes || 30,
     keep_scheduled: Boolean(item.keepScheduled),
     series_id: item.seriesId || null, recurrence: item.recurrence || null,
   }
   if (entityType === 'reminder') return {
     entity_type: 'reminder', title: item.title, date: item.date,
+    tag_ids: (item.tagIds || []).map(String),
     time: item.time || null, notes: item.notes || '', completed: Boolean(item.completed),
     series_id: item.seriesId || null, recurrence: item.recurrence || null,
   }

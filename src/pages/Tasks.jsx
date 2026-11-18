@@ -1,3 +1,4 @@
+import TagPicker from '../components/TagPicker'
 
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
@@ -111,6 +112,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
     dueTime: task?.dueTime || '',
     priority: task?.priority || defaultPriority || 'medium',
     category: task?.category || defaultCategory || 'Homework',
+    tagIds: task?.tagIds ?? [],
     notes: task?.notes || '',
     _approvedForAi: task?._approvedForAi ?? true,
     keepScheduled: task?.keepScheduled ?? false,
@@ -207,6 +209,7 @@ function TaskModal({ task, categories, onSave, onClose, defaultPriority, default
                 </select>
               </div>
             </div>
+            <TagPicker value={form.tagIds} onChange={ids => set('tagIds', ids)} />
             <div className="form-group">
               <label className="form-label">Notes</label>
               <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />

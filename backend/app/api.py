@@ -37,6 +37,7 @@ from .models import (
     MigrationResult,
     PlannerRecord,
     PlannerSettings,
+    PlannerTag,
     PrivacySettings,
     ProposalOperation,
     ProposedChange,
@@ -47,6 +48,7 @@ from .models import (
     RejectedMigrationItem,
     RejectProposalRequest,
     RenameConversationRequest,
+    TagFields,
 )
 from .proposals import InvalidProposal
 from .rag import AgentStep
@@ -467,6 +469,23 @@ def create_app(container: Container | None = None) -> FastAPI:
     @app.get("/healthz")
     def health(_services: ContainerDep) -> Dict[str, Any]:
         return {"status": "ok", "cloud_services_initialized": True}
+
+    @app.get("/v1/tags", response_model=list[PlannerTag])
+    def list_tags(user: CurrentUser, services: ContainerDep):
+        return services.repository.list_tags(user.uid)
+
+    @app.put("/v1/tags/{tag_id}", status_code=204)
+    def save_tag(
+        tag_id: RecordId, body: TagFields, user: CurrentUser, services: ContainerDep,
+        import_only: bool = False,
+    ):
+        services.repository.save_tag(user.uid, PlannerTag(id=tag_id, **body.model_dump()), import_only)
+        return Response(status_code=204)
+
+    @app.delete("/v1/tags/{tag_id}", status_code=204)
+    def delete_tag(tag_id: RecordId, user: CurrentUser, services: ContainerDep):
+        services.repository.delete_tag(user.uid, tag_id)
+        return Response(status_code=204)
 
     @app.get("/v1/records/{entity_type}", response_model=list[PlannerRecord])
     def list_records(entity_type: EntityType, user: CurrentUser, services: ContainerDep):

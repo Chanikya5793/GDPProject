@@ -1,3 +1,4 @@
+import TagPicker from '@/components/TagPicker';
 import { refreshPlannerData } from '@/api/plannerClient';
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -271,6 +272,7 @@ function ReminderModal({
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [approvedForAi, setApprovedForAi] = useState(true);
+  const [tagIds, setTagIds] = useState<NonNullable<Reminder['tagIds']>>([]);
   const [notes, setNotes] = useState('');
   const [titleError, setTitleError] = useState(false);
   const { submit, busy, showBusy, error, setError } = useSubmit();
@@ -283,6 +285,7 @@ function ReminderModal({
       setDate(reminder?.date || draft.date || localDateStr());
       setTime(reminder?.time || draft.time);
       setApprovedForAi(reminder?._approvedForAi ?? true);
+      setTagIds(reminder?.tagIds ?? []);
       setNotes(reminder?.notes || draft.notes);
     }
   }, [visible, reminder]);
@@ -319,7 +322,7 @@ function ReminderModal({
                 setTitleError(true);
                 return;
               }
-              submit(() => onSave({ title: title.trim(), date, time: parsedTime.value ?? '', notes, _approvedForAi: approvedForAi }));
+              submit(() => onSave({ title: title.trim(), date, time: parsedTime.value ?? '', notes, tagIds, _approvedForAi: approvedForAi }));
             }}
           />
         </View>
@@ -367,6 +370,7 @@ function ReminderModal({
             />
           </View>
 
+          {visible && <TagPicker value={tagIds} onChange={setTagIds} />}
           <Text style={ms.label}>Notes</Text>
           <TextInput style={[ms.input, { height: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Details..." placeholderTextColor={colors.textMuted} multiline />
         </ScrollView>

@@ -1,3 +1,4 @@
+import TagPicker from '@/components/TagPicker';
 import { refreshPlannerData } from '@/api/plannerClient';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -715,6 +716,7 @@ function TaskModal({
   const [keepScheduled, setKeepScheduled] = useState(false);
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [category, setCategory] = useState('Homework');
+  const [tagIds, setTagIds] = useState<NonNullable<Task['tagIds']>>([]);
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
@@ -726,6 +728,7 @@ function TaskModal({
       setKeepScheduled(task?.keepScheduled ?? false);
       setPriority((task?.priority || draft.priority || defaultPriority) as Task['priority']);
       setCategory(task?.category || draft.category || defaultCategory);
+      setTagIds(task?.tagIds ?? []);
       setNotes(task?.notes || draft.notes);
       setTitleError(false);
       setError('');
@@ -743,7 +746,7 @@ function TaskModal({
     }
     submit(() => onSave({
       title: title.trim(), dueDate, dueTime: parsedTime.value ?? '',
-      priority, category, notes, _approvedForAi: approvedForAi,
+      priority, category, notes, tagIds, _approvedForAi: approvedForAi,
       keepScheduled,
     }));
   };
@@ -865,6 +868,7 @@ function TaskModal({
             />
           </View>
 
+          {visible && <TagPicker value={tagIds} onChange={setTagIds} />}
           <Text style={ms.label}>Notes</Text>
           <TextInput
             style={[ms.input, { height: 80, textAlignVertical: 'top' }]}

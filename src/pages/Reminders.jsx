@@ -1,3 +1,4 @@
+import TagPicker from '../components/TagPicker'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getReminders, createReminder, updateReminder, deleteReminder } from '../api/reminders'
@@ -39,6 +40,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
     title: reminder?.title || '',
     date: reminder?.date || today(),
     time: reminder?.time || '',
+    tagIds: reminder?.tagIds ?? [],
     notes: reminder?.notes || '',
     _approvedForAi: reminder?._approvedForAi ?? true,
   })
@@ -91,6 +93,7 @@ function ReminderModal({ reminder, onSave, onClose }) {
                 <input className="form-input" type="time" value={form.time} onChange={e => set('time', e.target.value)} />
               </div>
             </div>
+            <TagPicker value={form.tagIds} onChange={ids => set('tagIds', ids)} />
             <div className="form-group">
               <label className="form-label">Notes</label>
               <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any additional details..." />

@@ -464,9 +464,18 @@ class PlannerSession:
                 {"error": "notes have no dates; search notes by query instead.",
                  "count": 0, "returned": 0, "results": []},
             )
+        matching_tags = None
+        if request.tag:
+            name = request.tag.removeprefix("#").strip().casefold()
+            matching_tags = {
+                tag.id for tag in self.toolbox.repository.list_tags(self.uid)
+                if tag.name.casefold() == name
+            }
         matches: List[PlannerRecord] = []
         for record in self.records:
             content = record.content
+            if matching_tags is not None and matching_tags.isdisjoint(getattr(content, "tag_ids", [])):
+                continue
             if request.entity_type and content.entity_type != request.entity_type:
                 continue
             if request.status == "open" and not _is_open(record):

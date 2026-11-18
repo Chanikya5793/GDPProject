@@ -20,9 +20,11 @@ from .models import (
     PlannerContent,
     PlannerRecord,
     PlannerSettings,
+    PlannerTag,
     PrivacySettings,
     ProposedRecord,
     RecordUpsertRequest,
+    TaggedContent,
 )
 
 CONTENT_ADAPTER = TypeAdapter(PlannerContent)
@@ -54,15 +56,29 @@ def _created_records(proposal: ActionProposal) -> List[ProposedRecord]:
     return [ProposedRecord(record_id=proposal.record_id, content=proposal.after)]
 
 
+def preserve_omitted_tags(content: PlannerContent, current: PlannerContent) -> PlannerContent:
+    if (
+        isinstance(content, TaggedContent)
+        and isinstance(current, TaggedContent)
+        and "tag_ids" not in content.model_fields_set
+    ):
+        return content.model_copy(update={"tag_ids": current.tag_ids})
+    return content
+
+
 def _upsert_hash(entity_type: EntityType, record_id: str, request: RecordUpsertRequest) -> str:
     """What an idempotency key stands for: the body *and* where it was sent.
 
     Hashing the body alone let a key be replayed against a different record
     with the same content and answer as if the second write had happened.
     """
-    return hashlib.sha256(
-        f"upsert:{entity_type.value}:{record_id}:{request.model_dump_json()}".encode()
-    ).hexdigest()
+    # Keeps cached retries from task and reminder clients predating tags on
+    # the same digest while distinguishing a new request to clear all tags.
+    old_format = entity_type in (EntityType.task, EntityType.reminder) and (
+        "tag_ids" not in request.content.model_fields_set
+    )
+    body = request.model_dump_json(exclude={"content": {"tag_ids"}} if old_format else None)
+    return hashlib.sha256(f"upsert:{entity_type.value}:{record_id}:{body}".encode()).hexdigest()
 
 
 class RevisionConflict(RuntimeError):
@@ -107,6 +123,9 @@ def _marker_fields(kinds: List[str], now: datetime) -> Dict[str, object]:
 
 
 class PlannerRepository(Protocol):
+    def list_tags(self, uid: str) -> List[PlannerTag]: ...
+    def save_tag(self, uid: str, tag: PlannerTag, import_only: bool = False) -> None: ...
+    def delete_tag(self, uid: str, tag_id: str) -> None: ...
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]: ...
     def get_record(self, uid: str, entity_type: EntityType, record_id: str) -> PlannerRecord: ...
     def upsert_record(
@@ -151,6 +170,7 @@ class MemoryPlannerRepository:
     """Thread-safe contract adapter used by tests; never selected by production startup."""
 
     def __init__(self) -> None:
+        self.tags: Dict[Tuple[str, str], Optional[PlannerTag]] = {}
         self.records: Dict[Tuple[str, EntityType, str], PlannerRecord] = {}
         self.idempotency: Dict[Tuple[str, str], Tuple[str, Optional[PlannerRecord]]] = {}
         self.privacy: Dict[str, PrivacySettings] = {}
@@ -187,6 +207,20 @@ class MemoryPlannerRepository:
         marker[kind.value] = int(marker.get(kind.value, 0)) + 1
         marker["by"] = current_client.get()
         _note_change(uid)
+
+    def list_tags(self, uid: str) -> List[PlannerTag]:
+        with self._lock:
+            return [deepcopy(tag) for (owner, _), tag in self.tags.items() if owner == uid and tag is not None]
+
+    def save_tag(self, uid: str, tag: PlannerTag, import_only: bool = False) -> None:
+        with self._lock:
+            key = (uid, tag.id)
+            if not import_only or key not in self.tags:
+                self.tags[key] = deepcopy(tag)
+
+    def delete_tag(self, uid: str, tag_id: str) -> None:
+        with self._lock:
+            self.tags[(uid, tag_id)] = None
 
     def list_records(self, uid: str, entity_type: EntityType) -> List[PlannerRecord]:
         return [
@@ -232,7 +266,7 @@ class MemoryPlannerRepository:
             result = PlannerRecord(
                 record_id=record_id,
                 revision=revision,
-                content=request.content,
+                content=preserve_omitted_tags(request.content, current.content) if current else request.content,
                 approved_for_ai=request.approved_for_ai,
                 created_at=created_at,
                 updated_at=now,
@@ -474,6 +508,33 @@ class FirestorePlannerRepository:
         snapshot = self._sync_ref(uid).get()
         return (snapshot.to_dict() or {"version": 0}) if snapshot.exists else {"version": 0}
 
+    def _tags(self, uid: str):
+        return self.client.collection("users").document(uid).collection("tags")
+
+    def list_tags(self, uid: str) -> List[PlannerTag]:
+        tags = []
+        for snapshot in self._tags(uid).stream():
+            payload = snapshot.to_dict().get("encrypted_payload")
+            if payload:
+                content = self.cipher.decrypt(uid, "tag", snapshot.id, 1, EncryptedPayload.from_dict(payload))
+                tags.append(PlannerTag.model_validate(content))
+        return tags
+
+    def save_tag(self, uid: str, tag: PlannerTag, import_only: bool = False) -> None:
+        ref = self._tags(uid).document(tag.id)
+        payload = self.cipher.encrypt(uid, "tag", tag.id, 1, tag.model_dump(mode="json"))
+
+        @firestore.transactional
+        def apply(txn):
+            if not import_only or not ref.get(transaction=txn).exists:
+                txn.set(ref, {"encrypted_payload": payload.to_dict()})
+
+        apply(self.client.transaction())
+
+    def delete_tag(self, uid: str, tag_id: str) -> None:
+        # An older installation may still have this tag in its legacy cache.
+        self._tags(uid).document(tag_id).set({"deleted": True})
+
     def _record_ref(self, uid: str, entity_type: EntityType, record_id: str):
         return self.client.collection("users").document(uid).collection("records").document(
             f"{entity_type.value}:{record_id}"
@@ -543,8 +604,11 @@ class FirestorePlannerRepository:
                     raise RevisionConflict("Cannot create with a nonzero revision")
                 revision = 1
                 created_at = now
+            content = request.content
+            if current.exists and isinstance(content, TaggedContent) and "tag_ids" not in content.model_fields_set:
+                content = preserve_omitted_tags(content, self._deserialize(uid, current).content)
             encrypted = self.cipher.encrypt(
-                uid, entity_type.value, record_id, revision, request.content.model_dump(mode="json")
+                uid, entity_type.value, record_id, revision, content.model_dump(mode="json")
             )
             txn.set(ref, {
                 "uid": uid,

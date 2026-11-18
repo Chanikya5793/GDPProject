@@ -34,7 +34,7 @@ function readFileAsDataUrl(file) {
 
 function NoteListItem({ note, selected, tags, isPinned, onClick }) {
   const preview = note.body.replace(/[#*_`>\u005B\u005D-]/g, '').slice(0, 80)
-  const noteTags = tags.filter(t => note.tagIds.includes(t.id))
+  const noteTags = tags.filter(t => note.tagIds.some(id => String(id) === String(t.id)))
 
   return (
     <div className={`note-list-item${selected ? ' selected' : ''}`} onClick={onClick}>
@@ -190,7 +190,7 @@ export default function Notes() {
   }, [])
 
   const selectedNote = notes.find(n => n.id === selectedId)
-  const selectedTags = selectedNote ? tags.filter(t => selectedNote.tagIds.includes(t.id)) : []
+  const selectedTags = selectedNote ? tags.filter(t => selectedNote.tagIds.some(id => String(id) === String(t.id))) : []
 
   const selectNote = async (note) => {
     if (dirty && selectedNote) {
@@ -238,8 +238,8 @@ export default function Notes() {
 
   const handleToggleTag = async (tagId) => {
     if (!selectedNote) return
-    const newTagIds = selectedNote.tagIds.includes(tagId)
-      ? selectedNote.tagIds.filter(id => id !== tagId)
+    const newTagIds = selectedNote.tagIds.some(id => String(id) === String(tagId))
+      ? selectedNote.tagIds.filter(id => String(id) !== String(tagId))
       : [...selectedNote.tagIds, tagId]
     const updated = await updateNote(selectedId, { tagIds: newTagIds })
     setNotes(prev => prev.map(n => n.id === selectedId ? updated : n))
@@ -247,7 +247,7 @@ export default function Notes() {
 
   const handleRemoveTag = async (tagId) => {
     if (!selectedNote) return
-    const updated = await updateNote(selectedId, { tagIds: selectedNote.tagIds.filter(id => id !== tagId) })
+    const updated = await updateNote(selectedId, { tagIds: selectedNote.tagIds.filter(id => String(id) !== String(tagId)) })
     setNotes(prev => prev.map(n => n.id === selectedId ? updated : n))
   }
 
@@ -329,7 +329,7 @@ export default function Notes() {
     filteredNotes = filteredNotes.filter(n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q))
   }
   if (tagFilter) {
-    filteredNotes = filteredNotes.filter(n => n.tagIds.includes(tagFilter))
+    filteredNotes = filteredNotes.filter(n => n.tagIds.some(id => String(id) === tagFilter))
   }
 
   const renderMarkdown = (text) => {
