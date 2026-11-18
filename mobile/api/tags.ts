@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { Note, PlannerRecordId, Tag } from '@/types';
 import { addLog } from './logs';
 import { apiConfigured, apiRequest } from './client';
+import { readCachedPlannerItems, updatePlannerItem } from './plannerClient';
 import { getItem, getStorageUid, setItem, updateItem } from './storage';
 
 const LEGACY = 'nw_tags';
@@ -17,10 +18,10 @@ function tagPath(id: PlannerRecordId) {
   return `/v1/tags/${encodeURIComponent(id)}`;
 }
 
-function putTag({ id, name, color }: Tag, importOnly = false) {
+function putTag({ id, name, color }: Tag, uid: string | null, importOnly = false) {
   return apiRequest<void>(tagPath(id) + (importOnly ? '?import_only=true' : ''), {
     method: 'PUT', body: JSON.stringify({ name, color }),
-  });
+  }, uid ?? undefined);
 }
 
 function assertScope(uid: string | null) {
@@ -42,11 +43,11 @@ export async function getTags(): Promise<Tag[]> {
     if (cached === null) {
       for (const tag of legacy) {
         assertScope(uid);
-        await putTag(tag, true);
+        await putTag(tag, uid, true);
       }
     }
     assertScope(uid);
-    const tags = await apiRequest<Tag[]>('/v1/tags');
+    const tags = await apiRequest<Tag[]>('/v1/tags', {}, uid ?? undefined);
     assertScope(uid);
     await setItem(CATALOG, tags);
     return tags;
@@ -56,8 +57,8 @@ export async function getTags(): Promise<Tag[]> {
   }
 }
 
-function mutateTags(updater: (tags: Tag[]) => Tag[] | undefined) {
-  return updateItem(apiConfigured() ? CATALOG : LEGACY, DEFAULT_TAGS, updater);
+function mutateTags(fallback: Tag[], updater: (tags: Tag[]) => Tag[] | undefined) {
+  return updateItem(apiConfigured() ? CATALOG : LEGACY, fallback, updater);
 }
 
 export async function createTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
@@ -69,36 +70,47 @@ export async function createTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
 
 export async function updateTag(id: PlannerRecordId, updates: Partial<Tag>): Promise<Tag | undefined> {
   const uid = getStorageUid();
-  const before = (await getTags()).find(tag => String(tag.id) === String(id));
+  const tags = await getTags();
+  const before = tags.find(tag => String(tag.id) === String(id));
   assertScope(uid);
   if (!before) return undefined;
   const tag = { ...before, ...updates, id: before.id };
-  if (apiConfigured()) await putTag(tag);
+  if (apiConfigured()) await putTag(tag, uid);
   assertScope(uid);
-  await mutateTags(tags => tags.map(item => String(item.id) === String(id) ? tag : item));
+  await mutateTags(tags, current => current.map(item => String(item.id) === String(id) ? tag : item));
   await addLog('updated', 'tag', tag.name, { entityId: id, before, after: tag });
   return tag;
 }
 
 export async function deleteTag(id: PlannerRecordId): Promise<void> {
   const uid = getStorageUid();
-  const tag = (await getTags()).find(item => String(item.id) === String(id));
+  const tags = await getTags();
+  const tag = tags.find(item => String(item.id) === String(id));
   assertScope(uid);
-  if (apiConfigured()) await apiRequest<void>(tagPath(id), { method: 'DELETE' });
+  if (apiConfigured()) await apiRequest<void>(tagPath(id), { method: 'DELETE' }, uid ?? undefined);
   assertScope(uid);
-  await mutateTags(tags => tags.filter(item => String(item.id) !== String(id)));
+  await mutateTags(tags, current => current.filter(item => String(item.id) !== String(id)));
   await addLog('deleted', 'tag', tag?.name || '', { entityId: id, before: tag });
 }
 
-export async function restoreTagDirect(tag: Tag): Promise<void> {
+export async function restoreTagDirect(tag: Tag & { taggedNoteIds?: PlannerRecordId[] }): Promise<void> {
   const uid = getStorageUid();
-  if (apiConfigured()) {
-    await getTags();
-    assertScope(uid);
-    await putTag(tag);
-  }
+  const { taggedNoteIds, ...definition } = tag;
+  const catalog = await getTags();
   assertScope(uid);
-  await mutateTags(tags => (
-    tags.some(item => String(item.id) === String(tag.id)) ? undefined : [...tags, tag]
+  if (apiConfigured()) await putTag(definition, uid);
+  assertScope(uid);
+  await mutateTags(catalog, tags => (
+    tags.some(item => String(item.id) === String(tag.id)) ? undefined : [...tags, definition]
   ));
+  if (taggedNoteIds?.length) {
+    const targets = new Set(taggedNoteIds.map(String));
+    const notes = await readCachedPlannerItems<Note>('note');
+    for (const note of notes) {
+      if (targets.has(String(note.id)) && !note.tagIds.some(id => String(id) === String(tag.id))) {
+        assertScope(uid);
+        await updatePlannerItem<Note>('note', note.id, { tagIds: [...note.tagIds, tag.id] });
+      }
+    }
+  }
 }
