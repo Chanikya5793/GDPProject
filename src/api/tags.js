@@ -15,10 +15,10 @@ function tagPath(id) {
   return `/v1/tags/${encodeURIComponent(id)}`
 }
 
-function putTag({ id, name, color }, importOnly = false) {
+function putTag({ id, name, color }, uid, importOnly = false) {
   return apiFetch(tagPath(id) + (importOnly ? '?import_only=true' : ''), {
     method: 'PUT', body: JSON.stringify({ name, color }),
-  })
+  }, uid)
 }
 
 export async function getTags() {
@@ -30,11 +30,11 @@ export async function getTags() {
     if (cached === null) {
       for (const tag of legacy) {
         if (authenticatedUid() !== uid) throw new Error('Account changed.')
-        await putTag(tag, true)
+        await putTag(tag, uid, true)
       }
     }
     if (authenticatedUid() !== uid) throw new Error('Account changed.')
-    const tags = await apiFetch('/v1/tags')
+    const tags = await apiFetch('/v1/tags', {}, uid)
     if (authenticatedUid() !== uid) throw new Error('Account changed.')
     await setSecureCollection(CATALOG, tags)
     return tags
@@ -60,7 +60,7 @@ export async function updateTag(id, updates) {
   const before = (await getTags()).find(tag => String(tag.id) === String(id))
   if (!before || authenticatedUid() !== uid) throw new Error('Tag is no longer available.')
   const tag = { ...before, ...updates, id: before.id }
-  if (apiConfigured()) await putTag(tag)
+  if (apiConfigured()) await putTag(tag, uid)
   if (authenticatedUid() !== uid) throw new Error('Account changed.')
   await mutateTags(tags => tags.map(item => String(item.id) === String(id) ? tag : item))
   await addLog('updated', 'tag', tag.name, { entityId: id, before, after: tag })
@@ -71,7 +71,7 @@ export async function deleteTag(id) {
   const uid = authenticatedUid()
   const tag = (await getTags()).find(item => String(item.id) === String(id))
   if (authenticatedUid() !== uid) throw new Error('Account changed.')
-  if (apiConfigured()) await apiFetch(tagPath(id), { method: 'DELETE' })
+  if (apiConfigured()) await apiFetch(tagPath(id), { method: 'DELETE' }, uid)
   if (authenticatedUid() !== uid) throw new Error('Account changed.')
   await mutateTags(tags => tags.filter(item => String(item.id) !== String(id)))
   // Existing records keep the reference so restoring a tag restores its links.
@@ -84,7 +84,7 @@ export async function restoreTagDirect(tag) {
   if (apiConfigured()) {
     await getTags()
     if (authenticatedUid() !== uid) throw new Error('Account changed.')
-    await putTag(tag)
+    await putTag(tag, uid)
   }
   if (authenticatedUid() !== uid) throw new Error('Account changed.')
   await mutateTags(tags => (
