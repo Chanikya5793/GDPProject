@@ -2,12 +2,15 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   applyActionCode,
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   onAuthStateChanged,
   reload,
   sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  updatePassword,
   verifyBeforeUpdateEmail,
 } from 'firebase/auth'
 import { auth, firebaseConfigured, persistenceReady } from '../lib/firebase'
@@ -66,6 +69,8 @@ function publicUser(firebaseUser) {
 function authMessage(error) {
   const messages = {
     'auth/email-already-in-use': 'That email already has an account.',
+    'auth/wrong-password': 'The current password is incorrect.',
+    'auth/password-does-not-meet-requirements': 'Choose a password that meets the account password requirements.',
     'auth/invalid-credential': 'The email or password is incorrect.',
     'auth/invalid-email': 'Enter a valid email address.',
     'auth/too-many-requests': 'Too many attempts. Please wait and try again.',
@@ -239,6 +244,23 @@ export function AuthProvider({ children }) {
     setUser(publicUser(auth.currentUser))
   }
 
+  const changePassword = async (currentPassword, newPassword) => {
+    const account = auth?.currentUser
+    if (!firebaseConfigured || !account?.email) {
+      return { success: false, error: 'Sign in with your planner account to change your password.' }
+    }
+    try {
+      await reauthenticateWithCredential(account, EmailAuthProvider.credential(account.email, currentPassword))
+      if (auth.currentUser !== account) {
+        return { success: false, error: 'Your session changed. Sign in and try again.' }
+      }
+      await updatePassword(account, newPassword)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: authMessage(error) }
+    }
+  }
+
   const logout = async () => {
     if (!firebaseConfigured || !auth) {
       localStorage.removeItem(DEMO_USER_KEY)
@@ -255,7 +277,7 @@ export function AuthProvider({ children }) {
   // loading is read by PrivateRoute: without it the guard never waits for auth
   // to resolve and bounces a signed-in user to the login screen on reload.
   const value = useMemo(() => ({
-    user, loading, configured: firebaseConfigured, login, register, logout, updateUser,
+    user, loading, configured: firebaseConfigured, login, register, logout, updateUser, changePassword,
     refreshUser, resendVerification, applyVerification, verificationSentAt,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [user, loading, verificationSentAt])
