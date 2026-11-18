@@ -500,3 +500,21 @@ def test_tag_is_created_and_assigned_only_after_confirmation(services):
     assert tag.name == "Study"
     assert services.repository.get_record("alice", EntityType.task, "t1").content.tag_ids == [tag.id]
     assert not services.repository.list_tags("bob")
+
+
+def test_one_tag_is_shared_by_multiple_changes_in_a_turn(services):
+    pending_tags = {}
+    proposals = [
+        services.proposals.prepare("alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=kind, title="Review",
+            tag_name=name,
+        ), "", pending_tags=pending_tags).proposal
+        for kind, name in [(EntityType.task, "Physics"), (EntityType.note, "physics")]
+    ]
+    # Either preview can be confirmed first.
+    for index, proposal in enumerate(reversed(proposals)):
+        services.proposals.confirm("alice", proposal.proposal_id, f"tag-batch-{index}", None)
+    [tag] = services.repository.list_tags("alice")
+    for proposal in proposals:
+        record = services.repository.get_record("alice", proposal.entity_type, proposal.record_id)
+        assert record.content.tag_ids == [tag.id]

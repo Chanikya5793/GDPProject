@@ -187,6 +187,7 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
     """
     proposals: list[ActionProposal] = []
     refusals: list[str] = []
+    pending_tags: dict[str, PlannerTag] = {}
     # A safety net for the model reaching for the wrong id. Records now carry
     # both, and the instructions say which is which, but an S-number in
     # record_id used to mean a duplicate got created instead of an edit -- and
@@ -206,7 +207,7 @@ def build_chat_response(services: Container, uid: str, answer, citations, disclo
         # rationale only has to say what kind of change this is. It used to be
         # the whole answer, which is what forced the assistant to write prose
         # even when the card said it all.
-        prepared = services.proposals.prepare(uid, action, _rationale(action))
+        prepared = services.proposals.prepare(uid, action, _rationale(action), pending_tags=pending_tags)
         if prepared.proposal:
             proposals.append(prepared.proposal)
         else:

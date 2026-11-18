@@ -208,7 +208,10 @@ class ProposalService:
         self.audit = audit
         self.ttl_hours = ttl_hours
 
-    def prepare(self, uid: str, action: GeneratedAction, rationale: str) -> PreparedAction:
+    def prepare(
+        self, uid: str, action: GeneratedAction, rationale: str,
+        *, pending_tags: dict[str, PlannerTag] | None = None,
+    ) -> PreparedAction:
         """Build the preview, or say plainly why the change cannot be one."""
         now = datetime.now(timezone.utc)
         before = None
@@ -229,9 +232,14 @@ class ProposalService:
                 key=lambda item: item.id,
             )
             create_tag = not matching
-            tag = matching[0] if matching else PlannerTag(
-                id=generated_record_id(), name=name, color="#DBEAFE",
-            )
+            if matching:
+                tag = matching[0]
+            elif pending_tags is not None and name.casefold() in pending_tags:
+                tag = pending_tags[name.casefold()]
+            else:
+                tag = PlannerTag(id=generated_record_id(), name=name, color="#DBEAFE")
+                if pending_tags is not None:
+                    pending_tags[name.casefold()] = tag
 
         if action.operation == ProposalOperation.create:
             if not action.title:
