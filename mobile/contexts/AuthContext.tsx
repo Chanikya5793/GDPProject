@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import {
-  createUserWithEmailAndPassword, onAuthStateChanged, reload, sendEmailVerification,
+  createUserWithEmailAndPassword, onAuthStateChanged, reload, sendEmailVerification, sendPasswordResetEmail,
   signInWithEmailAndPassword, signOut, updateProfile, verifyBeforeUpdateEmail,
 } from 'firebase/auth';
 import { User } from '@/types';
@@ -15,6 +15,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   configured: boolean;
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string; notice?: string }>;
   updateUser: (updates: Partial<User>) => Promise<void>;
@@ -91,6 +92,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
   }, []);
+
+  const requestPasswordReset = async (typed: string) => {
+    if (!firebaseConfigured || !auth) return { success: false, error: 'Password recovery is unavailable.' };
+    const email = campusEmail(typed);
+    if (!email) return { success: false, error: 'Enter your S number or Northwest email.' };
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return { success: true };
+    } catch (error) {
+      // Keep Firebase projects without email enumeration protection from
+      // revealing whether an address is registered.
+      const code = (error as { code?: string })?.code;
+      if (code === 'auth/user-not-found' || code === 'auth/user-disabled') return { success: true };
+      if (code === 'auth/invalid-email') return { success: false, error: 'Enter a valid email address.' };
+      return { success: false, error: message(error) };
+    }
+  };
 
   const login = async (typed: string, password: string) => {
     const email = campusEmail(typed);
@@ -179,7 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, configured: firebaseConfigured, login, register, updateUser, logout,
+      user, loading, configured: firebaseConfigured, requestPasswordReset, login, register, updateUser, logout,
       refreshUser, resendVerification, verificationSentAt,
     }}>
       {children}

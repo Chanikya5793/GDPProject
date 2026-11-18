@@ -10,17 +10,31 @@ import { createStyles } from '@/theme/createStyles';
 import { campusEmail } from '@/utils/campusEmail';
 
 export default function LoginScreen() {
-  const { login, register } = useAuth();
+  const { login, register, configured, requestPasswordReset } = useAuth();
   const { colors, accent, appearance } = useAppTheme();
-  const [isRegister, setIsRegister] = useState(false);
+  const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
+  const isRegister = mode === 'register';
+  const isReset = mode === 'reset';
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = async () => {
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const changeMode = (next: typeof mode) => {
+    setMode(next);
     setError('');
-    if (!email.trim() || !password.trim()) {
+    setNotice('');
+    setPassword('');
+  };
+
+  const handleSubmit = async () => {
+    if (busy) return;
+    setError('');
+    setNotice('');
+    if (!email.trim() || (!isReset && !password.trim())) {
       setError('Please fill in all fields');
       return;
     }
@@ -29,14 +43,22 @@ export default function LoginScreen() {
       return;
     }
 
-    const result = isRegister
-      ? await register(name.trim(), email.trim(), password)
-      : await login(email.trim(), password);
+    setBusy(true);
+    try {
+      if (isReset) {
+        const result = await requestPasswordReset(email);
+        if (result.success) setNotice('If a planner account exists for that address, a password reset link will arrive by email.');
+        else setError(result.error || 'Could not send password reset email.');
+        return;
+      }
+      const result = isRegister
+        ? await register(name.trim(), email.trim(), password)
+        : await login(email.trim(), password);
 
-    if (result.success) {
-      router.replace('/(tabs)');
-    } else {
-      setError(result.error || 'Authentication failed.');
+      if (result.success) router.replace('/(tabs)');
+      else setError(result.error || 'Authentication failed.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -61,10 +83,11 @@ export default function LoginScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>
-            {isRegister ? 'Create Account' : 'Welcome Back'}
+            {{ login: 'Welcome Back', register: 'Create Account', reset: 'Reset your password' }[mode]}
           </Text>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {notice ? <Text accessibilityLiveRegion="polite" style={styles.hint}>{notice}</Text> : null}
 
           {isRegister && (
             <View style={styles.field}>
@@ -95,38 +118,47 @@ export default function LoginScreen() {
               autoCorrect={false}
             />
             {email.trim() && !email.includes('@') ? (
-              <Text style={styles.hint}>Signs in as {campusEmail(email)}</Text>
+              <Text style={styles.hint}>{isReset ? 'Reset email goes to' : 'Signs in as'} {campusEmail(email)}</Text>
             ) : null}
           </View>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor={colors.textMuted}
-              secureTextEntry
-            />
-          </View>
+          {!isReset && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+              />
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.button, { backgroundColor: accent.primary }]}
             onPress={handleSubmit}
+            disabled={busy}
             activeOpacity={0.8}
           >
             <Text style={styles.buttonText}>
-              {isRegister ? 'Create Account' : 'Sign In'}
+              {{ login: 'Sign In', register: 'Create Account', reset: 'Send reset link' }[mode]}
             </Text>
           </TouchableOpacity>
 
+          {configured && mode === 'login' && (
+            <TouchableOpacity onPress={() => changeMode('reset')} style={styles.toggleBtn} disabled={busy}>
+              <Text style={[styles.toggleText, { color: accent.primary }]}>Forgot password?</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            onPress={() => { setIsRegister(!isRegister); setError(''); }}
+            onPress={() => changeMode(mode === 'login' ? 'register' : 'login')}
+            disabled={busy}
             style={styles.toggleBtn}
           >
             <Text style={[styles.toggleText, { color: accent.primary }]}>
-              {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Register"}
+              {{ login: "Don't have an account? Register", register: 'Already have an account? Sign In', reset: 'Back to sign in' }[mode]}
             </Text>
           </TouchableOpacity>
         </View>
