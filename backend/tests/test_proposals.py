@@ -479,3 +479,42 @@ def test_an_update_that_changes_nothing_is_refused_with_a_reason(services):
 
     assert prepared.proposal is None
     assert prepared.reason == "it would leave it exactly as it is"
+
+
+def test_tag_is_created_and_assigned_only_after_confirmation(services):
+    existing_task(services)
+    action = GeneratedAction(
+        operation=ProposalOperation.update, entity_type=EntityType.task, record_id="t1",
+        tag_name="#Study",
+    )
+    first = services.proposals.prepare("alice", action, "").proposal
+    assert first.create_tag
+    assert not services.repository.list_tags("alice")
+    assert not services.repository.get_record("alice", EntityType.task, "t1").content.tag_ids
+    services.proposals.reject("alice", first.proposal_id)
+    assert not services.repository.list_tags("alice")
+
+    proposal = services.proposals.prepare("alice", action, "").proposal
+    services.proposals.confirm("alice", proposal.proposal_id, "tag-confirm-001", 1)
+    [tag] = services.repository.list_tags("alice")
+    assert tag.name == "Study"
+    assert services.repository.get_record("alice", EntityType.task, "t1").content.tag_ids == [tag.id]
+    assert not services.repository.list_tags("bob")
+
+
+def test_one_tag_is_shared_by_multiple_changes_in_a_turn(services):
+    pending_tags = {}
+    proposals = [
+        services.proposals.prepare("alice", GeneratedAction(
+            operation=ProposalOperation.create, entity_type=kind, title="Review",
+            tag_name=name,
+        ), "", pending_tags=pending_tags).proposal
+        for kind, name in [(EntityType.task, "Physics"), (EntityType.note, "physics")]
+    ]
+    # Either preview can be confirmed first.
+    for index, proposal in enumerate(reversed(proposals)):
+        services.proposals.confirm("alice", proposal.proposal_id, f"tag-batch-{index}", None)
+    [tag] = services.repository.list_tags("alice")
+    for proposal in proposals:
+        record = services.repository.get_record("alice", proposal.entity_type, proposal.record_id)
+        assert record.content.tag_ids == [tag.id]

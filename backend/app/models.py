@@ -287,6 +287,8 @@ class ActionProposal(StrictModel):
     before: Optional[PlannerContent] = Field(default=None, discriminator="entity_type")
     after: Optional[PlannerContent] = Field(default=None, discriminator="entity_type")
     rationale: str
+    assigned_tag: Optional[PlannerTag] = None
+    create_tag: bool = False
     # Every record a confirmed create writes, one per date for a repeat. Empty
     # for everything else, and for proposals stored before repeats existed, in
     # which case `after` and `record_id` are the whole of it. `after` mirrors

@@ -15,10 +15,12 @@ from .models import (
     EntityType,
     NoteContent,
     PlannerContent,
+    PlannerTag,
     ProposalOperation,
     ProposedRecord,
     RecurrenceRule,
     ReminderContent,
+    TaggedContent,
     TaskContent,
 )
 from .recurrence import MAX_OCCURRENCES, describe, expand
@@ -94,7 +96,7 @@ _CITATION_SHAPED = re.compile(r"S\d+")
 
 
 def _apply_update(
-    before: PlannerContent, action: GeneratedAction,
+    before: PlannerContent, action: GeneratedAction, tag_id: str | None = None,
 ) -> tuple[Optional[PlannerContent], Optional[str]]:
     """The record as an update would leave it, or why it cannot be one.
 
@@ -165,6 +167,9 @@ def _apply_update(
     else:
         return None, "that kind of record cannot be edited"
 
+    if tag_id is not None and isinstance(before, TaggedContent):
+        updates["tag_ids"] = list(dict.fromkeys([*before.tag_ids, tag_id]))
+
     if not updates:
         return None, "it did not say what to change about it"
     after, reason = _validated(before.model_copy(update=updates))
@@ -203,13 +208,38 @@ class ProposalService:
         self.audit = audit
         self.ttl_hours = ttl_hours
 
-    def prepare(self, uid: str, action: GeneratedAction, rationale: str) -> PreparedAction:
+    def prepare(
+        self, uid: str, action: GeneratedAction, rationale: str,
+        *, pending_tags: dict[str, PlannerTag] | None = None,
+    ) -> PreparedAction:
         """Build the preview, or say plainly why the change cannot be one."""
         now = datetime.now(timezone.utc)
         before = None
         after: PlannerContent | None = None
         base_revision = None
         record_id = action.record_id
+
+        tag = None
+        create_tag = False
+        if action.tag_name is not None:
+            if action.operation not in (ProposalOperation.create, ProposalOperation.update):
+                return PreparedAction(reason="a tag needs a create or update action")
+            name = action.tag_name.removeprefix("#").strip()
+            if not name:
+                return PreparedAction(reason="the tag needs a name")
+            matching = sorted(
+                (item for item in self.repository.list_tags(uid) if item.name.casefold() == name.casefold()),
+                key=lambda item: item.id,
+            )
+            create_tag = not matching
+            if matching:
+                tag = matching[0]
+            elif pending_tags is not None and name.casefold() in pending_tags:
+                tag = pending_tags[name.casefold()]
+            else:
+                tag = PlannerTag(id=generated_record_id(), name=name, color="#DBEAFE")
+                if pending_tags is not None:
+                    pending_tags[name.casefold()] = tag
 
         if action.operation == ProposalOperation.create:
             if not action.title:
@@ -293,9 +323,17 @@ class ProposalService:
                 else:
                     return PreparedAction(reason="only tasks and reminders have a day to move")
             elif action.operation == ProposalOperation.update:
-                after, reason = _apply_update(before, action)
+                after, reason = _apply_update(before, action, tag.id if tag else None)
                 if after is None:
                     return PreparedAction(reason=reason or "it did not say what to change about it")
+
+        if tag is not None:
+            if not isinstance(after, TaggedContent):
+                return PreparedAction(reason="only tasks, reminders and notes can have tags")
+            if action.operation == ProposalOperation.create:
+                after = after.model_copy(update={"tag_ids": [tag.id]})
+            description = f"Create and apply #{tag.name}." if create_tag else f"Apply #{tag.name}."
+            rationale = f"{description}\n\n{rationale}"
 
         series: list[ProposedRecord] = []
         if action.operation == ProposalOperation.create and after is not None:
@@ -333,6 +371,7 @@ class ProposalService:
             proposal_id=secrets.token_urlsafe(18), operation=action.operation,
             entity_type=action.entity_type, record_id=record_id, base_revision=base_revision,
             before=before, after=after, series=series, rationale=rationale[:2000],
+            assigned_tag=tag, create_tag=create_tag,
             created_at=now, expires_at=now + timedelta(hours=self.ttl_hours),
         )
         self.repository.save_proposal(uid, proposal)
