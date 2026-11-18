@@ -27,6 +27,7 @@ export async function createTask(task: Partial<Task> & { userId: string; title: 
     dueTime: task.dueTime || '',
     priority: task.priority || 'medium',
     category: task.category || 'Homework',
+    tagIds: task.tagIds ?? [],
     notes: task.notes || '',
     completed: false,
     keepScheduled: Boolean(task.keepScheduled),

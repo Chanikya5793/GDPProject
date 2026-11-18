@@ -336,3 +336,28 @@ def test_migration_keeps_both_records_that_share_a_legacy_id(client, auth, servi
     again = client.post("/v1/migrations/local-storage", json=body, headers=auth).json()
     assert again["skipped"] == 2
     assert again["record_ids"] == result["record_ids"]
+
+
+def test_tag_catalog_preserves_existing_definitions_and_deleted_tags(client, auth):
+    tag = {"name": "Chemistry", "color": "#DBEAFE"}
+    assert client.put("/v1/tags/study?import_only=true", json=tag, headers=auth).status_code == 204
+    assert client.put("/v1/tags/study", json={**tag, "name": "Lab"}, headers=auth).status_code == 204
+    assert client.put("/v1/tags/study?import_only=true", json=tag, headers=auth).status_code == 204
+    assert client.get("/v1/tags", headers=auth).json() == [{"id": "study", **tag, "name": "Lab"}]
+    assert client.get("/v1/tags", headers={"Authorization": "Bearer uid:bob"}).json() == []
+    assert client.delete("/v1/tags/study", headers=auth).status_code == 204
+    assert client.put("/v1/tags/study?import_only=true", json=tag, headers=auth).status_code == 204
+    assert client.get("/v1/tags", headers=auth).json() == []
+
+
+def test_legacy_tasks_keep_assigned_tags_when_field_is_omitted(client, auth):
+    path = "/v1/records/task/t1"
+    tagged = task_request()
+    tagged["content"]["tag_ids"] = ["study"]
+    assert client.put(path, json=tagged, headers=auth).status_code == 200
+    older_client = task_request("Edited", 1, "request-0002")
+    edited = client.put(path, json=older_client, headers=auth)
+    assert edited.json()["content"]["tag_ids"] == ["study"]
+    untagged = task_request("Edited", 2, "request-0003")
+    untagged["content"]["tag_ids"] = []
+    assert client.put(path, json=untagged, headers=auth).json()["content"]["tag_ids"] == []

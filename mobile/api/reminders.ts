@@ -25,6 +25,7 @@ export async function createReminder(rem: Partial<Reminder> & { userId: string; 
     title: rem.title,
     date: rem.date || '',
     time: rem.time || '',
+    tagIds: rem.tagIds ?? [],
     notes: rem.notes || '',
     createdAt: new Date().toISOString(),
     // The form's "visible to the assistant" switch. Tasks and notes carry

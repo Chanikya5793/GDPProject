@@ -60,8 +60,7 @@ describe('a note the web created, edited on the phone', () => {
 
   it('keeps the web tag ids instead of turning them into NaN', async () => {
     const [note] = await listPlannerItems<Note>('note');
-    expect(note.tagIds).toEqual([7]);
-    expect(note._foreignTagIds).toEqual(['chemistry']);
+    expect(note.tagIds).toEqual(['chemistry', '7']);
     expect(note.tagIds.some(Number.isNaN)).toBe(false);
   });
 
@@ -70,15 +69,15 @@ describe('a note the web created, edited on the phone', () => {
     await updatePlannerItem<Note>('note', 'web-note', { body: 'Week one, edited on the phone' });
     const sent = server.puts.at(-1)!;
     expect(sent.body).toBe('Week one, edited on the phone');
-    expect(sent.tag_ids).toEqual(['7', 'chemistry']);
+    expect(sent.tag_ids).toEqual(['chemistry', '7']);
     expect(sent.attachments).toEqual([
       { attachment_id: 'a1', filename: 'syllabus.txt', text: 'Exam on the 30th', approved_for_ai: true },
     ]);
   });
 
-  it('still lets the phone change its own tags', async () => {
+  it('lets the phone change shared tags', async () => {
     await listPlannerItems<Note>('note');
-    await updatePlannerItem<Note>('note', 'web-note', { tagIds: [7, 12] });
-    expect(server.puts.at(-1)!.tag_ids).toEqual(['7', '12', 'chemistry']);
+    await updatePlannerItem<Note>('note', 'web-note', { tagIds: ['chemistry', 12] });
+    expect(server.puts.at(-1)!.tag_ids).toEqual(['chemistry', '12']);
   });
 });

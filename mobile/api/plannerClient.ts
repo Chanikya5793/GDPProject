@@ -190,8 +190,9 @@ function fromServer(record: ServerRecord): PlannerItem {
     userId: currentUid(), _revision: record.revision,
     _approvedForAi: record.approved_for_ai, createdAt: record.created_at,
   };
+  const tagIds = (record.content.tag_ids as Array<string | number> || []).map(String);
   if (record.content.entity_type === 'task') return {
-    ...common, title: record.content.title, dueDate: String(record.content.due_date || ''),
+    ...common, tagIds, title: record.content.title, dueDate: String(record.content.due_date || ''),
     dueTime: String(record.content.due_time || ''), priority: (record.content.priority || 'medium') as Task['priority'],
     category: String(record.content.category || 'Other'), notes: String(record.content.notes || ''),
     completed: Boolean(record.content.completed),
@@ -200,32 +201,26 @@ function fromServer(record: ServerRecord): PlannerItem {
     recurrence: (record.content.recurrence as Task['recurrence']) || null,
   };
   if (record.content.entity_type === 'reminder') return {
-    ...common, title: record.content.title, date: String(record.content.date || ''),
+    ...common, tagIds, title: record.content.title, date: String(record.content.date || ''),
     time: String(record.content.time || ''), notes: String(record.content.notes || ''),
     completed: Boolean(record.content.completed),
     seriesId: (record.content.series_id as string) || null,
     recurrence: (record.content.recurrence as Reminder['recurrence']) || null,
   };
-  const tagIds = (record.content.tag_ids as Array<string | number> || []).map(String);
   const attachments = (record.content.attachments as ServerAttachment[] | undefined) || [];
   return {
     ...common, title: record.content.title, body: String(record.content.body || ''),
-    // This app's tags have numeric ids; the web's are strings. Anything not
-    // ours is kept aside and sent back as-is rather than coerced to NaN.
-    tagIds: tagIds.filter(isNumericId).map(Number),
-    _foreignTagIds: tagIds.filter(id => !isNumericId(id)),
+    tagIds,
     _serverAttachments: attachments.filter(item => item && typeof item.text === 'string'),
     updatedAt: record.updated_at,
   };
 }
 
-const isNumericId = (value: string) => /^\d+$/.test(value);
-
 function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
   if (kind === 'task') {
     const task = item as Task;
     return {
-      entity_type: 'task', title: task.title, due_date: task.dueDate || null,
+      entity_type: 'task', tag_ids: (task.tagIds || []).map(String), title: task.title, due_date: task.dueDate || null,
       due_time: task.dueTime || null, priority: task.priority, category: task.category,
       notes: task.notes, completed: task.completed, estimated_minutes: 30,
       keep_scheduled: Boolean(task.keepScheduled),
@@ -235,7 +230,7 @@ function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
   if (kind === 'reminder') {
     const reminder = item as Reminder;
     return {
-      entity_type: 'reminder', title: reminder.title, date: reminder.date,
+      entity_type: 'reminder', tag_ids: (reminder.tagIds || []).map(String), title: reminder.title, date: reminder.date,
       time: reminder.time || null, notes: reminder.notes,
       completed: Boolean(reminder.completed),
       series_id: reminder.seriesId || null, recurrence: reminder.recurrence || null,
@@ -244,7 +239,7 @@ function toServer(kind: Kind, item: PlannerItem): Record<string, unknown> {
   const note = item as Note;
   return {
     entity_type: 'note', title: note.title, body: note.body,
-    tag_ids: [...note.tagIds.map(String), ...(note._foreignTagIds || [])],
+    tag_ids: note.tagIds.map(String),
     // Image attachments stay on the device; the web's text attachments are
     // the server's and go back exactly as they came.
     attachments: note._serverAttachments || [],
@@ -287,7 +282,12 @@ async function synchronizeIndex(kind: Kind, item: PlannerItem): Promise<void> {
 }
 
 async function loadCache(kind: Kind): Promise<PlannerItem[]> {
-  return getItem<PlannerItem[]>(cacheKey(kind), []);
+  const items = await getItem<PlannerItem[]>(cacheKey(kind), []);
+  return items.map(item => {
+    if (!('body' in item) || !item._foreignTagIds?.length) return item;
+    const { _foreignTagIds, ...note } = item;
+    return { ...note, tagIds: [...note.tagIds, ..._foreignTagIds] };
+  });
 }
 
 const dataListeners = new Set<() => void>();

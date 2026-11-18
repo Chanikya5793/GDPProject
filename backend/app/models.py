@@ -40,6 +40,15 @@ class RecurrenceRule(StrictModel):
     count: int = Field(ge=1, le=60)
 
 
+class TagFields(StrictModel):
+    name: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    color: Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
+class PlannerTag(TagFields):
+    id: RecordId
+
+
 class TaskContent(StrictModel):
     entity_type: Literal[EntityType.task] = EntityType.task
     title: Title
@@ -62,6 +71,7 @@ class TaskContent(StrictModel):
     series_id: Optional[RecordId] = None
     recurrence: Optional[RecurrenceRule] = None
 
+    tag_ids: List[RecordId] = Field(default_factory=list, max_length=100)
 
 class ReminderContent(StrictModel):
     entity_type: Literal[EntityType.reminder] = EntityType.reminder
@@ -73,6 +83,7 @@ class ReminderContent(StrictModel):
     series_id: Optional[RecordId] = None
     recurrence: Optional[RecurrenceRule] = None
 
+    tag_ids: List[RecordId] = Field(default_factory=list, max_length=100)
 
 class AttachmentText(StrictModel):
     attachment_id: RecordId
@@ -118,6 +129,7 @@ class ScheduleContent(StrictModel):
         return self
 
 
+TaggedContent = TaskContent | ReminderContent | NoteContent
 PlannerContent = Union[TaskContent, ReminderContent, NoteContent, ScheduleContent]
 
 

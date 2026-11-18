@@ -18,7 +18,7 @@ import { createStyles } from '@/theme/createStyles';
 import { modalAnimation } from '@/theme/appearance';
 import { getNotes, createNote, updateNote, deleteNote, getTags } from '@/api/notes';
 import { Note, NoteAttachment, PlannerRecordId, Tag } from '@/types';
-import { assignedTags, toggleTagId } from '@/utils/noteTags';
+import { assignedTags, hasTag, toggleTagId } from '@/utils/noteTags';
 import MarkdownText from '@/components/MarkdownText';
 import { hasMarkdown } from '@/utils/markdown';
 import { useToast } from '@/components/Toast';
@@ -199,7 +199,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
 }) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [tagIds, setTagIds] = useState<number[]>([]);
+  const [tagIds, setTagIds] = useState<PlannerRecordId[]>([]);
   const [preview, setPreview] = useState(false);
   const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
   const [approvedForAi, setApprovedForAi] = useState(true);
@@ -392,7 +392,7 @@ function NoteEditor({ visible, note, tags, colors, accent, appearance, onSave, o
         {note && tags.length > 0 && (
           <View style={es.tagsRow}>
             {tags.map(t => {
-              const on = tagIds.includes(t.id);
+              const on = hasTag({ tagIds }, t.id);
               return (
                 <TouchableOpacity
                   key={t.id}
