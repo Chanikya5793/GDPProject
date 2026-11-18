@@ -59,6 +59,60 @@ const REPLY_STYLES: { value: ReplyStyle; short: string; label: string; blurb: st
     blurb: 'A short paragraph when there is something to explain.' },
 ];
 
+function ChangePasswordSection({ s }: { s: ReturnType<typeof makeStyles> }) {
+  const { changePassword } = useAuth();
+  const { colors, accent } = useAppTheme();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    if (next !== confirmation) {
+      Alert.alert('Passwords must match', 'Enter the same new password in both fields.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await changePassword(current, next);
+      if (!result.success) {
+        Alert.alert('Could not update password', result.error);
+        return;
+      }
+      setCurrent('');
+      setNext('');
+      setConfirmation('');
+      Alert.alert('Password updated');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={s.section}>
+      <View style={s.sectionHeader}>
+        <Ionicons name="lock-closed" size={18} color={colors.text} />
+        <Text style={s.sectionTitle}>Change password</Text>
+      </View>
+      {[
+        { label: 'Current password', value: current, change: setCurrent, existing: true },
+        { label: 'New password', value: next, change: setNext },
+        { label: 'Confirm new password', value: confirmation, change: setConfirmation },
+      ].map(({ label, value, change, existing }) => (
+        <TextInput key={label} style={[s.input, { marginTop: 8 }]} accessibilityLabel={label}
+          value={value} onChangeText={change} placeholder={label} placeholderTextColor={colors.textMuted}
+          secureTextEntry autoCapitalize="none" autoCorrect={false} editable={!busy}
+          autoComplete={existing ? 'current-password' : 'new-password'} />
+      ))}
+      <TouchableOpacity style={[s.saveBtn, { backgroundColor: accent.primary }]} onPress={submit}
+        accessibilityRole="button" disabled={busy || !current || next.length < 6 || !confirmation}>
+        <Text style={s.saveBtnText}>{busy ? 'Updating…' : 'Update password'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const { user, updateUser, logout, configured } = useAuth();
   const { settings, updateSetting, resetSettings } = useSettings();
@@ -177,6 +231,7 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {configured && <ChangePasswordSection key={user?.uid} s={s} />}
       <TagSettings key={user?.uid} />
 
       {/* Appearance */}

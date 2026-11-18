@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import {
-  createUserWithEmailAndPassword, onAuthStateChanged, reload, sendEmailVerification,
-  signInWithEmailAndPassword, signOut, updateProfile, verifyBeforeUpdateEmail,
+  createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential, onAuthStateChanged, reload, sendEmailVerification,
+  signInWithEmailAndPassword, signOut, updatePassword, updateProfile, verifyBeforeUpdateEmail,
 } from 'firebase/auth';
 import { User } from '@/types';
 import { setStorageUid } from '@/api/storage';
@@ -18,6 +18,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string; notice?: string }>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   /** Re-read the signed-in user; the verification link is opened elsewhere. */
   refreshUser: () => Promise<User | null>;
@@ -41,6 +42,9 @@ function toUser(value: NonNullable<typeof auth>['currentUser']): User | null {
 
 function message(error: unknown): string {
   const code = (error as { code?: string }).code;
+  if (code === 'auth/wrong-password') return 'The current password is incorrect.';
+  if (code === 'auth/weak-password') return 'Use a stronger password with at least 6 characters.';
+  if (code === 'auth/password-does-not-meet-requirements') return 'Choose a password that meets the account password requirements.';
   if (code === 'auth/invalid-credential') return 'The email or password is incorrect.';
   if (code === 'auth/email-already-in-use') return 'That email already has an account.';
   if (code === 'auth/too-many-requests') return 'Too many attempts. Please wait and try again.';
@@ -168,6 +172,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(toUser(auth.currentUser));
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    const account = auth?.currentUser;
+    if (!firebaseConfigured || !account?.email) {
+      return { success: false, error: 'Sign in with your planner account to change your password.' };
+    }
+    try {
+      await reauthenticateWithCredential(account, EmailAuthProvider.credential(account.email, currentPassword));
+      if (auth?.currentUser !== account) {
+        return { success: false, error: 'Your session changed. Sign in and try again.' };
+      }
+      await updatePassword(account, newPassword);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: message(error) };
+    }
+  };
+
   const logout = async () => {
     // While still signed in: the request needs this account's token.
     if (auth?.currentUser) await disconnectWidgetPush();
@@ -179,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, configured: firebaseConfigured, login, register, updateUser, logout,
+      user, loading, configured: firebaseConfigured, login, register, updateUser, changePassword, logout,
       refreshUser, resendVerification, verificationSentAt,
     }}>
       {children}
