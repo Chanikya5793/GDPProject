@@ -106,12 +106,14 @@ function describeFailure(error) {
   return error
 }
 
-export async function apiFetch(path, options = {}) {
+export async function apiFetch(path, options = {}, expectedUid) {
   await persistenceReady
   assertConfigured()
   const user = auth?.currentUser
   if (!user) throw new ApiError('Sign in is required.', 401, 'unauthenticated')
+  if (expectedUid && user.uid !== expectedUid) throw new ApiError('Account changed.', 401)
   const token = await user.getIdToken()
+  if (expectedUid && auth.currentUser?.uid !== expectedUid) throw new ApiError('Account changed.', 401)
   let response
   try {
     response = await fetch(`${API_URL}${path}`, {

@@ -1,7 +1,9 @@
 
+from datetime import date
+
 from conftest import task_request
 
-from app.ai import GeneratedAction, GeneratedAnswer
+from app.ai import GeneratedAction, GeneratedAnswer, ToolName, ToolRequest
 from app.models import EntityType, ProposalOperation
 
 
@@ -361,3 +363,27 @@ def test_legacy_tasks_keep_assigned_tags_when_field_is_omitted(client, auth):
     untagged = task_request("Edited", 2, "request-0003")
     untagged["content"]["tag_ids"] = []
     assert client.put(path, json=untagged, headers=auth).json()["content"]["tag_ids"] == []
+
+
+
+def test_bobby_finds_tagged_records_across_types_without_showing_private_items(client, auth, services):
+    client.put("/v1/tags/lab", json={"name": "Lab", "color": "#DBEAFE"}, headers=auth)
+    for entity, fields in (
+        ("task", {"due_date": "2026-08-20"}),
+        ("reminder", {"date": "2026-08-20"}),
+        ("note", {"body": "Experiment results"}),
+    ):
+        request = {"idempotency_key": f"create-{entity}", "approved_for_ai": True, "content": {
+            "entity_type": entity, "title": f"Visible {entity}", "tag_ids": ["lab"], **fields,
+        }}
+        assert client.put(f"/v1/records/{entity}/visible", json=request, headers=auth).status_code == 200
+    private = task_request("Private task", key="private-001")
+    private["content"]["tag_ids"] = ["lab"]
+    assert client.put("/v1/records/task/private", json=private, headers=auth).status_code == 200
+
+    planner = services.bobby.toolbox.session("alice", date(2026, 8, 18))
+    outcome = planner.run(ToolRequest(tool=ToolName.find, tag="#lAb"))
+    assert outcome.payload["count"] == 3
+    assert {row["title"] for row in outcome.payload["results"]} == {
+        "Visible task", "Visible reminder", "Visible note",
+    }
