@@ -9,6 +9,7 @@ import { deleteNote, getNotes, getTags, restoreNoteDirect } from '../api/notes'
 import { getLogs } from '../api/logs'
 import { getCategories } from '../api/categories'
 import ActivityLog from '../components/ActivityLog'
+import ChangePassword from '../components/ChangePassword'
 import RetainedChats from '../components/RetainedChats'
 import { apiConfigured, apiFetch } from '../api/client'
 import {
@@ -424,6 +425,8 @@ export default function Settings() {
               </div>
             </div>
           </section>
+
+          {configured && <ChangePassword key={user?.uid} />}
 
           {/* ═══ AI Privacy ═══ */}
           <section className="settings-section">
