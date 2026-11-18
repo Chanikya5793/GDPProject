@@ -10,6 +10,7 @@ import { getLogs } from '../api/logs'
 import { getCategories } from '../api/categories'
 import ActivityLog from '../components/ActivityLog'
 import ChangePassword from '../components/ChangePassword'
+import TagSettings from '../components/TagSettings'
 import RetainedChats from '../components/RetainedChats'
 import { apiConfigured, apiFetch } from '../api/client'
 import {
@@ -427,6 +428,7 @@ export default function Settings() {
           </section>
 
           {configured && <ChangePassword key={user?.uid} />}
+          <TagSettings key={user?.uid} />
 
           {/* ═══ AI Privacy ═══ */}
           <section className="settings-section">

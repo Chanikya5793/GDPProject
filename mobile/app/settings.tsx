@@ -12,6 +12,7 @@ import { useAppTheme } from '@/theme/useAppTheme';
 import { createStyles } from '@/theme/createStyles';
 import { migrateLegacyStorage } from '@/api/storage';
 import { Settings } from '@/types';
+import TagSettings from '@/components/TagSettings';
 import ActivityLogSection from '@/components/ActivityLogSection';
 import AiPrivacySection from '@/components/AiPrivacySection';
 import NotificationsSection from '@/components/NotificationsSection';
@@ -231,6 +232,7 @@ export default function SettingsScreen() {
       </View>
 
       {configured && <ChangePasswordSection key={user?.uid} s={s} />}
+      <TagSettings key={user?.uid} />
 
       {/* Appearance */}
       <View style={s.section}>

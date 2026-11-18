@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getNotes, createNote, updateNote, deleteNote, getTags, createTag, updateTag, deleteTag } from '../api/notes'
+import { getNotes, createNote, updateNote, deleteNote, getTags } from '../api/notes'
 import { Search, Trash2, X, PinIcon, Paperclip, Download, File as FileIcon, ShieldCheck } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import AskAiButton from '../components/AskAiButton'
 import '../css/Notes.css'
 import LoadFailed from '../components/LoadFailed'
-
-const TAG_COLORS = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FEE2E2', '#E0E7FF', '#CCFBF1']
 
 // Attachment binaries stay only in the encrypted offline cache. Approved text
 // from text attachments can be synchronized for user-scoped retrieval.
@@ -60,76 +59,6 @@ function NoteListItem({ note, selected, tags, isPinned, onClick }) {
   )
 }
 
-/* A row of preset swatches plus a native color picker for any custom color. */
-function ColorChooser({ value, onChange }) {
-  return (
-    <div className="tag-color-chooser">
-      {TAG_COLORS.map(c => (
-        <button
-          key={c}
-          type="button"
-          className={`tag-color-swatch${value?.toLowerCase() === c.toLowerCase() ? ' selected' : ''}`}
-          style={{ background: c }}
-          onClick={() => onChange(c)}
-          title={c}
-        />
-      ))}
-      <label className="tag-color-custom" title="Custom color" style={{ background: value }}>
-        <input
-          type="color"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-        />
-        <span className="tag-color-custom-plus">+</span>
-      </label>
-    </div>
-  )
-}
-
-function TagManagerModal({ tags, onCreateTag, onUpdateTag, onDeleteTag, onClose }) {
-  const [newName, setNewName] = useState('')
-  const [newColor, setNewColor] = useState(TAG_COLORS[0])
-
-  const handleAdd = () => {
-    if (!newName.trim()) return
-    onCreateTag({ name: newName.trim(), color: newColor })
-    setNewName('')
-    setNewColor(TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)])
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-        <div className="modal-header">
-          <h2 className="modal-title">Manage Tags</h2>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="tag-manager-create">
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input className="form-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="New tag name..." onKeyDown={e => e.key === 'Enter' && handleAdd()} style={{ flex: 1 }} />
-            <button className="btn-primary" onClick={handleAdd} style={{ whiteSpace: 'nowrap' }}>Add</button>
-          </div>
-          <ColorChooser value={newColor} onChange={setNewColor} />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
-          {tags.map(tag => (
-            <div key={tag.id} className="tag-manager-row">
-              <div className="tag-manager-row-head">
-                <span className="tag-chip" style={{ background: tag.color }}>#{tag.name}</span>
-                <button className="btn-icon btn-icon-danger" style={{ width: '24px', height: '24px', marginLeft: 'auto' }} onClick={() => onDeleteTag(tag.id)} title="Delete tag">
-                  <Trash2 size={12} />
-                </button>
-              </div>
-              <ColorChooser value={tag.color} onChange={c => onUpdateTag(tag.id, { color: c })} />
-            </div>
-          ))}
-          {tags.length === 0 && <p style={{ color: 'var(--muted)', fontSize: '0.8125rem', textAlign: 'center', padding: '12px' }}>No tags yet. Create one above.</p>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function Notes() {
   const { user } = useAuth()
   const [notes, setNotes] = useState([])
@@ -141,7 +70,6 @@ export default function Notes() {
   const [tagFilter, setTagFilter] = useState('')
   const [editorMode, setEditorMode] = useState('write')
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
-  const [showTagManager, setShowTagManager] = useState(false)
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editBody, setEditBody] = useState('')
@@ -251,11 +179,6 @@ export default function Notes() {
     setNotes(prev => prev.map(n => n.id === selectedId ? updated : n))
   }
 
-  const handleCreateTag = async (tag) => {
-    const created = await createTag(tag)
-    setTags(prev => [...prev, created])
-  }
-
   const handleAttachFiles = async (fileList) => {
     if (!selectedNote) return
     const files = Array.from(fileList)
@@ -312,17 +235,6 @@ export default function Notes() {
     setNotes(previous => previous.map(note => note.id === selectedId ? updated : note))
   }
 
-  const handleUpdateTag = async (id, updates) => {
-    const updated = await updateTag(id, updates)
-    setTags(prev => prev.map(t => t.id === id ? updated : t))
-  }
-
-  const handleDeleteTag = async (id) => {
-    await deleteTag(id)
-    setTags(prev => prev.filter(t => t.id !== id))
-    setNotes(prev => prev.map(n => ({ ...n, tagIds: n.tagIds.filter(tid => tid !== id) })))
-  }
-
   let filteredNotes = [...notes]
   if (search) {
     const q = search.toLowerCase()
@@ -362,7 +274,6 @@ export default function Notes() {
           <p>{notes.length} note{notes.length !== 1 ? 's' : ''} · {tags.length} tag{tags.length !== 1 ? 's' : ''}</p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn-ghost" onClick={() => setShowTagManager(true)}>Manage Tags</button>
           <button className="btn-primary" onClick={handleNewNote}>+ New Note</button>
         </div>
       </div>
@@ -445,7 +356,7 @@ export default function Notes() {
                         {selectedNote.tagIds.includes(tag.id) && <span style={{ marginLeft: 'auto', color: 'var(--green)' }}>✓</span>}
                       </div>
                     ))}
-                    {tags.length === 0 && <div style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: '0.8125rem' }}>No tags. Use Manage Tags to create some.</div>}
+                    {tags.length === 0 && <div style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: '0.8125rem' }}>No tags. <Link to="/settings">Create tags in Settings.</Link></div>}
                   </div>
                 )}
               </div>
@@ -525,9 +436,7 @@ export default function Notes() {
         </div>
       </div>
 
-      {showTagManager && (
-        <TagManagerModal tags={tags} onCreateTag={handleCreateTag} onUpdateTag={handleUpdateTag} onDeleteTag={handleDeleteTag} onClose={() => setShowTagManager(false)} />
-      )}
+
 
       {confirmDeleteNote && selectedNote && (
         <ConfirmDialog
