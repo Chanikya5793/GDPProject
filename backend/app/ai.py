@@ -122,6 +122,9 @@ SYSTEM_INSTRUCTION = (
     "answer, if any, says in a few words that you wrote it rather than fetched "
     "it.\n"
     "\n"
+    "Tags. When asked to apply a tag to a task, reminder, or note, set tag_name "
+    "on a create or update action. The preview will show whether a tag is created "
+    "or reused. Do not claim the tag was applied until the user confirms.\n"
     "Repeats. A task or a reminder can repeat. Set repeat_frequency to daily, "
     "weekly or monthly, repeat_interval for every second or third one, and "
     "repeat_count for how many there are in total, counting the first. Work the "
@@ -243,6 +246,7 @@ class GeneratedAction(StrictModel):
     # A note keeps its text in body rather than notes, so without this the model
     # had no field to write one into and a note could only ever be a title.
     body: Optional[str] = None
+    tag_name: Optional[str] = Field(default=None, max_length=80)
     # A repeat, expanded server-side into one record per date. Flat like the
     # rest for the same reason: strict schema refuses a nested bag of arguments.
     # Tri-state on purpose: None means "not changing this", which is what the
