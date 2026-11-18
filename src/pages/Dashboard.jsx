@@ -1,3 +1,4 @@
+import { apiConfigured, apiFetch } from '../api/client'
 import TagPicker from '../components/TagPicker'
 import { useState, useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
@@ -55,13 +56,13 @@ function PieChart({ data }) {
   const c = size / 2, r = c - 2, ir = r * 0.58
 
   if (total === 0) return (
-    <div className="pie-wrap">
+    <span className="pie-wrap" aria-hidden="true">
       <svg viewBox={`0 0 ${size} ${size}`} className="pie-svg">
         <circle cx={c} cy={c} r={r} fill="var(--off)" stroke="var(--border)" />
         <circle cx={c} cy={c} r={ir} fill="var(--white)" />
         <text x={c} y={c} textAnchor="middle" dominantBaseline="middle" fill="var(--muted)" fontSize="12">No data</text>
       </svg>
-    </div>
+    </span>
   )
 
   let a = -90
@@ -76,7 +77,7 @@ function PieChart({ data }) {
   })
 
   return (
-    <div className="pie-wrap" onMouseMove={e => { const b = e.currentTarget.getBoundingClientRect(); setPos({ x: e.clientX - b.left, y: e.clientY - b.top }) }}>
+    <span className="pie-wrap" aria-hidden="true" onMouseMove={e => { const b = e.currentTarget.getBoundingClientRect(); setPos({ x: e.clientX - b.left, y: e.clientY - b.top }) }}>
       <svg viewBox={`0 0 ${size} ${size}`} className="pie-svg">
         {segs.map((s, i) => s.full
           ? <circle key={i} cx={c} cy={c} r={r} fill={s.color} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="pie-seg" />
@@ -86,13 +87,86 @@ function PieChart({ data }) {
         <text x={c} y={c - 5} textAnchor="middle" dominantBaseline="middle" fontSize="22" fontWeight="800" fill="var(--text)">{total}</text>
         <text x={c} y={c + 13} textAnchor="middle" dominantBaseline="middle" fontSize="9" fontWeight="700" fill="var(--muted)" letterSpacing=".08em">TOTAL</text>
       </svg>
-      {hovered !== null && (
-        <div className="pie-tip" style={{ left: pos.x + 14, top: pos.y - 34 }}>
+      {segs[hovered] && (
+        <span className="pie-tip" style={{ left: pos.x + 14, top: pos.y - 34 }}>
           <span className="pie-tip-dot" style={{ background: segs[hovered].color }} />
           <span className="pie-tip-label">{segs[hovered].label}</span>
           <span className="pie-tip-val">{segs[hovered].value} ({segs[hovered].pct}%)</span>
-        </div>
+        </span>
       )}
+    </span>
+  )
+}
+
+function DashboardAnalytics({ priority, status, tasks, reminders, notes, tags, userId }) {
+  const [expanded, setExpanded] = useState(null)
+  const [usage, setUsage] = useState(null)
+  const [usageError, setUsageError] = useState(false)
+  const connected = apiConfigured()
+
+  useEffect(() => {
+    if (!connected) return
+    let active = true
+    apiFetch('/v1/conversations?limit=50')
+      .then(threads => {
+        if (active) {
+          setUsage(threads.reduce((prompts, thread) => prompts + Math.floor(thread.message_count / 2), 0))
+        }
+      })
+      .catch(() => { if (active) setUsageError(true) })
+    return () => { active = false }
+  }, [connected, userId])
+
+  const counts = new Map()
+  for (const record of [...tasks, ...reminders, ...notes]) {
+    for (const id of new Set((record.tagIds || []).map(String))) {
+      counts.set(id, (counts.get(id) || 0) + 1)
+    }
+  }
+  const tagData = tags.map(tag => ({
+    id: tag.id, label: tag.name, value: counts.get(String(tag.id)) || 0, color: tag.color,
+  })).sort((first, second) => second.value - first.value || first.label.localeCompare(second.label))
+  const tagChart = tagData.slice(0, 5)
+  const other = tagData.slice(5).reduce((sum, item) => sum + item.value, 0)
+  if (other) tagChart.push({ label: 'Other tags', value: other, color: '#94A3B8' })
+
+  const usageData = usage === null ? [] : [{ label: 'Retained prompts', value: usage, color: '#6ACE8D' }]
+  const charts = [
+    { id: 'priority', title: 'Tasks by Priority', data: priority },
+    { id: 'status', title: 'Task Status', data: status },
+    { id: 'tags', title: 'Count by Tag', data: tagChart, details: tagData,
+      description: 'Tasks, reminders, and notes. Items with multiple tags count once per tag.' },
+    { id: 'usage', title: 'Bobby Usage', data: usageData,
+      description: 'Counts prompts kept in the 50 most recent retained conversations.' },
+  ]
+
+  return (
+    <div className="dash-charts-inner">
+      {charts.map(({ id, title, data, details = data, description }) => (
+        <div className="dash-chart-card" key={id}>
+          <button type="button" className="dash-chart-trigger" aria-expanded={expanded === id}
+            onClick={() => setExpanded(current => current === id ? null : id)}>
+            <span className="dash-chart-title">{title}</span>
+            {id === 'usage' && usage === null ? (
+              <span className="dash-chart-unavailable">{!connected || usageError ? 'Unavailable' : 'Loading…'}</span>
+            ) : (
+              <PieChart data={data} />
+            )}
+          </button>
+          {expanded === id && (
+            <div className="dash-chart-details">
+              {description && <p>{description}</p>}
+              {details.length ? (
+                <ul>
+                  {details.map(item => (
+                    <li key={item.id ?? item.label}><span>{item.label}</span><strong>{item.value}</strong></li>
+                  ))}
+                </ul>
+              ) : <p>{id === 'tags' ? 'No tags yet.' : 'No usage data available.'}</p>}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
@@ -642,11 +716,11 @@ function AiChatPanel() {
 
 const DEFAULT_LAYOUT = [
   { id: 'stats', size: 'full' },
+  { id: 'charts', size: 'full' },
   { id: 'due-today', size: 'half' },
   { id: 'pinned-note', size: 'half' },
   { id: 'overdue', size: 'half' },
   { id: 'upcoming', size: 'half' },
-  { id: 'charts', size: 'half' },
 ]
 
 function loadLayout() {
@@ -1000,18 +1074,8 @@ export default function Dashboard() {
             )
 
       case 'charts':
-        return (
-          <div className="dash-charts-inner">
-            <div className="dash-chart-card dash-chart-square">
-              <div className="dash-chart-title">Tasks by Priority</div>
-              <PieChart data={priorityData} />
-            </div>
-            <div className="dash-chart-card dash-chart-square">
-              <div className="dash-chart-title">Task Status</div>
-              <PieChart data={statusData} />
-            </div>
-          </div>
-        )
+        return <DashboardAnalytics key={user.id} userId={user.id} priority={priorityData}
+          status={statusData} tasks={tasks} reminders={reminders} notes={allNotes} tags={allTags} />
 
       case 'pinned-note':
         return <DashNoteWidget notes={allNotes} tags={allTags}
