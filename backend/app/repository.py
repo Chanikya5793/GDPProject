@@ -344,6 +344,12 @@ class MemoryPlannerRepository:
                 raise ProposalStateError("Proposal has no target record")
             key = (uid, proposal.entity_type, proposal.record_id)
             current = self.records.get(key)
+            tag = proposal.assigned_tag
+            if (
+                tag and (not proposal.create_tag or (uid, tag.id) in self.tags)
+                and self.tags.get((uid, tag.id)) != tag
+            ):
+                raise RevisionConflict("Tag changed after the preview was created")
             if proposal.operation.value == "create":
                 if current:
                     raise RevisionConflict("Target record already exists")
@@ -379,6 +385,8 @@ class MemoryPlannerRepository:
                         approved_for_ai=current.approved_for_ai,
                     ),
                 )
+            if tag and proposal.create_tag:
+                self.tags[(uid, tag.id)] = deepcopy(tag)
             confirmed = stored.model_copy(update={"status": "confirmed"})
             self.proposals[(uid, proposal.proposal_id)] = confirmed
             return deepcopy(confirmed)
@@ -771,6 +779,20 @@ class FirestorePlannerRepository:
             if status != "pending":
                 raise ProposalStateError(f"Proposal is {status}")
 
+            tag = proposal.assigned_tag
+            tag_ref = self._tags(uid).document(tag.id) if tag else None
+            new_tag = False
+            if tag and tag_ref:
+                tag_snapshot = tag_ref.get(transaction=txn)
+                new_tag = proposal.create_tag and not tag_snapshot.exists
+                if not new_tag:
+                    tag_data = (tag_snapshot.to_dict() or {}).get("encrypted_payload")
+                    if not tag_data:
+                        raise RevisionConflict("Tag changed after the preview was created")
+                    existing_tag = self.cipher.decrypt(uid, "tag", tag.id, 1, EncryptedPayload.from_dict(tag_data))
+                    if PlannerTag.model_validate(existing_tag) != tag:
+                        raise RevisionConflict("Tag changed after the preview was created")
+
             now = datetime.now(timezone.utc)
             if proposal.operation.value == "create":
                 if current.exists:
@@ -832,6 +854,9 @@ class FirestorePlannerRepository:
                     "created_at": created_at,
                     "updated_at": now,
                 })
+            if tag and tag_ref and new_tag:
+                tag_payload = self.cipher.encrypt(uid, "tag", tag.id, 1, tag.model_dump(mode="json"))
+                txn.create(tag_ref, {"encrypted_payload": tag_payload.to_dict()})
             txn.create(idem_ref, {
                 "request_hash": request_hash,
                 "operation": "proposal",

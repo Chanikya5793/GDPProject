@@ -7,6 +7,7 @@ import {
   onAuthStateChanged,
   reload,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -125,6 +126,24 @@ export function AuthProvider({ children }) {
     }).catch(() => setLoading(false))
     return () => unsubscribe()
   }, [])
+
+  const requestPasswordReset = async (typed) => {
+    if (!firebaseConfigured || !auth) return { success: false, error: 'Password recovery is unavailable.' }
+    const email = campusEmail(typed)
+    if (!email) return { success: false, error: 'Enter your S number or Northwest email.' }
+    try {
+      await persistenceReady
+      await sendPasswordResetEmail(auth, email)
+      return { success: true }
+    } catch (error) {
+      // Keep Firebase projects without email enumeration protection from
+      // revealing whether an address is registered.
+      const code = error?.code
+      if (code === 'auth/user-not-found' || code === 'auth/user-disabled') return { success: true }
+      if (code === 'auth/invalid-email') return { success: false, error: 'Enter a valid email address.' }
+      return { success: false, error: authMessage(error) }
+    }
+  }
 
   const login = async (typed, password) => {
     const email = campusEmail(typed)
@@ -277,7 +296,8 @@ export function AuthProvider({ children }) {
   // loading is read by PrivateRoute: without it the guard never waits for auth
   // to resolve and bounces a signed-in user to the login screen on reload.
   const value = useMemo(() => ({
-    user, loading, configured: firebaseConfigured, login, register, logout, updateUser, changePassword,
+    user, loading, configured: firebaseConfigured, requestPasswordReset, login, register, logout,
+    updateUser, changePassword,
     refreshUser, resendVerification, applyVerification, verificationSentAt,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [user, loading, verificationSentAt])
