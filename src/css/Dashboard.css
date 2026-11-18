@@ -282,8 +282,10 @@
    ═══════════════════════════ */
 
 .dash-charts-inner {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  align-items: start;
+  gap: 12px;
 }
 
 .dash-chart-card {
@@ -307,10 +309,49 @@
   box-shadow: 0 8px 24px rgba(0,106,78,.12), 0 2px 6px rgba(0,0,0,.06);
 }
 
-.dash-chart-square {
+.dash-chart-trigger {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: center;
+}
+
+.dash-chart-trigger:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.dash-chart-unavailable,
+.dash-chart-details {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.dash-chart-unavailable {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+}
+
+.dash-chart-details ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dash-chart-details li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
 }
 
 .dash-chart-title {
@@ -322,7 +363,7 @@
 
 .pie-wrap {
   position: relative;
-  flex-shrink: 0;
+  width: min(100%, 120px);
 }
 
 .pie-svg {
@@ -835,8 +876,4 @@
     flex-wrap: wrap;
   }
 
-  .dash-charts-inner {
-    flex-direction: column;
-    align-items: center;
-  }
 }
